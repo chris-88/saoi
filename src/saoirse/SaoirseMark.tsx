@@ -4,9 +4,9 @@ import { cn } from '@/lib/utils'
 /**
  * Saoirse's icon, from `brand/saoirse-face.svg`.
  *
- * A lowercase `b` — a stem and a ring for its bowl — with two eyes inside the bowl. It is the
- * same letter that opens the wordmark, which is the point: the thing in the middle of the
- * opening screen and the first letter of the name are one object.
+ * A stem with a flat-topped end and a ring for its bowl, with two square eyes inside the bowl:
+ * the first letter of the name, which is the point: the thing in the middle of the opening
+ * screen and the first letter of the name are one object.
  *
  * Drawn here rather than imported as a file so it can take a colour. The artwork is a single
  * colour; `currentColor` is what lets the same component sit in the brand teal, in a muted
@@ -44,13 +44,14 @@ export function SaoirseMark({
         ? { role: 'img' as const, 'aria-label': title }
         : { 'aria-hidden': true as const })}
     >
-      <circle cx="32" cy="40" r="24.5" fill="none" stroke="currentColor" strokeWidth="15" />
-      <circle cx="26" cy="37" r="3" fill="currentColor" />
-      <circle cx="37" cy="37" r="3" fill="currentColor" />
-      <path
-        d="M0 7.5C0 3.35786 3.35786 0 7.5 0C11.6421 0 15 3.35786 15 7.5V40H0V7.5Z"
-        fill="currentColor"
-      />
+      <g stroke="currentColor">
+        <path
+          d="M7 40C7 26.1929 18.1929 15 32 15C45.8071 15 57 26.1929 57 40C57 53.8071 45.8071 65 32 65C18.1929 65 7 53.8071 7 40ZM7 40V0"
+          strokeWidth="14"
+        />
+        <path d="M22 37H28" strokeWidth="6" />
+        <path d="M37 37H43" strokeWidth="6" />
+      </g>
     </svg>
   )
 }

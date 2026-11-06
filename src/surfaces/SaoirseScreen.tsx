@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { useDocumentTitle } from '@/lib/useDocumentTitle'
 import { Link, useSearchParams } from 'react-router-dom'
 import { SaoirseChat } from '@/saoirse/SaoirseChat'
-import { SaoiWordmark } from '@/saoirse/SaoiWordmark'
+import { SaoirseWordmark } from '@/saoirse/SaoirseWordmark'
 import { ConversationMenu } from '@/saoirse/ConversationMenu'
 import { IdentityBadge } from '@/saoirse/IdentityBadge'
 import { rememberPresenterKey } from '@/lib/session'
@@ -119,7 +119,7 @@ export function SaoirseScreen(): ReactNode {
             aria-label="Saoirse home"
             className="hover:bg-accent focus-visible:ring-ring justify-self-center rounded-md px-3 py-1.5 transition-colors focus-visible:ring-2 focus-visible:outline-none"
           >
-            <SaoiWordmark className="h-9" transitionName="saoi-wordmark" />
+            <SaoirseWordmark className="h-6" transitionName="saoi-wordmark" />
           </Link>
           {/*
             The avatar, once there is one. It renders nothing while anonymous, which is also
