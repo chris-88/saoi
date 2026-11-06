@@ -1,0 +1,52 @@
+{
+  "$comment": "Case c77e613f, turn 2, as the live model played it on 2026-10-15: facts recorded in one round, the reaction and the fork in the next. The customer said: My wife and I want to buy our first home next year.",
+  "turns": [
+    {
+      "rounds": [
+        {
+          "toolUses": [
+            {
+              "name": "record_facts",
+              "input": {
+                "facts": [
+                  {
+                    "key": "goals.primaryObjective",
+                    "value": "Buy first home with wife next year"
+                  },
+                  { "key": "household.buyingWith", "value": "partner" },
+                  { "key": "housing.firstTimeBuyer", "value": true }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "deltas": [
+            "First home with your wife, that's a good one to be planning. ",
+            "Over the next year it's a deposit, a mortgage, protection and a few costs nobody warns you about. ",
+            "Do you want help putting a plan together for all of it, or is there one specific thing you want to sort today?"
+          ]
+        }
+      ]
+    },
+    {
+      "$comment": "The customer answered the fork: Yeah I'd like to get a plan together.",
+      "rounds": [
+        {
+          "toolUses": [
+            {
+              "name": "record_facts",
+              "input": { "facts": [{ "key": "goals.approach", "value": "plan" }] }
+            }
+          ]
+        },
+        {
+          "deltas": [
+            "Good, we'll build it properly. ",
+            "How much have you two saved so far, and roughly how much could you put away each month from here?"
+          ]
+        }
+      ]
+    }
+  ]
+}

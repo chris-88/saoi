@@ -1,0 +1,70 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Build output
+dev-dist
+
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+supabase/.env.local
+
+# Test output
+coverage
+playwright-report
+test-results
+/e2e/.auth
+
+# Supabase local
+supabase/.branches
+supabase/.temp
+
+# Internal source documents. Held locally, deliberately not published (the repo is public).
+docs/01-conversational-banking-poc-vision.md
+docs/03-saoi-poc-requirements.md
+
+# Admin console login, written once by the setup script.
+.admin-credentials
+
+# The asset pack itself; its contents are committed under src/assets and docs/design.
+saoi-poc-asset-pack.zip
+
+# The demo presenter key. Unlocks the all-conversations switcher; never committed.
+.presenter-key
+
+# Google OAuth client credentials. The downloaded JSON and anything derived from it.
+# Read once to configure Supabase, then deleted — it should never be here long enough
+# to be committed, and this is the belt to that braces.
+.google-oauth
+client_secret*.json
+*oauth-client*.json
+
+# Second Brain / Docs. The whole `docs/` tree moved to `vault/docs/` on 2026-10-20 so that
+# nothing under it is published from here on. Everything committed before that date is still
+# in the public history (see vault/docs/security/public-repository-review.md).
+vault/
+.obsidian/

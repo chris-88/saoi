@@ -1,0 +1,4 @@
+-- One-off data fix, applied on the first deployment, which moved stored product ids carrying
+-- the old tenant prefix to `demo`. The compiled catalogue and the seed never write such ids,
+-- so there is nothing to do on a new database. The file is kept because migrations are
+-- tracked by filename.

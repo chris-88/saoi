@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # The same command as local: typecheck, lint, format:check, seed:check, test, build and
+      # the published-bundle secret scan (the site is public, anything in dist/ is readable).
+      - name: Check
+        run: npm run check
+        env:
+          VITE_BASE_PATH: ${{ vars.VITE_BASE_PATH }}
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+  # services/api is its own package; the root job above never installs or checks it.
+  api:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/api
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: services/api/package-lock.json
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+  # saoi-api's session, partner and document routes, run in process against a real local Postgres,
+  # GoTrue and Storage with the project's migrations and seed.sql applied. The same stack
+  # and expectations as the old handler tests; allowed to fail until it has a few green runs.
+  api-integration:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: services/api
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: services/api/package-lock.json
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.108.0
+
+      - run: npm ci
+
+      # Storage is kept: the document route writes to the private bucket.
+      - name: Start Supabase (migrations and seed applied)
+        working-directory: .
+        run: supabase start -x studio,imgproxy,edge-runtime,logflare,vector,mailpit,realtime,postgres-meta,supavisor
+
+      - name: Integration tests
+        run: npm run test:integration
+
+      - name: Stop Supabase
+        if: always()
+        working-directory: .
+        run: supabase stop --no-backup
+
+  # The image bundles supabase/functions/_shared, so the context is the repository root.
+  api-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build the image (not pushed)
+        run: docker build -f services/api/Dockerfile -t saoi-api:ci .

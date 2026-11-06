@@ -1,0 +1,4 @@
+-- One-off data fix, applied on the first deployment, which renamed stored values of the old
+-- tenant to the Demo Bank tenant key `demo`. Nothing in the repository writes such values any
+-- more, so there is nothing to do on a new database. The file is kept because migrations are
+-- tracked by filename.

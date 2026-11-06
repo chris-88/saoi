@@ -1,0 +1,7 @@
+# Used with the repository root as the build context: send only what the image needs.
+*
+!services/api
+!supabase/functions/_shared
+services/api/node_modules
+services/api/dist
+**/*.test.ts

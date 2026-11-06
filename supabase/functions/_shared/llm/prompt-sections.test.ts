@@ -1,0 +1,261 @@
+import { describe, expect, it } from 'vitest'
+import { composeSystemPrompt } from './prompt.ts'
+import { demoDomainConfig } from '../tenants/demo/domain-config.ts'
+import { demoProducts } from '../tenants/demo/products.ts'
+import { knowledgeBaseSection } from '../tenants/demo/kb-prompt.ts'
+import type { CaseDigest } from './prompt.ts'
+
+const SLIDERS = {
+  length: 0.5,
+  humour: 0.3,
+  sarcasm: 0.1,
+  formality: 0.5,
+  playfulness: 0.3,
+  poetic: 0,
+}
+
+const digest = (extra: Partial<CaseDigest> = {}): CaseDigest => ({
+  customerName: 'Aoife',
+  sensitiveHeld: [],
+  needs: { surface: [], ask: null, hold: [] },
+  plan: null,
+  authLevel: 'anonymous',
+  facts: [],
+  applications: [],
+  declinedProducts: [],
+  advisories: [],
+  partner: null,
+  eventsSinceLastSeen: [],
+  ...extra,
+})
+
+/**
+ * Whitespace-normalised, because these assertions are about what the prompt says rather than
+ * how it is wrapped — a phrase broken across two lines is still the phrase.
+ */
+const compose = (extra: Partial<CaseDigest> = {}): string => raw(extra).replaceAll(/\s+/g, ' ')
+
+const raw = (extra: Partial<CaseDigest> = {}): string =>
+  composeSystemPrompt({
+    domainConfig: demoDomainConfig,
+    productCatalogue: knowledgeBaseSection(),
+    sliders: SLIDERS,
+    digest: digest(extra),
+    sensitive: false,
+    clarifyInScope: false,
+  })
+
+/**
+ * That what the digest holds actually reaches the model.
+ *
+ * `goals` and `suitability` were computed every turn and silently dropped between the digest
+ * builder and here, which no test caught because each half worked. This is the other end of the
+ * same guard as `digest.test.ts`: there, everything handed in comes back out; here, everything
+ * in the digest ends up in the prompt.
+ */
+describe('the digest reaches the prompt', () => {
+  it('carries where the customer is trying to get to', () => {
+    expect(compose({ goals: ['What they came in about: buying a first home.'] })).toContain(
+      'buying a first home',
+    )
+  })
+
+  it('carries whether something else would suit them better', () => {
+    expect(compose({ suitability: ['Personal loan: cheaper over that term.'] })).toContain(
+      'cheaper over that term',
+    )
+  })
+
+  it('carries what applying would involve, under a heading that says not to recite it', () => {
+    const prompt = compose({
+      prospect: ['Mortgage — what applying would involve:', '  3 things already known: A, B, C.'],
+    })
+
+    expect(prompt).toContain('What applying would actually involve')
+    expect(prompt).toContain('3 things already known')
+    expect(prompt).toContain('rather than reciting it')
+  })
+
+  it('leaves a section out entirely when there is nothing to say', () => {
+    const empty = compose()
+
+    expect(empty).not.toContain('What applying would actually involve')
+    expect(empty).not.toContain('Something else may suit them better')
+  })
+})
+
+/**
+ * How an application is conducted, which is the thing customers least expect.
+ *
+ * Asked how long one takes, whether an appointment was needed and what documents were required,
+ * Saoirse declined all three. Two were honest; the third was wrong. But the real miss was that the
+ * answer to "how long does this take" is not a number — it is that there is nothing to turn up
+ * to and nothing to have ready, and nothing in the prompt said so.
+ */
+describe('how applying works', () => {
+  const prompt = compose()
+
+  it('says there is no appointment and nothing to sit down to', () => {
+    expect(prompt).toContain('no appointment')
+    expect(prompt).toMatch(/no branch visit/i)
+  })
+
+  it('says an application can be left and picked up later', () => {
+    expect(prompt).toMatch(/picked up whenever/i)
+    expect(prompt).toMatch(/place is held/i)
+  })
+
+  it('says nothing has to be gathered up front', () => {
+    expect(prompt).toMatch(/one thing at a time/i)
+  })
+
+  it('still refuses to invent a decision timeframe', () => {
+    expect(prompt).toMatch(/do not have a timeframe/i)
+    expect(prompt).toMatch(/must not invent one/i)
+  })
+
+  it("keeps starting an application the customer's tap", () => {
+    expect(prompt).toMatch(/customer's tap/i)
+  })
+})
+
+describe('what happens after what-is-involved', () => {
+  const prompt = compose({ prospect: ['Mortgage — what applying would involve:'] })
+
+  it('asks when, not what they earn', () => {
+    expect(prompt).toMatch(/ask when they are hoping to do it/i)
+    expect(prompt).toContain('Not their income')
+  })
+
+  it('routes a distant date to a plan rather than an application', () => {
+    expect(prompt).toContain('propose_plan')
+    expect(prompt).toMatch(/comes back to them when they reach/i)
+  })
+})
+
+/**
+ * The model cannot reason about "next year" without knowing what year it is.
+ *
+ * `goals.targetDate` wants a month. Somebody said "next year", nothing was recorded, so the
+ * clarifying question behind it stayed unanswered, the need sat a hair under its threshold, and
+ * the card was never offered. The whole chain started with a date the model could not compute.
+ */
+describe("today's date", () => {
+  it('is in the prompt', () => {
+    expect(compose()).toMatch(/Today is \d{4}-\d{2}-\d{2}/)
+  })
+
+  it('is in the volatile half, not the cached prefix', () => {
+    const parts = composeSystemPrompt.withBreakpoint({
+      domainConfig: demoDomainConfig,
+      productCatalogue: knowledgeBaseSection(),
+      sliders: SLIDERS,
+      digest: digest(),
+      sensitive: false,
+      clarifyInScope: false,
+    })
+
+    // In the prefix it would be stale within a day and break the cache every night.
+    expect(parts.stablePrefix).not.toMatch(/Today is/)
+    expect(parts.caseSuffix).toMatch(/Today is/)
+  })
+})
+
+describe('what the engine governs', () => {
+  const prompt = compose()
+
+  it('scopes the need scores to what Saoirse volunteers', () => {
+    expect(prompt).toMatch(/governs what you volunteer, and nothing else/i)
+    expect(prompt).toMatch(/has asked, and "the engine has not scored it highly enough yet"/i)
+  })
+
+  it('says a rough timeframe is still an answer', () => {
+    expect(prompt).toMatch(/A rough answer is still an answer/i)
+    expect(prompt).toMatch(/They can correct a month\. They cannot correct a blank/i)
+  })
+})
+
+/**
+ * A turn is sent as it is written, so none of it can be taken back.
+ *
+ * Saoirse told somebody "Tap the card to start it", asked a question, then wrote "Actually, hold off
+ * on that card for a moment" — and no card was ever drawn, because the tool was never called. It
+ * composes across rounds and had changed its mind between two of them.
+ */
+describe('committing to what has been said', () => {
+  const prompt = compose()
+
+  it('says a sentence already written cannot be withdrawn', () => {
+    expect(prompt).toMatch(/You cannot take it back/i)
+    expect(prompt).toMatch(/hold off on that/i)
+  })
+
+  it('forbids mentioning a card the tool was not called for', () => {
+    expect(prompt).toMatch(/Never mention a card you have not called the tool for/i)
+  })
+
+  it('stops discovery being a reason to stall somebody who is ready', () => {
+    expect(prompt).toMatch(/not a reason to keep them waiting/i)
+    expect(prompt).toMatch(/they are ready. Offer the card/i)
+  })
+})
+
+/**
+ * What the bank can do depends on where the customer banks, and that has to be said.
+ *
+ * Saoirse promised "we'll come back to you when your savings reach €32,000" to somebody holding no
+ * account here. The watch is only ever created once a savings account exists, so the promise was
+ * conditional on something the customer could not see.
+ */
+describe('what the bank can do', () => {
+  const prompt = compose()
+
+  it('says a balance can only be watched where the bank can see it', () => {
+    expect(prompt).toMatch(/only see accounts it holds/i)
+    expect(prompt).toMatch(/come back to you when you get there/i)
+  })
+
+  it('asks where the salary is paid, not who they bank with', () => {
+    expect(prompt).toMatch(/where their salary is paid/i)
+    expect(prompt).toContain('Not "who do you bank with"')
+  })
+
+  it('gives both reasons the salary matters', () => {
+    expect(prompt).toMatch(/read from the account instead of asked for/i)
+    expect(prompt).toMatch(/standing order/i)
+  })
+
+  it('is explicit that none of it is a condition of being lent to', () => {
+    expect(prompt).toMatch(/None of them is a condition of being lent to/i)
+    expect(prompt).toMatch(/nobody has to move their banking/i)
+  })
+
+  it('says what to do when the answer is another bank', () => {
+    expect(prompt).toMatch(/the plan still stands/i)
+    expect(prompt).toMatch(/Do not repeat the offer after they have declined/i)
+  })
+})
+
+/**
+ * The rates in the prompt are the rates on the card.
+ *
+ * `illustrativeTerms` used to carry its own, and they had drifted: the mortgage advertised
+ * "3.85% for 3 years" in prose while the quote card offered 3.1%, 3.3%, 3.4% and 3.9%.
+ */
+describe('product rates', () => {
+  const prompt = compose()
+
+  it('states every variant the quote card can show', () => {
+    for (const variant of demoProducts.mortgage.variants ?? []) {
+      expect(prompt, variant.name).toContain(variant.name)
+    }
+  })
+
+  it('states them as the figures they actually are', () => {
+    expect(prompt).toContain('4-year fixed: 3.1% fixed for 4 years')
+  })
+
+  it('no longer carries the rate that contradicted them', () => {
+    expect(prompt).not.toContain('3.85%')
+  })
+})

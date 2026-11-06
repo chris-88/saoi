@@ -1,0 +1,15 @@
+{
+  "$comment": "An action turn: the customer has just tapped to start applications, case-action has written the context_reused events, and the function emits the reuse card before the model speaks. The model's round is text only, in the shape the live model used on c77e613f turn 18.",
+  "turns": [
+    {
+      "rounds": [
+        {
+          "deltas": [
+            "Both are started, and the first thing either needs is a few personal details. ",
+            "I already have your email from signing in, so that is one thing I will not ask for."
+          ]
+        }
+      ]
+    }
+  ]
+}
