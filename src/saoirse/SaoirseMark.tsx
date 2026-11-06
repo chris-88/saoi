@@ -39,6 +39,7 @@ export function SaoirseMark({
   return (
     <svg
       viewBox="0 0 64 64"
+      fill="none"
       className={cn('size-full', breathing && 'saoirse-mark-breathe', className)}
       {...(labelled
         ? { role: 'img' as const, 'aria-label': title }
