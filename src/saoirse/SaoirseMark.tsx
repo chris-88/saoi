@@ -4,16 +4,16 @@ import { cn } from '@/lib/utils'
 /**
  * Saoirse's icon, from `brand/saoirse-face.svg`.
  *
- * A stem with a flat-topped end and a ring for its bowl, with two square eyes inside the bowl:
- * the first letter of the name, which is the point: the thing in the middle of the opening
+ * A ring with a squared top-left corner and two square eyes:
+ * the thing in the middle of the opening screen is the same object as the mark, which is the point: the thing in the middle of the opening
  * screen and the first letter of the name are one object.
  *
  * Drawn here rather than imported as a file so it can take a colour. The artwork is a single
  * colour; `currentColor` is what lets the same component sit in the brand teal, in a muted
  * header, and on a dark ground without a second asset.
  *
- * Not square — 64 by 72, because the stem rises above the bowl. `preserveAspectRatio` keeps it
- * honest inside a square slot rather than stretching the ring into an oval.
+ * Square, 64 by 64: a ring with a squared top-left corner. `preserveAspectRatio` keeps it
+ * honest inside a slot rather than stretching the ring into an oval.
  */
 export function SaoirseMark({
   className,
@@ -38,7 +38,7 @@ export function SaoirseMark({
 
   return (
     <svg
-      viewBox="0 0 64 72"
+      viewBox="0 0 64 64"
       className={cn('size-full', breathing && 'saoirse-mark-breathe', className)}
       {...(labelled
         ? { role: 'img' as const, 'aria-label': title }
@@ -46,11 +46,11 @@ export function SaoirseMark({
     >
       <g stroke="currentColor">
         <path
-          d="M7 40C7 26.1929 18.1929 15 32 15C45.8071 15 57 26.1929 57 40C57 53.8071 45.8071 65 32 65C18.1929 65 7 53.8071 7 40ZM7 40V0"
+          d="M7 32C7 18.1929 18.1929 7 32 7C45.8071 7 57 18.1929 57 32C57 45.8071 45.8071 57 32 57C18.1929 57 7 45.8071 7 32ZM7 32V0"
           strokeWidth="14"
         />
-        <path d="M22 37H28" strokeWidth="6" />
-        <path d="M37 37H43" strokeWidth="6" />
+        <path d="M22 29H28" strokeWidth="6" />
+        <path d="M37 29H43" strokeWidth="6" />
       </g>
     </svg>
   )

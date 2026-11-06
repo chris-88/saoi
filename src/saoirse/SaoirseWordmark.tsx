@@ -2,7 +2,7 @@ import { useId, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
 /**
- * The Saoirse wordmark: the assistant's name, from `brand/saoirse-name.svg` (viewBox 0 0 480 64).
+ * The Saoirse wordmark: the assistant's name, from `brand/saoirse-name.svg` (viewBox 0 0 464 64).
  *
  * Stroked paths, not type, so it renders identically everywhere. It takes its colour from
  * `currentColor`: set a `text-*` class. Sized by height, the width follows the artwork.
@@ -21,7 +21,7 @@ export function SaoirseWordmark({
   const cut = `saoi-cut-${useId().replace(/:/g, '')}`
   return (
     <svg
-      viewBox="0 0 480 64"
+      viewBox="0 0 464 64"
       fill="none"
       role="img"
       aria-label="Saoirse"
@@ -29,21 +29,20 @@ export function SaoirseWordmark({
       {...(transitionName === undefined ? {} : { style: { viewTransitionName: transitionName } })}
     >
       <defs>
-        <mask id={cut} maskUnits="userSpaceOnUse" x="0" y="0" width="480" height="64">
-          <rect width="480" height="64" fill="#fff" />
-          <path d="M480 42.5L459 42.5" stroke="#000" strokeWidth="7" />
-          <path d="M379 21.5L400 21.5" stroke="#000" strokeWidth="7" />
-          <path d="M357 42.5L336 42.5" stroke="#000" strokeWidth="7" />
-          <path d="M304 21.5L320 21.5" stroke="#000" strokeWidth="7" />
+        <mask id={cut} maskUnits="userSpaceOnUse" x="0" y="0" width="464" height="64">
+          <rect width="464" height="64" fill="#fff" />
+          <path d="M464 42.5L443 42.5" stroke="#000" strokeWidth="7" />
+          <path d="M363 21.5L384 21.5" stroke="#000" strokeWidth="7" />
+          <path d="M341 42.5L320 42.5" stroke="#000" strokeWidth="7" />
           <path d="M240 21.5L254 21.5" stroke="#000" strokeWidth="7" />
           <path d="M43 21.5L64 21.5" stroke="#000" strokeWidth="7" />
           <path d="M21 42.5L2.73771e-07 42.5" stroke="#000" strokeWidth="7" />
         </mask>
       </defs>
       <g stroke="currentColor" strokeWidth="14" mask={`url(#${cut})`}>
-        <path d="M423 32C423 17.6406 433.641 7 448 7C462.359 7 473 17.6406 473 32M423 32C423 46.3594 433.641 57 448 57C462.359 57 473 46.3594 473 32M423 32H473" />
-        <path d="M343 32C343 17.6406 353.641 7 368 7C382.359 7 393 17.6406 393 32M343 32C343 46.3594 353.641 57 368 57C382.359 57 393 46.3594 393 32M343 32H393" />
-        <path d="M313 25C313 9 301 7.00002 296.5 7.00002C292 7.00002 278 8.99996 278 25M278 25V64.0001M278 25V0" />
+        <path d="M407 32C407 17.6406 417.641 7 432 7C446.359 7 457 17.6406 457 32M407 32C407 46.3594 417.641 57 432 57C446.359 57 457 46.3594 457 32M407 32H457" />
+        <path d="M327 32C327 17.6406 337.641 7 352 7C366.359 7 377 17.6406 377 32M327 32C327 46.3594 337.641 57 352 57C366.359 57 377 46.3594 377 32M327 32H377" />
+        <path d="M278 32C278 17.6406 288.641 7 303 7M278 32V0M278 32V64" />
         <path d="M247 0V64" />
         <path d="M167 32C167 17.6406 177.641 7 192 7C206.359 7 217 17.6406 217 32C217 46.3594 206.359 57 192 57C177.641 57 167 46.3594 167 32Z" />
         <path d="M137 32C137 17.6406 126.359 7 112 7C97.6406 7 87 17.6406 87 32C87 46.3594 97.6406 57 112 57C126.359 57 137 46.3594 137 32ZM137 32V64" />

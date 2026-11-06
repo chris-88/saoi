@@ -8,9 +8,9 @@
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Saoirse">
   <rect width="256" height="256" rx="56" fill="#00736F"/>
-  <g transform="translate(58.5,49.9) scale(2.17)" fill="none" stroke="#FFFFFF">
-    <path d="M7 40C7 26.1929 18.1929 15 32 15C45.8071 15 57 26.1929 57 40C57 53.8071 45.8071 65 32 65C18.1929 65 7 53.8071 7 40ZM7 40V0" stroke-width="14"/>
-    <path d="M22 37H28" stroke-width="6"/>
-    <path d="M37 37H43" stroke-width="6"/>
+  <g transform="translate(58.5,58.5) scale(2.17)" fill="none" stroke="#FFFFFF">
+    <path d="M7 32C7 18.1929 18.1929 7 32 7C45.8071 7 57 18.1929 57 32C57 45.8071 45.8071 57 32 57C18.1929 57 7 45.8071 7 32ZM7 32V0" stroke-width="14"/>
+    <path d="M22 29H28" stroke-width="6"/>
+    <path d="M37 29H43" stroke-width="6"/>
   </g>
 </svg>
