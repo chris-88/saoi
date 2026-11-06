@@ -37,7 +37,7 @@
   /* Demo Bank teal. */
   --demo-teal: oklch(0.5 0.09 190);
   --demo-deep: oklch(0.27 0.06 200);
-  --blue-100: oklch(0.93 0.035 190);
+  --teal-100: oklch(0.93 0.035 190);
 
   --background: var(--slate-50);
   --foreground: var(--slate-900);
@@ -73,7 +73,7 @@
   --muted: var(--slate-100);
   --muted-foreground: var(--slate-500);
 
-  --accent: var(--blue-100);
+  --accent: var(--teal-100);
   --accent-foreground: var(--demo-teal);
 
   /* Semantic, from the palette on the boards. */
@@ -89,7 +89,7 @@
    * Application state (§13, §14). Every board uses colour AND a label for these, never colour
    * alone, which is why StatusBadge renders both.
    */
-  --state-progress: oklch(0.55 0.19 262);
+  --state-progress: oklch(0.5 0.1 190);
   --state-waiting: oklch(0.76 0.16 70);
   --state-review: oklch(0.6 0.2 295);
   --state-done: oklch(0.63 0.16 150);
@@ -99,8 +99,8 @@
   /* Product accents, so each product reads as itself on the cards. */
   --product-mortgage: oklch(0.65 0.16 162);
   --product-current-account: oklch(0.72 0.15 70);
-  --product-joint-account: oklch(0.49 0.2 264);
-  --product-credit-card: oklch(0.49 0.2 264);
+  --product-joint-account: oklch(0.49 0.1 195);
+  --product-credit-card: oklch(0.49 0.1 195);
   --product-personal-loan: oklch(0.63 0.21 25);
   --product-savings: oklch(0.68 0.12 196);
   --product-protection: oklch(0.6 0.2 295);
@@ -123,7 +123,7 @@
    * surface rather than taken from an editor theme, which is why they are tokens: the dark
    * variants below have to be legible on a near-black block.
    */
-  --code-key: oklch(0.5 0.17 265);
+  --code-key: oklch(0.5 0.1 195);
   --code-string: oklch(0.52 0.15 25);
   --code-number: oklch(0.52 0.13 160);
   --code-keyword: oklch(0.55 0.19 300);
@@ -150,7 +150,7 @@
   --sidebar-accent: hsl(240 4.8% 95.9%);
   --sidebar-accent-foreground: hsl(240 5.9% 10%);
   --sidebar-border: hsl(220 13% 91%);
-  --sidebar-ring: hsl(217.2 91.2% 59.8%);
+  --sidebar-ring: oklch(0.7 0.1 190);
 }
 
 /*
@@ -166,7 +166,7 @@
 
   /* Lifted off the dark ground, where the light pair reads as mud. */
   --decides-code: oklch(0.74 0.12 178);
-  --code-key: oklch(0.78 0.13 265);
+  --code-key: oklch(0.78 0.1 195);
   --code-string: oklch(0.78 0.12 30);
   --code-number: oklch(0.78 0.11 160);
   --code-keyword: oklch(0.78 0.14 300);
@@ -184,18 +184,18 @@
   --popover: oklch(0.21 0.006 286);
   --popover-foreground: oklch(0.985 0 0);
 
-  --primary: oklch(0.68 0.15 256);
-  --primary-foreground: oklch(0.15 0.03 258);
+  --primary: oklch(0.76 0.1 190);
+  --primary-foreground: oklch(0.15 0.03 195);
 
   /* Lifted and desaturated: the same hues, legible against a dark card. */
-  --chart-1: oklch(0.68 0.15 256);
+  --chart-1: oklch(0.76 0.1 190);
   --chart-2: oklch(0.72 0.12 195);
   --chart-3: oklch(0.78 0.13 85);
   --chart-4: oklch(0.68 0.14 310);
   --chart-5: oklch(0.66 0.12 150);
 
-  --brand-deep: oklch(0.24 0.07 258);
-  --brand-deep-foreground: oklch(0.985 0.005 255);
+  --brand-deep: oklch(0.24 0.045 200);
+  --brand-deep-foreground: oklch(0.985 0.005 195);
 
   --secondary: oklch(0.27 0.006 286);
   --secondary-foreground: oklch(0.985 0 0);
@@ -203,8 +203,8 @@
   --muted: oklch(0.27 0.006 286);
   --muted-foreground: oklch(0.712 0.013 286);
 
-  --accent: oklch(0.3 0.03 258);
-  --accent-foreground: oklch(0.9 0.05 258);
+  --accent: oklch(0.3 0.03 195);
+  --accent-foreground: oklch(0.9 0.05 195);
 
   --destructive: oklch(0.704 0.191 22.216);
   --destructive-foreground: oklch(0.985 0 0);
@@ -214,22 +214,22 @@
   --success: oklch(0.65 0.13 155);
   --success-foreground: oklch(0.17 0.02 155);
 
-  --state-progress: oklch(0.68 0.15 256);
+  --state-progress: oklch(0.76 0.1 190);
   --state-waiting: oklch(0.78 0.14 70);
   --state-done: oklch(0.66 0.14 155);
   --state-idle: oklch(0.45 0.012 258);
 
   --border: oklch(1 0 0 / 12%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.7 0.13 255);
+  --ring: oklch(0.7 0.1 190);
   --sidebar: hsl(240 5.9% 10%);
   --sidebar-foreground: hsl(240 4.8% 95.9%);
-  --sidebar-primary: hsl(224.3 76.3% 48%);
+  --sidebar-primary: oklch(0.76 0.1 190);
   --sidebar-primary-foreground: hsl(0 0% 100%);
   --sidebar-accent: hsl(240 3.7% 15.9%);
   --sidebar-accent-foreground: hsl(240 4.8% 95.9%);
   --sidebar-border: hsl(240 3.7% 15.9%);
-  --sidebar-ring: hsl(217.2 91.2% 59.8%);
+  --sidebar-ring: oklch(0.7 0.1 190);
 }
 
 @theme inline {
