@@ -1,0 +1,60 @@
+import { describe, expect, it } from 'vitest'
+import { moneyCheckRequestSchema, moneyCheckResponseSchema } from '../../contracts/market-tools.ts'
+import { MARKET_FIXTURE } from './fixture.ts'
+import { moneyCheck } from './money-check.ts'
+import { normaliseMarket } from './normalise.ts'
+
+const market = normaliseMarket(MARKET_FIXTURE)
+const check = (body: Record<string, unknown>) =>
+  moneyCheck(market, moneyCheckRequestSchema.parse(body), '2026-11-09', '2026-11-09T12:00:00.000Z')
+
+describe('the money check, one call on whatever was said', () => {
+  it('with nothing said, asks the questions that would start it', () => {
+    const result = check({})
+    expect(result.plan).toBeNull()
+    expect(result.questions[0]).toMatch(/How much is held/)
+    expect(result.questions.length).toBeLessThanOrEqual(3)
+    expect(result.presentation.join(' ')).toMatch(/To sharpen this, the customer could say: \(1\)/)
+    expect(() => moneyCheckResponseSchema.parse(result)).not.toThrow()
+  })
+
+  it('with money and no goal, builds a plan for the savings held and says so', () => {
+    const result = check({
+      situation: {
+        savings: [{ label: 'Current account', balance: 20_000, access: 'current_account' }],
+      },
+    })
+    expect(result.plan).not.toBeNull()
+    expect(result.planGoalAssumed).toMatch(/no date/)
+    expect(result.presentation.join(' ')).toMatch(/No goal was given/)
+    expect(result.questions.join(' ')).toMatch(/What is the money for/)
+  })
+
+  it('with test 2’s situation, gives the plan, money found first, and Help to Buy for the home', () => {
+    const result = check({
+      situation: {
+        monthlySaving: 800,
+        savings: [{ label: 'Current account', balance: 25_000, access: 'current_account' }],
+        debts: [
+          {
+            id: 'car',
+            label: 'Car loan',
+            kind: 'car_finance',
+            balance: 9_000,
+            ratePct: 9,
+            monthsRemaining: 36,
+          },
+        ],
+      },
+      goals: [
+        { id: 'deposit', kind: 'house_deposit', label: 'House deposit', targetDate: '2028-11' },
+      ],
+    })
+    expect(result.planGoalAssumed).toBeNull()
+    expect(result.presentation[0]).toBe(result.plan?.moneyFound.headline)
+    expect(result.presentation.join(' ')).toMatch(/Help to Buy: depends, up to €35,000/)
+    expect(result.questions.join(' ')).toMatch(/first home/)
+    expect(result.presentation.at(-1)).toMatch(/the customer decides/)
+    expect(() => moneyCheckResponseSchema.parse(result)).not.toThrow()
+  })
+})

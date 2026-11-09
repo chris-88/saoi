@@ -1365,6 +1365,53 @@ export const buildPlanResponseSchema = z.object({
 export type BuildPlanResponse = z.infer<typeof buildPlanResponseSchema>
 
 // ---------------------------------------------------------------------------------------------
+// Money check: the one-call entry
+// ---------------------------------------------------------------------------------------------
+
+export const moneyCheckRequestSchema = buildPlanRequestSchema
+  .omit({ situation: true, goals: true })
+  .extend({
+    situation: situationSchema
+      .default({ savings: [], debts: [] })
+      .describe(
+        'Whatever the customer has said about their money so far, however partial: savings and where they are, what they can save a month, loans and cards, a mortgage, income, outgoings. Leave out what was not said; never guess.',
+      ),
+    goals: z
+      .array(goalSchema)
+      .max(8)
+      .default([])
+      .describe('What the money is for, if they said: a house, a car, a buffer. Empty is fine.'),
+  })
+export type MoneyCheckRequest = z.infer<typeof moneyCheckRequestSchema>
+
+export const moneyCheckResponseSchema = z.object({
+  presentation: z
+    .array(z.string())
+    .describe(
+      'Present to the customer: the headline sentences in order, ending with the questions to ask and, when there is a plan, the link to save it.',
+    ),
+  questions: z
+    .array(z.string())
+    .max(3)
+    .describe(
+      'The two or three questions that would unlock or sharpen the plan, for the host to ask in its own words. Call this tool again with the answers.',
+    ),
+  review: reviewResponseSchema,
+  plan: buildPlanResponseSchema
+    .nullable()
+    .describe(
+      'A plan, when there was enough to build one (money to place, or a debt to weigh). Null otherwise.',
+    ),
+  planGoalAssumed: z
+    .string()
+    .nullable()
+    .describe(
+      'When no goal was given, the goal the plan was built for, stated. Null when the customer gave one.',
+    ),
+})
+export type MoneyCheckResponse = z.infer<typeof moneyCheckResponseSchema>
+
+// ---------------------------------------------------------------------------------------------
 // About: how Saoi ranks, how Saoi earns
 // ---------------------------------------------------------------------------------------------
 
