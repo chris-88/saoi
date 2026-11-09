@@ -60,7 +60,6 @@ bill, set `LLM_PROVIDER=fixture` and `LLM_FIXTURE` to a script in
 | `npm run eval:guardrails`             | Live gate against the adversarial set (needs `.env`)                                    |
 | `npm run compare:models`              | Compare models on recorded turns (needs `.env`)                                         |
 | `npm run db:types`                    | Regenerate Supabase types from the linked project                                       |
-| `npm run email:push`                  | Push auth email templates to the hosted project                                         |
 
 ## Layout
 

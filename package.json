@@ -18,7 +18,6 @@
     "eval:guardrails": "node --env-file=.env evals/guardrails/run.ts",
     "seed:generate": "node scripts/generate-seed.ts",
     "seed:check": "node scripts/generate-seed.ts check",
-    "email:push": "node scripts/push-auth-templates.mjs",
     "check:bundle": "node scripts/check-bundle-secrets.ts && node scripts/check-bundle-size.ts",
     "compare:models": "node --env-file=.env scripts/compare-models.ts",
     "db:types": "supabase gen types typescript --linked > supabase/functions/_shared/db/database.types.ts",

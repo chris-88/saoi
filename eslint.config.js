@@ -33,8 +33,6 @@ export default tseslint.config(
       // Shipped from public/ as-is, so nothing compiles it and there is no project to
       // typecheck it against. It is two event listeners, kept small for that reason.
       'public/push-sw.js',
-      // Plain ESM, run by hand to push the auth email templates to the hosted project.
-      'scripts/push-auth-templates.mjs',
       // Generated from the linked project by `npm run db:types`.
       'supabase/functions/_shared/db/database.types.ts',
     ],
