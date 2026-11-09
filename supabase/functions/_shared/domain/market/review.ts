@@ -7,6 +7,9 @@ import type {
 } from '../../contracts/market-tools.ts'
 import { costOf } from './debt.ts'
 import { attributionsOf, displayName, euro, oldestCheck } from './figures.ts'
+import { HELP_TO_BUY } from '../../market/first-home-rules.ts'
+import { firstHome } from './first-home.ts'
+import { moneyFoundForReview } from './money-found.ts'
 import { savingsCandidates } from './search.ts'
 import { DIRT_RATE, monthsUntil, round2 } from './simulate.ts'
 import type { AsOf, Market } from './types.ts'
@@ -172,6 +175,38 @@ export function review(market: Market, request: ReviewRequest, asOf: AsOf): Revi
     )
   }
 
+  // ---- A first home: Help to Buy -----------------------------------------------------------
+  const firstHomeGoal = goals.some((goal) => goal.kind === 'house_deposit')
+  if (situation.firstTimeBuyer === true || (firstHomeGoal && situation.firstTimeBuyer !== false)) {
+    const income = situation.income?.annualGross
+    const home =
+      income === undefined
+        ? null
+        : firstHome(market, {
+            annualGrossIncome: income,
+            deposit: total,
+            propertyKind: 'new_build',
+            limit: 1,
+          })
+    const withHtb = home?.lending.maxPriceWithHelpToBuy ?? null
+    findings.push({
+      kind: 'help_to_buy',
+      headline: `Help to Buy: up to ${euro(HELP_TO_BUY.capEur)} towards a new build, for a first-time buyer`,
+      detail: `Revenue refunds the lesser of 10% of a new build’s or self-build’s price (up to ${euro(HELP_TO_BUY.maxPriceEur)}), ${euro(HELP_TO_BUY.capEur)}, and the Income Tax and DIRT paid over the last four tax years, for homes bought or built by ${HELP_TO_BUY.endsOn}.${withHtb === null || home === null ? '' : ` With ${euro(total)} saved and ${euro(income ?? 0)} income, the Central Bank limits allow a price up to ${euro(home.lending.maxPriceWithoutHelpToBuy)}, or ${euro(withHtb)} for a new build with Help to Buy towards the deposit.`} saoi_first_home works it out for a price.${situation.firstTimeBuyer === undefined ? ' Assumed a first-time buyer.' : ''}`,
+      figures: {
+        capEur: HELP_TO_BUY.capEur,
+        maxPriceEur: HELP_TO_BUY.maxPriceEur,
+        ...(home === null
+          ? {}
+          : { maxPriceWithoutHelpToBuy: home.lending.maxPriceWithoutHelpToBuy }),
+        ...(withHtb === null ? {} : { maxPriceWithHelpToBuy: withHtb }),
+      },
+    })
+    assumptions.push(
+      `Help to Buy as Revenue states it (${HELP_TO_BUY.sources[1]?.url ?? ''}, checked ${HELP_TO_BUY.sources[1]?.checkedOn ?? ''}).`,
+    )
+  }
+
   // ---- Candidate goals -------------------------------------------------------------------
   const has = (kind: Goal['kind']) => goals.some((goal) => goal.kind === kind)
   const candidateGoals: ReviewResponse['candidateGoals'] = []
@@ -219,6 +254,7 @@ export function review(market: Market, request: ReviewRequest, asOf: AsOf): Revi
 
   const compared = best === null ? [] : [best.product]
   return {
+    moneyFound: moneyFoundForReview(market, situation, asOf),
     findings,
     candidateGoals,
     assumptions,

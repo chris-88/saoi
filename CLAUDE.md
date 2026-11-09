@@ -272,6 +272,7 @@ The engine behind the Saoi MCP tools, in `_shared/domain/market/` (pure; contrac
 | `POST /api/calc/mortgage`                  | `saoi_mortgage`           | affordability (Central Bank limits) or switch      |
 | `POST /api/calc/debt`                      | `saoi_debt`               | cost, payoff order, overpay versus save, refinance |
 | `POST /api/calc/build-plan`                | `saoi_build_plan`         | a `MarketPlan` for `POST /api/plans`               |
+| `POST /api/calc/first-home`                | `saoi_first_home`         | Help to Buy, CB limits with it, green rates        |
 
 - **Normalised** (`normalise.ts`): one view per product. CCPC's one-row-per-term fixed deposits
   fold into ladders; Bank of Ireland's own rows replace their CCPC twins by the pairing in
@@ -291,6 +292,16 @@ The engine behind the Saoi MCP tools, in `_shared/domain/market/` (pure; contrac
   both figures; `whatIf` gives an extra €100 a month, each debt cleared or kept, and the month a
   target is reached; a cleared debt's repayment is saved and the reasoning says so. Review and
   plan results carry `next`, the offer to save for the host to relay.
+- **Money found** (`money-found.ts`): review and plan results lead with `moneyFound`, one euro a
+  year in parts (idle cash against the best confirmed instant-access rate after DIRT, debt
+  interest not paid less what the money would earn, a mortgage switch at a band reaching 90% LTV,
+  no green rate), each with its source and checked date. A rate resting on CCPC's one figure, a
+  current rate not given, bonuses and cashback are shown in `notCounted`, never in the total.
+- **First home** (`first-home.ts`): the rules live in `_shared/market/first-home-rules.ts` with
+  their Revenue and Central Bank pages and dates (Help to Buy cap €35,000 for applications from
+  7 October 2026, to 31 December 2029; LTI 4 and 3.5, LTV 90%, 15% allowances). The First Home
+  shared equity scheme is recorded as not confirmed and stated as nothing more. The review adds a
+  `help_to_buy` finding and the plan's affordability adds Help to Buy for a first-time buyer.
 - **Rules** that hold everywhere: DIRT at 33% except DIRT-free products; interest credited
   yearly; an unknown is never zero and never assumed to hold, so a fixed term or an introductory
   rate with no stated reversion ends the figures there and says so; bonuses are never interest;

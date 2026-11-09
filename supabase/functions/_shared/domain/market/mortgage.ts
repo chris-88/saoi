@@ -4,6 +4,7 @@ import type {
   SwitchRequest,
   SwitchResponse,
 } from '../../contracts/market-tools.ts'
+import { MORTGAGE_MEASURES } from '../../market/first-home-rules.ts'
 import { attributionsOf, euro, oldestCheck } from './figures.ts'
 import { DEFAULT_LIMIT, DEFAULT_MORTGAGE_TERM_YEARS, mortgageCandidates } from './search.ts'
 import { annuityPayment, round2 } from './simulate.ts'
@@ -13,21 +14,25 @@ import type { Market } from './types.ts'
  * What a deposit and an income allow under the Central Bank's mortgage measures, and what a
  * switch is worth against the market.
  *
- * The limits are the Central Bank of Ireland's, effective 1 January 2023 (checked on its
- * consumer hub, 2026-11-09): loan-to-income 4 times gross income for first-time buyers and 3.5
- * for second and subsequent buyers; loan-to-value 90% for both. Lenders may go above them for
- * 15% of their new lending (the allowances), which this does not assume.
+ * The limits are the Central Bank of Ireland's, recorded with their source in
+ * `market/first-home-rules.ts`: loan-to-income 4 times gross income for first-time buyers and
+ * 3.5 for second and subsequent buyers; loan-to-value 90% for both. Lenders may go above them
+ * for 15% of their lending (the allowances), which this does not assume.
  */
 
 export const CENTRAL_BANK_LIMITS = {
-  first_time_buyer: { loanToIncome: 4, maxLtvPct: 90 },
-  second_and_subsequent: { loanToIncome: 3.5, maxLtvPct: 90 },
+  first_time_buyer: {
+    loanToIncome: MORTGAGE_MEASURES.first_time_buyer.loanToIncome,
+    maxLtvPct: MORTGAGE_MEASURES.first_time_buyer.maxLtvPct,
+  },
+  second_and_subsequent: {
+    loanToIncome: MORTGAGE_MEASURES.second_and_subsequent.loanToIncome,
+    maxLtvPct: MORTGAGE_MEASURES.second_and_subsequent.maxLtvPct,
+  },
 } as const
 
-const LIMITS_SOURCE =
-  'Central Bank of Ireland mortgage measures, limits effective 1 January 2023 (centralbank.ie).'
-const ALLOWANCE =
-  'Lenders may lend above these limits for up to 15% of their new lending each year (an "exemption"). The figures here assume no exemption.'
+const LIMITS_SOURCE = `Central Bank of Ireland mortgage measures (${MORTGAGE_MEASURES.source.url}, checked ${MORTGAGE_MEASURES.source.checkedOn}).`
+const ALLOWANCE = MORTGAGE_MEASURES.allowance
 
 export function affordability(
   market: Market,

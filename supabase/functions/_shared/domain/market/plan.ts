@@ -12,7 +12,10 @@ import type { MarketPlan, PlanProduct } from '../../contracts/market-plan.ts'
 import { allocatable, allocate, type AllocationLine } from './allocate.ts'
 import { debtMonthlyRate, payoffOrder, repaymentOf } from './debt.ts'
 import { displayName, euro, interestToClear } from './figures.ts'
+import { HELP_TO_BUY } from '../../market/first-home-rules.ts'
+import { firstHome } from './first-home.ts'
 import { affordability } from './mortgage.ts'
+import { moneyFoundForPlan } from './money-found.ts'
 import { project } from './projection.ts'
 import { monthlyOutgoings } from './review.ts'
 import { guaranteeFlag, SAVINGS_ASSUMPTIONS, UNCONFIRMED_RATE } from './search.ts'
@@ -444,14 +447,39 @@ export function buildPlan(
       limit: 1,
     })
     const note = `A ${euro(deposit)} deposit and ${euro(situation.income.annualGross)} gross income support a price up to ${euro(result.maxPrice)} under the Central Bank limits (the ${result.bindingLimit} limit binds)${situation.firstTimeBuyer === undefined ? ', as a first-time buyer' : ''}.`
+    let helpToBuy: NonNullable<BuildPlanResponse['affordability']>['helpToBuy'] = null
+    if (situation.firstTimeBuyer !== false) {
+      const home = firstHome(market, {
+        annualGrossIncome: situation.income.annualGross,
+        deposit,
+        propertyKind: 'new_build',
+        firstTimeBuyer: true,
+        limit: 1,
+      })
+      const withHtb = home.lending.maxPriceWithHelpToBuy
+      const htbAt = home.helpToBuy.upToEur
+      const htbNote =
+        withHtb === null
+          ? `Help to Buy would not raise the price the limits allow here.`
+          : `For a new build or self-build, Help to Buy (up to ${euro(htbAt)} at that price: 10% of it, at most ${euro(HELP_TO_BUY.capEur)}, and no more than the Income Tax and DIRT paid over the last four years, not given) counted towards the deposit lifts that to ${euro(withHtb)}.`
+      helpToBuy = {
+        upToEur: htbAt,
+        maxPriceWithHelpToBuy: withHtb,
+        note: htbNote,
+        sourceUrl: HELP_TO_BUY.sources[1]?.url ?? '',
+        checkedOn: HELP_TO_BUY.sources[1]?.checkedOn ?? '',
+      }
+    }
     afford = {
       deposit,
       maxPrice: result.maxPrice,
       maxLoanByIncome: result.maxLoanByIncome,
       bindingLimit: result.bindingLimit,
       note,
+      helpToBuy,
     }
     reasoning.push(note)
+    if (helpToBuy !== null) reasoning.push(helpToBuy.note)
     assumptions.push(clip(note, 300))
   }
 
@@ -507,7 +535,42 @@ export function buildPlan(
     dataCheckedAt: [...products.map((product) => product.checkedAt)].sort()[0] ?? createdAt,
   }
 
+  const moneyFound = moneyFoundForPlan(market, situation, {
+    horizonMonths: horizon,
+    lumps: allLines.flatMap((line) =>
+      line.lumpSum > 0 && line.product.terms.kind === 'deposit'
+        ? [
+            {
+              product: line.product,
+              amount: line.lumpSum,
+              netInterest12: simulateDeposit(line.product.terms, {
+                lumpSum: line.lumpSum,
+                monthly: 0,
+                horizonMonths: 12,
+                termMonths: line.termMonths ?? undefined,
+                asOf,
+              }).figures.netInterest,
+            },
+          ]
+        : [],
+    ),
+    cleared: chosen.scenarios.flatMap((scenario) =>
+      scenario.chosen === 'cleared'
+        ? [
+            {
+              label:
+                situation.debts.find((debt) => debt.id === scenario.debtId)?.label ??
+                scenario.debtId,
+              keptNet: scenario.kept.netPosition,
+              clearedNet: scenario.cleared.netPosition,
+            },
+          ]
+        : [],
+    ),
+  })
+
   return {
+    moneyFound,
     plan,
     horizonMonths: horizon,
     knownThroughMonth: current.knownThrough,
