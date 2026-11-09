@@ -873,6 +873,51 @@ export type Database = {
           },
         ]
       }
+      market_products: {
+        Row: {
+          category: string
+          checked_at: string
+          conditions: Json
+          effective_from: string | null
+          first_seen_at: string
+          id: number
+          product_id: string
+          provider: string
+          provider_product_name: string
+          rates: Json
+          source_url: string
+          superseded_at: string | null
+        }
+        Insert: {
+          category: string
+          checked_at: string
+          conditions: Json
+          effective_from?: string | null
+          first_seen_at?: string
+          id?: never
+          product_id: string
+          provider: string
+          provider_product_name: string
+          rates: Json
+          source_url: string
+          superseded_at?: string | null
+        }
+        Update: {
+          category?: string
+          checked_at?: string
+          conditions?: Json
+          effective_from?: string | null
+          first_seen_at?: string
+          id?: never
+          product_id?: string
+          provider?: string
+          provider_product_name?: string
+          rates?: Json
+          source_url?: string
+          superseded_at?: string | null
+        }
+        Relationships: []
+      }
       messages: {
         Row: {
           cards: Json
@@ -1531,6 +1576,10 @@ export type Database = {
         Returns: string
       }
       is_admin: { Args: never; Returns: boolean }
+      market_record_refresh: {
+        Args: { p_products: Json; p_provider: string; p_retired?: string[] }
+        Returns: Json
+      }
       messages_by_day: {
         Args: { from_ts: string; to_ts: string }
         Returns: {
