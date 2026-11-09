@@ -9,6 +9,7 @@ import {
   type Situation,
 } from '../../contracts/market-tools.ts'
 import { debts } from './debt.ts'
+import { euro } from './figures.ts'
 import { MARKET_FIXTURE } from './fixture.ts'
 import { affordability, switchMortgage } from './mortgage.ts'
 import { normaliseMarket } from './normalise.ts'
@@ -81,7 +82,7 @@ describe('worked example: review_situation', () => {
     )
     expect(() => reviewResponseSchema.parse(result)).not.toThrow()
     expect(result.next).toMatch(/saoi_build_plan/)
-    expect(result.next).toMatch(/saoi_save_plan/)
+    expect(result.next).toMatch(/24 hours/)
     noAdvice(result)
   })
 })
@@ -332,7 +333,7 @@ describe('build_plan: what the first Claude test showed (2026-11-09)', () => {
     expect(result.whatIf.extraMonthly?.addsAtHorizon).toBeGreaterThan(2_400)
     expect(result.whatIf.extraMonthly?.addsAtHorizon).toBeLessThan(2_600)
     expect(result.whatIf.lines.join(' ')).toMatch(/Car loan: cleared from the lump sum/)
-    expect(result.next).toMatch(/saoi_save_plan/)
+    expect(result.next).toMatch(/24 hours/)
     expect(result.next).toMatch(/Saoirse/)
     // Only what exists is promised; what is not built yet says so.
     expect(result.next).toMatch(/coming, not built yet/)
@@ -400,5 +401,115 @@ describe('build_plan: what the first Claude test showed (2026-11-09)', () => {
       expect(product.depositGuarantee?.scheme).toBeTruthy()
       expect(product.depositGuarantee?.sourceUrl).toMatch(/^https:\/\//)
     }
+  })
+})
+
+describe('what the host reads first (after the second Claude test)', () => {
+  const asked: Situation = {
+    monthlySaving: 800,
+    savings: [{ label: 'Current account', balance: 25_000, access: 'current_account' }],
+    debts: [
+      {
+        id: 'car',
+        label: 'Car loan',
+        kind: 'car_finance',
+        balance: 9_000,
+        ratePct: 9,
+        monthsRemaining: 36,
+      },
+    ],
+  }
+  const home = {
+    id: 'deposit',
+    kind: 'house_deposit' as const,
+    label: 'House deposit',
+    targetDate: '2028-11',
+    priority: 1,
+  }
+  const result = buildPlan(
+    market,
+    buildPlanRequestSchema.parse({ situation: asked, goals: [home] }),
+    AS_OF,
+    CREATED,
+  )
+  const text = result.presentation.join('\n')
+  /** Imperatives the host copied in test 2. */
+  const DIRECTIVE = /(^|[.:;]\s+)(Clear|Pay off|Set up|Move|Ask|Open|Put|Get)\b/m
+
+  it('leads with money found, then one net figure per scenario, and no orders', () => {
+    expect(result.presentation[0]).toBe(result.moneyFound.headline)
+    const scenario = result.debtScenarios[0]
+    expect(scenario).toBeDefined()
+    if (scenario === undefined) return
+    expect(text).toContain(`cleared from savings now, ${euro(scenario.cleared.netPosition)}`)
+    expect(text).toContain(`kept, ${euro(scenario.kept.netPosition)}`)
+    expect(text).toMatch(/savings less what is still owed/)
+    expect(text).not.toMatch(DIRECTIVE)
+    expect(result.presentation.at(-1)).toMatch(/the customer decides/)
+  })
+
+  it('never shows a gross pot without what is still owed beside it', () => {
+    const kept = buildPlan(
+      market,
+      buildPlanRequestSchema.parse({
+        situation: {
+          ...asked,
+          debts: [
+            {
+              id: 'car',
+              label: 'Car loan',
+              kind: 'car_finance',
+              balance: 9_000,
+              ratePct: 0.5,
+              monthsRemaining: 36,
+            },
+          ],
+        },
+        goals: [home],
+      }),
+      AS_OF,
+      CREATED,
+    )
+    const all = [...kept.presentation, ...kept.reasoning, ...kept.whatIf.lines].join('\n')
+    expect(kept.plan.debts[0]?.action).toBe('keep_paying')
+    expect(all).toMatch(/net at November 2028 \(€[\d,.]+ saved less €[\d,.]+ still owed\)/)
+    expect(all).not.toMatch(/projected at November 2028/)
+  })
+
+  it('carries Help to Buy for a house deposit, even without income', () => {
+    expect(result.helpToBuy?.status).toBe('depends')
+    expect(result.helpToBuy?.upToEur).toBe(35_000)
+    expect(text).toMatch(/Help to Buy: depends, up to €35,000/)
+    const withTax = buildPlan(
+      market,
+      buildPlanRequestSchema.parse({
+        situation: asked,
+        goals: [home],
+        homePrice: 300_000,
+        propertyKind: 'new_build',
+        taxPaidLastFourYearsEur: 40_000,
+      }),
+      AS_OF,
+      CREATED,
+    )
+    expect(withTax.helpToBuy).toMatchObject({ status: 'available', amountEur: 30_000 })
+    const secondHand = buildPlan(
+      market,
+      buildPlanRequestSchema.parse({
+        situation: asked,
+        goals: [home],
+        propertyKind: 'second_hand',
+      }),
+      AS_OF,
+      CREATED,
+    )
+    expect(secondHand.helpToBuy?.status).toBe('not_available')
+  })
+
+  it('in the review, leads with money found and gives no orders', () => {
+    const reviewed = review(market, { situation: asked, goals: [home] }, AS_OF)
+    expect(reviewed.presentation[0]).toBe(reviewed.moneyFound.headline)
+    expect(reviewed.presentation.join('\n')).not.toMatch(DIRECTIVE)
+    expect(reviewed.candidateGoals.map((goal) => goal.label).join(' ')).not.toMatch(/^Clear |^Put /)
   })
 })

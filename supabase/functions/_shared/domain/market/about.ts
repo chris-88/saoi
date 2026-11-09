@@ -75,8 +75,9 @@ not in the comparison data, so every result says to check eligibility with the p
 
 const EARNINGS = `# How Saoi earns
 
-Saoi is free to use. Nothing about a customer is stored until they choose to save a plan into
-the Saoi app.
+Saoi is free to use. Nothing about a customer is stored except a plan they build: it is held
+for 24 hours behind a single-use link so they can open it in the Saoi app, then deleted unless
+opened.
 
 ## Referral fees, disclosed, never used in ranking
 

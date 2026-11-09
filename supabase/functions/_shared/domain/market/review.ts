@@ -223,14 +223,14 @@ export function review(market: Market, request: ReviewRequest, asOf: AsOf): Revi
   ) {
     candidateGoals.push({
       kind: 'pay_off_debt',
-      label: 'Clear the highest-rate debt',
+      label: 'Clearing the highest-rate debt',
       why: 'A debt costs more in interest than any savings account earns.',
     })
   }
   if (!has('grow_savings') && findings.some((f) => f.kind === 'idle_money')) {
     candidateGoals.push({
       kind: 'grow_savings',
-      label: 'Put idle money to work',
+      label: 'Idle money earning more',
       why: 'Money is held at a rate well below what instant access pays.',
     })
   }
@@ -247,14 +247,29 @@ export function review(market: Market, request: ReviewRequest, asOf: AsOf): Revi
   ) {
     candidateGoals.push({
       kind: 'switch_mortgage',
-      label: 'Compare the mortgage with switcher rates',
+      label: 'The mortgage against switcher rates',
       why: 'A mortgage rate was given; the market’s switcher rates can be set against it.',
     })
   }
 
   const compared = best === null ? [] : [best.product]
+  const moneyFound = moneyFoundForReview(market, situation, asOf)
+  const presentation = [
+    moneyFound.headline,
+    ...findings
+      .filter((finding) => finding.kind !== 'unknown_rate')
+      .slice(0, 4)
+      .map((finding) => `${finding.headline}.`),
+    ...(findings.some((finding) => finding.kind === 'unknown_rate')
+      ? [
+          'Some savings had no rate given, so what they earn now is not compared; with the rate, the figures can include them.',
+        ]
+      : []),
+    'These are figures for the inputs given; the customer decides what matters. With goals chosen, saoi_build_plan works out a plan and returns a link to open it in the Saoi app.',
+  ]
   return {
-    moneyFound: moneyFoundForReview(market, situation, asOf),
+    presentation,
+    moneyFound,
     findings,
     candidateGoals,
     assumptions,
@@ -266,9 +281,9 @@ export function review(market: Market, request: ReviewRequest, asOf: AsOf): Revi
 
 /** What the host relays after a review: the way to a plan, and what saving it adds. */
 export const REVIEW_NEXT = [
-  'Nothing has been stored. These findings are figures for the customer to weigh; they decide what matters.',
+  'Nothing is stored from a review. These findings are figures for the customer to weigh; they decide what matters.',
   'Once they have chosen goals (with an amount and a date where they have one), saoi_build_plan turns this into a plan with products, figures and the month each goal is reached.',
-  'A plan can then be saved into the Saoi app with saoi_save_plan: it opens there as a card that Saoirse, Saoi’s assistant, knows and can talk through, and signing in keeps it across devices.',
+  'Every plan comes with a link that opens it in the Saoi app, held for 24 hours and then deleted unless opened: a card that Saoirse, Saoi’s assistant, knows and can talk through, and signing in keeps it across devices.',
 ].join(' ')
 
 function byPriority(a: Goal, b: Goal): number {

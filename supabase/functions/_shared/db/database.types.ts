@@ -1676,6 +1676,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      sweep_saved_plans: { Args: never; Returns: number }
     }
     Enums: {
       [_ in never]: never

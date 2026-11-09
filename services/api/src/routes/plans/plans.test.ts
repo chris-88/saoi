@@ -46,6 +46,7 @@ function fakePlans(init: { savedToday?: number; withPlan?: string[] } = {}) {
       })
       return Promise.resolve({ id })
     },
+    sweep: () => Promise.resolve(0),
     savedSince: () => Promise.resolve(init.savedToday ?? 0),
     findByTokenHash: (hash) => Promise.resolve(rows.get(hash) ?? null),
     caseHasPlan: (caseId) => Promise.resolve(withPlan.has(caseId)),

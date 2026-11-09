@@ -14,7 +14,7 @@ import {
  * `saoi_savings_projection`, `saoi_mortgage`, `saoi_debt`, `saoi_build_plan`).
  *
  * Every figure is worked out by `_shared/domain/market/` from the market data in
- * `market_products`; nothing is stored. The descriptions here become the OpenAPI document, and
+ * `market_products`; nothing is stored except a plan, held as a 24-hour draft. The descriptions here become the OpenAPI document, and
  * the MCP tool descriptions are generated from that, so they are written for a model reading
  * them cold: what the field is, its unit, and what an absent value means.
  *
@@ -562,7 +562,7 @@ export const situationSchema = z
     firstTimeBuyer: z.boolean().optional(),
   })
   .describe(
-    'The customer’s circumstances. Sent with each call and never stored. Every figure is what they said.',
+    'The customer’s circumstances, sent with each call. Only a plan is ever held, as a 24-hour draft behind a single-use link. Every figure is what they said.',
   )
 export type Situation = z.infer<typeof situationSchema>
 
@@ -644,6 +644,11 @@ export const findingSchema = z.object({
 export type Finding = z.infer<typeof findingSchema>
 
 export const reviewResponseSchema = z.object({
+  presentation: z
+    .array(z.string())
+    .describe(
+      'Present to the customer: the headline sentences, in order, as options with their figures. Lead with these; the fields below are the detail behind them.',
+    ),
   moneyFound: moneyFoundSchema,
   findings: z.array(findingSchema),
   candidateGoals: z.array(
@@ -934,6 +939,11 @@ export const firstHomeRequestSchema = z.object({
 export type FirstHomeRequest = z.infer<typeof firstHomeRequestSchema>
 
 export const firstHomeResponseSchema = z.object({
+  presentation: z
+    .array(z.string())
+    .describe(
+      'Present to the customer: the headline sentences, in order, as options with their figures. Lead with these; the fields below are the detail behind them.',
+    ),
   helpToBuy: z.object({
     status: z
       .enum(['available', 'not_available', 'depends'])
@@ -1151,6 +1161,22 @@ export const buildPlanRequestSchema = z.object({
     .max(8)
     .optional()
     .describe('The most accounts the plan may open. Default 5.'),
+  homePrice: eur
+    .optional()
+    .describe(
+      'For a house deposit: the price in mind, for Help to Buy and the Central Bank limits.',
+    ),
+  propertyKind: z
+    .enum(PROPERTY_KINDS)
+    .optional()
+    .describe(
+      'For a house deposit: `new_build`, `self_build` or `second_hand`. Help to Buy is for the first two.',
+    ),
+  taxPaidLastFourYearsEur: eur
+    .optional()
+    .describe(
+      'Income Tax and DIRT paid over the last four tax years (not USC or PRSI): the most Help to Buy can be.',
+    ),
 })
 export type BuildPlanRequest = z.infer<typeof buildPlanRequestSchema>
 
@@ -1165,6 +1191,33 @@ const positionSchema = z.object({
 })
 
 export const buildPlanResponseSchema = z.object({
+  presentation: z
+    .array(z.string())
+    .describe(
+      'Present to the customer: the headline sentences, in order, as options with their figures. Lead with these; the fields below are the detail behind them.',
+    ),
+  saveLink: z
+    .object({
+      url: z.string().describe('Opens the plan in the Saoi app, once.'),
+      expiresAt: z.string(),
+    })
+    .nullable()
+    .describe(
+      'The plan held as a draft for 24 hours behind a single-use link, then deleted unless opened. Null when the draft could not be held (the daily or per-address limit); saoi_save_plan can then save it.',
+    ),
+  helpToBuy: z
+    .object({
+      status: z.enum(['available', 'not_available', 'depends']),
+      amountEur: eur.nullable(),
+      upToEur: eur,
+      note: z.string(),
+      sourceUrl: z.string(),
+      checkedOn: z.string(),
+    })
+    .nullable()
+    .describe(
+      'For a house deposit goal and a first-time buyer: Help to Buy, as far as the inputs allow. Null otherwise.',
+    ),
   moneyFound: moneyFoundSchema,
   plan: marketPlanSchema.describe(
     'The plan, in the shape `POST /api/plans` takes. Send it back unchanged to save it behind a one-time link into the Saoi app.',
