@@ -22,6 +22,11 @@ import type { AdminStores } from './store/admin/index.ts'
 import { sessionRoutes } from './routes/session/index.ts'
 import { documentRoutes } from './routes/documents/index.ts'
 import { planRoutes, type PlanRouteOptions } from './routes/plans/index.ts'
+import {
+  MARKET_ROUTE_PREFIXES,
+  marketRoutes,
+  type MarketRouteOptions,
+} from './routes/market/index.ts'
 import type { CaseStore } from './store/cases.ts'
 import type { PartnerStore } from './store/partners.ts'
 import type { SessionStore } from './store/sessions.ts'
@@ -39,6 +44,8 @@ export type AppDeps = {
   readonly turn?: TurnRouteOptions
   /** Saved plans. Unset, `/api/plans` and `/api/plans/claim` are not mounted. */
   readonly plans?: PlanRouteOptions
+  /** The public comparison API. Unset, `/api/market/*` and `/api/calc/*` are not mounted. */
+  readonly market?: MarketRouteOptions
   readonly config?: Partial<RouteConfig>
   readonly version: string
   /** Browser origins allowed by CORS. Empty or unset denies every origin. */
@@ -51,7 +58,8 @@ export type AppDeps = {
 /** Routes nobody signs in to. Each one carries its own size cap and rate limit. */
 const PUBLIC_ROUTES: ReadonlySet<string> = new Set(['POST /api/plans'])
 const isPublic = (method: string, path: string): boolean =>
-  PUBLIC_ROUTES.has(`${method} ${path.replace(/\/+$/, '')}`)
+  PUBLIC_ROUTES.has(`${method} ${path.replace(/\/+$/, '')}`) ||
+  MARKET_ROUTE_PREFIXES.some((prefix) => path.startsWith(prefix))
 
 const unlessPublic = (inner: MiddlewareHandler<AppEnv>) =>
   createMiddleware<AppEnv>((c, next) =>
@@ -171,6 +179,7 @@ export function createApp(deps: AppDeps) {
   if (deps.turn) app.route('/', turnRoutes(deps.turn))
   app.route('/', caseRoutes)
   if (deps.plans) app.route('/', planRoutes(deps.plans))
+  if (deps.market) app.route('/', marketRoutes(deps.market))
   if (deps.admin) app.route('/', adminRoutes(deps.admin))
 
   return app

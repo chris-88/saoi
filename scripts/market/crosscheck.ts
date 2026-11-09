@@ -1,3 +1,4 @@
+import { BANK_CCPC_PAIRS } from '../../supabase/functions/_shared/market/bank-ccpc-pairs.ts'
 import type { MarketProduct } from '../../supabase/functions/_shared/market/schema.ts'
 
 /**
@@ -6,31 +7,12 @@ import type { MarketProduct } from '../../supabase/functions/_shared/market/sche
  * failure, because either side can be the stale one.
  *
  * CCPC lists Advantage as three products (one per term) where the bank's page is one product
- * with a ladder, and names products its own way, so the pairing is by name, here.
+ * with a ladder, and names products its own way, so the pairing is by name, recorded once in
+ * `_shared/market/bank-ccpc-pairs.ts`.
  */
 
-type Pair = {
-  readonly bankId: string
-  /** Matches CCPC's product name. */
-  readonly ccpcName: RegExp
-  readonly category: 'savings' | 'deposit'
-  /** For one rung of a ladder: which term. */
-  readonly termMonths?: number
-}
-
-export const BOI_PAIRS: readonly Pair[] = [
-  { bankId: 'savings.supersaver', ccpcName: /^SuperSaver/i, category: 'savings' },
-  { bankId: 'savings.goalsaver', ccpcName: /^GoalSaver/i, category: 'savings' },
-  { bankId: 'savings.mortgagesaver', ccpcName: /^MortgageSaver/i, category: 'savings' },
-  { bankId: 'savings.instant_access', ccpcName: /^Instant Access Demand/i, category: 'deposit' },
-  { bankId: 'savings.notice_31_day', ccpcName: /^365 31-?Day Notice/i, category: 'deposit' },
-  ...[6, 12, 18].map((months) => ({
-    bankId: 'savings.advantage_fixed',
-    ccpcName: new RegExp(`^Advantage ${String(months)} Month Fixed`, 'i'),
-    category: 'deposit' as const,
-    termMonths: months,
-  })),
-]
+/** Bank of Ireland's pairs, from the one record of them. */
+export const BOI_PAIRS = BANK_CCPC_PAIRS.filter((pair) => pair.provider === 'boi')
 
 export type CrossCheck = {
   readonly differences: readonly string[]
