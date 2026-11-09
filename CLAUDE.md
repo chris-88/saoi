@@ -250,8 +250,37 @@ line in the refresh output. Shapes in `_shared/market/schema.ts`: `rates` is a u
   differences are warnings.
 - **Read** on a turn: only Bank of Ireland's own rows (`loadMarket`), laid over the catalogue by
   `withMarketData`: `rateOf`, the savings engine and the deposit-stack combination take every
-  figure from them. Other providers and every CCPC row stay out of turns until the comparison is
-  designed. The console's Market data screen shows all of it.
+  figure from them. Other providers and every CCPC row stay out of turns. The console's Market
+  data screen shows all of it.
+- **Compared** by the public comparison API (below), which reads every row.
+
+### The comparison engine and its public API
+
+The engine behind the Saoi MCP tools, in `_shared/domain/market/` (pure; contracts in
+`contracts/market-tools.ts`), served by saoi-api without sign-in:
+
+| Route                                      | MCP tool                  | What                                               |
+| ------------------------------------------ | ------------------------- | -------------------------------------------------- |
+| `POST /api/market/search`                  | `saoi_search_products`    | rank one category for the caller's figures         |
+| `GET /api/market/products/{id}`            | `saoi_product`            | the view, rate history, the source's words         |
+| `GET /api/market/about/{ranking,earnings}` | resources                 | how Saoi ranks; how Saoi earns                     |
+| `POST /api/calc/review-situation`          | `saoi_review_situation`   | findings with euro figures, candidate goals        |
+| `POST /api/calc/savings-projection`        | `saoi_savings_projection` | month by month, net of DIRT                        |
+| `POST /api/calc/mortgage`                  | `saoi_mortgage`           | affordability (Central Bank limits) or switch      |
+| `POST /api/calc/debt`                      | `saoi_debt`               | cost, payoff order, overpay versus save, refinance |
+| `POST /api/calc/build-plan`                | `saoi_build_plan`         | a `MarketPlan` for `POST /api/plans`               |
+
+- **Normalised** (`normalise.ts`): one view per product. CCPC's one-row-per-term fixed deposits
+  fold into ladders; Bank of Ireland's own rows replace their CCPC twins by the pairing in
+  `_shared/market/bank-ccpc-pairs.ts`; Raisin-platform products are flagged with the home
+  country's deposit guarantee; every view carries source, checked, last changed (from history),
+  attribution, unknowns and eligibility checks.
+- **Rules** that hold everywhere: DIRT at 33% except DIRT-free products; interest credited
+  yearly; an unknown is never zero and never assumed to hold, so a fixed term or an introductory
+  rate with no stated reversion ends the figures there and says so; bonuses are never interest;
+  ranking objective stated in every result; no "you should" in any text returned.
+- **Limits**: per address (`CF-Connecting-IP`, then `X-Forwarded-For`) 120 a minute, bodies 32
+  KiB. The market is read whole (paged) and held ten minutes (`store/market.ts`).
 
 ### Plans from the customer's own AI
 
