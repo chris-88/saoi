@@ -570,6 +570,53 @@ export type Situation = z.infer<typeof situationSchema>
 // Review
 // ---------------------------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------------------------
+// Money found: the headline
+// ---------------------------------------------------------------------------------------------
+
+export const MONEY_FOUND_KINDS = ['idle_cash', 'debt_interest', 'mortgage_switch'] as const
+
+export const moneyFoundSchema = z
+  .object({
+    annualEur: z
+      .number()
+      .describe(
+        'The total a year, after DIRT: the sum of `parts`. Nothing in `notCounted` is in it.',
+      ),
+    headline: z.string().describe('One line for the host to lead with.'),
+    parts: z.array(
+      z.object({
+        kind: z.enum(MONEY_FOUND_KINDS),
+        label: z.string(),
+        annualEur: z.number(),
+        detail: z.string().describe('How the figure is worked out, with its inputs.'),
+        source: z
+          .string()
+          .describe(
+            'Where the rate behind it comes from: a provider or CCPC, or the customer’s own figures.',
+          ),
+        sourceUrl: z.string().nullable(),
+        checkedAt: z.string().nullable().describe('When that rate was last checked.'),
+      }),
+    ),
+    notCounted: z
+      .array(
+        z.object({
+          label: z.string(),
+          annualEur: z.number().nullable(),
+          why: z.string(),
+        }),
+      )
+      .describe(
+        'Money that may be there but is not counted: a rate not confirmed beyond CCPC’s one figure, a current rate not given, bonuses, cashback.',
+      ),
+    basis: z.string(),
+  })
+  .describe(
+    'Money a year the figures support finding: idle cash against the best accessible rate after DIRT, debt interest not paid, a mortgage switch. Each part sourced and dated.',
+  )
+export type MoneyFound = z.infer<typeof moneyFoundSchema>
+
 export const reviewRequestSchema = z.object({
   situation: situationSchema,
   goals: z.array(goalSchema).max(8).default([]),
@@ -583,6 +630,7 @@ export const FINDING_KINDS = [
   'fixed_term_ending',
   'goal_short_at_current_pace',
   'unknown_rate',
+  'help_to_buy',
 ] as const
 
 export const findingSchema = z.object({
@@ -596,6 +644,7 @@ export const findingSchema = z.object({
 export type Finding = z.infer<typeof findingSchema>
 
 export const reviewResponseSchema = z.object({
+  moneyFound: moneyFoundSchema,
   findings: z.array(findingSchema),
   candidateGoals: z.array(
     z.object({ kind: z.enum(GOAL_KINDS), label: z.string(), why: z.string() }),
@@ -841,6 +890,144 @@ export type SwitchResponse = z.infer<typeof switchResponseSchema>
 export type MortgageResponse = z.infer<typeof mortgageResponseSchema>
 
 // ---------------------------------------------------------------------------------------------
+// First home: Help to Buy, the Central Bank limits, green rates
+// ---------------------------------------------------------------------------------------------
+
+export const PROPERTY_KINDS = ['new_build', 'self_build', 'second_hand'] as const
+
+const ruleSourceSchema = z.object({
+  fact: z.string(),
+  url: z.string(),
+  checkedOn: z.string().describe('YYYY-MM-DD the page was read.'),
+})
+
+export const firstHomeRequestSchema = z.object({
+  annualGrossIncome: eur.describe('Gross income a year, before tax; joint for two applicants.'),
+  deposit: eur.describe('Savings for the deposit, not counting Help to Buy.'),
+  propertyPrice: eur
+    .optional()
+    .describe(
+      'A price in mind (for a self-build, the approved valuation). Without it, the most the limits allow.',
+    ),
+  propertyKind: z
+    .enum(PROPERTY_KINDS)
+    .optional()
+    .describe(
+      '`new_build` bought from a builder, `self_build`, or `second_hand`. Help to Buy is for new builds and self-builds only. Absent: Help to Buy is shown as depending on it.',
+    ),
+  firstTimeBuyer: z.boolean().optional().describe('Default true.'),
+  taxPaidLastFourYearsEur: eur
+    .optional()
+    .describe(
+      'Income Tax and DIRT paid over the four tax years before applying (not USC or PRSI), across the buyers, less any Help to Buy already claimed. Help to Buy cannot be more than this. Absent: the amount is shown as "up to".',
+    ),
+  termYears: z.number().int().min(5).max(40).optional().describe('Default 30.'),
+  ber: z
+    .string()
+    .regex(/^([A-G][1-3]?|Exempt)$/i)
+    .optional()
+    .describe(
+      'The home’s BER, for green rates. Absent: green rates are shown with the BER they need.',
+    ),
+  limit: z.number().int().min(1).max(25).optional(),
+})
+export type FirstHomeRequest = z.infer<typeof firstHomeRequestSchema>
+
+export const firstHomeResponseSchema = z.object({
+  helpToBuy: z.object({
+    status: z
+      .enum(['available', 'not_available', 'depends'])
+      .describe('`depends`: on something not given (the kind of property, or tax paid).'),
+    amountEur: eur
+      .nullable()
+      .describe('The refund, when every input it rests on was given. Null otherwise.'),
+    upToEur: eur.describe(
+      'The most it could be: 10% of the price, at most the cap, before the tax-paid limit.',
+    ),
+    limitedBy: z.enum(['share_of_price', 'cap', 'tax_paid']).nullable(),
+    reasons: z
+      .array(z.string())
+      .describe('Why it is, or is not, or may be, available, with the figures.'),
+    conditions: z.array(z.string()).describe('What has to hold for it, from Revenue.'),
+    capEur: eur,
+    maxPriceEur: eur,
+    endsOn: z.string(),
+    sources: z.array(ruleSourceSchema),
+  }),
+  lending: z.object({
+    loanToIncome: z.number(),
+    maxLtvPct: z.number(),
+    allowancePct: z
+      .number()
+      .describe('The share of each lender’s lending allowed above the limits.'),
+    allowance: z.string(),
+    exemptions: z.string(),
+    maxLoanByIncome: eur,
+    maxPriceWithoutHelpToBuy: eur,
+    maxPriceWithHelpToBuy: eur
+      .nullable()
+      .describe(
+        'With Help to Buy counted towards the deposit (a new build or self-build, within its price cap). Null when it cannot apply.',
+      ),
+    forPrice: z
+      .object({
+        price: eur,
+        depositNeeded: eur.describe('10% of the price.'),
+        helpToBuy: eur.describe(
+          'Counted towards the deposit: the amount, or "up to" when tax paid was not given.',
+        ),
+        depositShortfall: eur,
+        loanNeeded: eur,
+        ltvPct: z.number(),
+        withinIncomeLimit: z.boolean(),
+        aboveIncomeLimitBy: eur,
+        helpToBuyMortgageShareMet: z
+          .boolean()
+          .nullable()
+          .describe(
+            'Whether the mortgage is at least 70% of the price, as Help to Buy needs. Null when Help to Buy does not apply.',
+          ),
+      })
+      .nullable(),
+    source: ruleSourceSchema,
+  }),
+  firstHomeScheme: z.object({
+    confirmed: z
+      .boolean()
+      .describe('False: not confirmed from a primary page; nothing about it is stated as fact.'),
+    note: z.string(),
+    source: ruleSourceSchema,
+  }),
+  greenRates: z.object({
+    note: z.string(),
+    cheapestGreen: z
+      .object({
+        productId: z.string(),
+        name: z.string(),
+        ratePct: pct,
+        berNeeded: z.string().nullable(),
+      })
+      .nullable(),
+    cheapestStandard: z
+      .object({ productId: z.string(), name: z.string(), ratePct: pct })
+      .nullable(),
+  }),
+  options: z.array(
+    z.object({
+      product: productViewSchema,
+      figures: mortgageFiguresSchema,
+      flags: z.array(z.string()),
+    }),
+  ),
+  ranking: rankingSchema,
+  assumptions: z.array(z.string()),
+  dataCheckedAt: z.string().nullable(),
+  attributions: z.array(z.string()),
+  next: z.string(),
+})
+export type FirstHomeResponse = z.infer<typeof firstHomeResponseSchema>
+
+// ---------------------------------------------------------------------------------------------
 // Debt
 // ---------------------------------------------------------------------------------------------
 
@@ -978,6 +1165,7 @@ const positionSchema = z.object({
 })
 
 export const buildPlanResponseSchema = z.object({
+  moneyFound: moneyFoundSchema,
   plan: marketPlanSchema.describe(
     'The plan, in the shape `POST /api/plans` takes. Send it back unchanged to save it behind a one-time link into the Saoi app.',
   ),
@@ -1016,10 +1204,26 @@ export const buildPlanResponseSchema = z.object({
       maxLoanByIncome: eur,
       bindingLimit: z.enum(['income', 'deposit']),
       note: z.string(),
+      helpToBuy: z
+        .object({
+          upToEur: eur.describe('Help to Buy at the price shown, before the tax-paid limit.'),
+          maxPriceWithHelpToBuy: eur
+            .nullable()
+            .describe(
+              'The highest price the limits allow with Help to Buy towards the deposit, for a new build or self-build.',
+            ),
+          note: z.string(),
+          sourceUrl: z.string(),
+          checkedOn: z.string(),
+        })
+        .nullable()
+        .describe(
+          'For a first-time buyer: what Help to Buy would add for a new build. Null otherwise.',
+        ),
     })
     .nullable()
     .describe(
-      'For a house deposit with an income given: what the projected deposit supports under the Central Bank limits.',
+      'For a house deposit with an income given: what the projected deposit supports under the Central Bank limits, and for a first-time buyer, with Help to Buy.',
     ),
   unplaced: z.object({ lumpSum: eur, monthly: eur }),
   liquidity: z

@@ -7,6 +7,8 @@ import {
   buildPlanResponseSchema,
   debtRequestSchema,
   debtResponseSchema,
+  firstHomeRequestSchema,
+  firstHomeResponseSchema,
   mortgageRequestSchema,
   mortgageResponseSchema,
   productDetailSchema,
@@ -19,6 +21,7 @@ import {
 } from '@shared/contracts/market-tools.ts'
 import { ABOUT } from '@shared/domain/market/about.ts'
 import { debts } from '@shared/domain/market/debt.ts'
+import { firstHome } from '@shared/domain/market/first-home.ts'
 import { affordability, switchMortgage } from '@shared/domain/market/mortgage.ts'
 import { buildPlan } from '@shared/domain/market/plan.ts'
 import { productDetail } from '@shared/domain/market/product.ts'
@@ -227,6 +230,31 @@ const debtRoute = createRoute({
   },
 })
 
+const firstHomeRoute = createRoute({
+  method: 'post',
+  path: '/api/calc/first-home',
+  tags: ['calc'],
+  summary:
+    'A first home: Help to Buy, the Central Bank limits with it, green rates, the mortgages that fit',
+  description:
+    'For a first-time buyer: Help to Buy (Revenue: new builds and self-builds up to €500,000; ' +
+    'the lesser of 10% of the price, €35,000 and Income Tax and DIRT paid over the last four ' +
+    'tax years; a mortgage of at least 70%; bought by 31 December 2029), what is available, not ' +
+    'available, or depends on something not given; the Central Bank limits (loan to income 4 ' +
+    'times, loan to value 90%, the 15% allowances, the exemptions) with Help to Buy counted ' +
+    'towards the deposit; for a price, the deposit needed, the shortfall and whether the loan is ' +
+    'within the income limit; green rates from the market data (no rule sets them; lenders do); ' +
+    'the First Home shared equity scheme only as far as it is confirmed; and the mortgages that ' +
+    'fit, ranked by total cost. Every rule carries its source page and the day it was read. ' +
+    INFORMATION,
+  security: [],
+  request: { body: jsonBody(firstHomeRequestSchema.openapi('FirstHome')) },
+  responses: {
+    ...ok('The first-home figures.', firstHomeResponseSchema.openapi('FirstHomeResult')),
+    ...publicErrors,
+  },
+})
+
 const buildPlanRoute = createRoute({
   method: 'post',
   path: '/api/calc/build-plan',
@@ -347,6 +375,12 @@ export function marketRoutes(options: MarketRouteOptions) {
     const body = c.req.valid('json')
     const loaded = await market()
     return c.json(await calculate(() => debts(loaded, body, dublinDate(now()))), 200)
+  })
+
+  routes.openapi(firstHomeRoute, async (c) => {
+    const body = c.req.valid('json')
+    const loaded = await market()
+    return c.json(await calculate(() => firstHome(loaded, body)), 200)
   })
 
   routes.openapi(buildPlanRoute, async (c) => {
