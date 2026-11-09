@@ -221,8 +221,10 @@ What providers publish about their products, from two sources, side by side with
 history (`market_products.source`):
 
 - `bank`: the provider's own website, deep: the rates, limits and bonus conditions the savings
-  engine reasons on. Bank of Ireland's six savings and deposit products only
-  (`_shared/market/boi-sources.ts`, parsers in `scripts/market/boi.ts`).
+  engine reasons on. Bank of Ireland's six savings and deposit products
+  (`_shared/market/boi-sources.ts`, parsers in `scripts/market/boi.ts`), and bunq's savings
+  account (`scripts/market/bunq.ts`), whose 3.11% is a bonus until the next 1 January or 1 July
+  and then only above a threshold: stored as `rates.thresholdBonus`, modelled month by month.
 - `ccpc`: the Competition and Consumer Protection Commission's comparison tables, broad: every
   provider CCPC lists, in savings, deposits, mortgages, loans, credit cards and current accounts
   (`scripts/market/ccpc.ts`, read from the JSON API behind ccpc.ie at compare.ccpc.ie). Rows
@@ -238,8 +240,9 @@ line in the refresh output. Shapes in `_shared/market/schema.ts`: `rates` is a u
 
 - **Stored** as versioned rows: a changed record supersedes the current row and inserts a new
   one, an unchanged one moves `checked_at`. `market_record_refresh(provider, source, ...)` writes
-  one provider from one source in one transaction. `_shared/market/boi.snapshot.ts` (generated)
-  is the bank-direct fallback when the table is empty; CCPC has no snapshot.
+  one provider from one source in one transaction. `_shared/market/<provider>.snapshot.ts`
+  (generated, Bank of Ireland and bunq) are the bank-direct fallback when the table is empty;
+  a turn's fallback takes Bank of Ireland's only. CCPC has no snapshot.
 - **Refreshed** by `npm run market:refresh` (dry run and diff), `-- --snapshot`, `-- --db` (needs
   `SUPABASE_URL=http://127.0.0.1:8002` and the service role key from
   `pass show infra/saoi/SERVICE_ROLE_KEY`), `-- --provider boi`, `-- --source ccpc`. Weekly by the
@@ -278,7 +281,10 @@ The engine behind the Saoi MCP tools, in `_shared/domain/market/` (pure; contrac
 - **Rules** that hold everywhere: DIRT at 33% except DIRT-free products; interest credited
   yearly; an unknown is never zero and never assumed to hold, so a fixed term or an introductory
   rate with no stated reversion ends the figures there and says so; bonuses are never interest;
-  ranking objective stated in every result; no "you should" in any text returned.
+  ranking objective stated in every result; no "you should" in any text returned. A savings or
+  deposit rate resting on CCPC's one figure (no provider page read, no stated reversion) is
+  `rateConfirmed: false` and flagged when it ranks in the top three, and in plans and
+  projections, until a bank-direct row confirms it.
 - **Limits**: per address (`CF-Connecting-IP`, then `X-Forwarded-For`) 120 a minute, bodies 32
   KiB. The market is read whole (paged) and held ten minutes (`store/market.ts`).
 
