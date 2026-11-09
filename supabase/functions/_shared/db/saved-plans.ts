@@ -116,10 +116,11 @@ function provenanceOf(product: PlanProduct): string {
 }
 
 const DEBT_ACTIONS: Record<MarketPlan['debts'][number]['action'], string> = {
-  pay_off_first: 'pay off first',
-  overpay: 'overpay',
-  keep_paying: 'keep paying as now',
-  refinance: 'refinance',
+  // Options with their figures, not instructions: the customer decides.
+  pay_off_first: 'cleared from the lump sum in this plan',
+  overpay: 'part paid from the lump sum in this plan',
+  keep_paying: 'kept as it is in this plan',
+  refinance: 'refinancing compared in this plan',
 }
 
 function debtLines(plan: MarketPlan): string[] {

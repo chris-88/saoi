@@ -41,7 +41,7 @@ describe('the plan card', () => {
     expect(card.products[1]?.provenance).toBe('CCPC, checked 9 Nov 2026')
     expect(card.products[1]?.unknowns).toEqual(['Monthly maximum', 'Rate after the first year'])
     expect(card.debts).toEqual([
-      'Car loan: overpay. At 9% it costs more than any savings account pays, so €5,000 of the €25,000 goes to it now. Costs €1,276 as it is, €551 this way.',
+      'Car loan: part paid from the lump sum in this plan. At 9% it costs more than any savings account pays, so €5,000 of the €25,000 goes to it now. Costs €1,276 as it is, €551 this way.',
     ])
     // CCPC's attribution travels once, however many products came from it.
     expect(card.attributions).toEqual([
@@ -100,7 +100,7 @@ describe('what the model is told', () => {
       id: PLAN_ID,
       plan: { ...base, recommendation: { products: [] } },
     })
-    expect(lines.at(-1)).toMatch(/^Next: Car loan: overpay\./)
+    expect(lines.at(-1)).toMatch(/^Next: Car loan: part paid from the lump sum in this plan\./)
   })
 })
 
