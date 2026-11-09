@@ -87,7 +87,7 @@ saoi-api, services/api (Node, Hono; service role; holds ANTHROPIC_API_KEY, VAPID
                 config, case inspection, metrics
 
 Postgres
-  31 tables. Core: cases, participants, participant_sessions, customers
+  32 tables. Core: cases, participants, participant_sessions, customers
   (synthetic bank-held), facts, messages, events, consents, tokens.
   Applications: applications, application_requests, application_confirmations,
   documents, product_interests.
@@ -95,7 +95,7 @@ Postgres
   need_decisions.
   Forms: form_applications, form_answers.
   Config and ops: persona_config, domain_config, catalogue_overrides,
-  product_catalogue, mortgage_rates,
+  product_catalogue, mortgage_rates, market_products,
   admin_users, push_subscriptions.
   Open banking, simulated: linked_accounts, linked_transactions, transfers.
   Feedback and collaborators: feedback, collaborators.
@@ -212,6 +212,27 @@ A requirement satisfied by a fact that was bank-held or captured for a different
 `_shared/tenants/demo/products.ts`: names, plain-language descriptions, eligibility notes, illustrative terms clearly marked synthetic. Saoirse states product details only from this catalogue (§51).
 
 The knowledge base the prompt is built from (`kb-prompt.ts`) and the mortgage rate table (`mortgage-rates-select.ts`) take their data as an argument. Every turn reads `product_catalogue` and `mortgage_rates` at the start (`_shared/db/catalogue.ts`) and passes the rows in when there are any, the compiled files when there are none. The console's Products & rates screen loads the files into rows, then edits, adds, switches off and restores them; each payload is validated against the file's own shape (`contracts/catalogue.ts`) on the way in, and a row is re-validated on the way out, so Saoirse can be handed a different catalogue but never a malformed one. A write to an empty table copies the file in first, so one edited product never becomes the whole catalogue.
+
+### Market data
+
+What a provider publishes today about the products Saoi models: rates, limits and bonus
+conditions, each with its `source_url`, `checked_at` and (where the page says) `effective_from`.
+Bank of Ireland's six savings and deposit products only, so far (`_shared/market/boi-sources.ts`).
+Shapes in `_shared/market/schema.ts`; `rates` is a union on `kind`, so mortgages and loans join
+as new members.
+
+- **Stored** as versioned rows in `market_products`: a changed rate supersedes the current row
+  and inserts a new one, an unchanged one moves `checked_at`. `market_record_refresh` does a whole
+  run in one transaction. `_shared/market/boi.snapshot.ts` (generated) is the fallback when the
+  table is empty and the record in git.
+- **Refreshed** by `npm run market:refresh` (dry run and diff), `-- --snapshot` (rewrite the
+  snapshot), `-- --db` (write the table; needs `SUPABASE_URL=http://127.0.0.1:8002` and the
+  service role key from `pass show infra/saoi/SERVICE_ROLE_KEY`). It reads robots.txt first (PDFs
+  are disallowed, so the HTML product pages are the source), and any page it cannot parse stops
+  the run with nothing written.
+- **Read** at the start of a turn (`loadMarket`) and laid over the catalogue by `withMarketData`:
+  `rateOf`, the savings engine's options and the deposit-stack combination take every figure from
+  the record. A covered product with no current record shows no rate.
 
 ### Open banking, simulated
 
@@ -438,7 +459,7 @@ supabase/
 services/
   api/                      saoi-api: Hono service (its own package), the whole backend;
                             bundles supabase/functions/_shared via @shared
-scripts/                    seed generator, model comparison
+scripts/                    seed generator, model comparison, market/ (the market data refresh)
 tests/                      schema-drift test
 evals/guardrails/           cases.jsonl + runner
 .github/workflows/          ci.yml (shared checks, api, api-integration, api-image)
