@@ -326,11 +326,20 @@ export function moneyFoundForPlan(
     }
   }
 
+  // A debt the plan could not work out both ways: the review's figure (a year's interest on the
+  // balance, less what the same money earns in the plan's best confirmed account), shown only.
+  const bestLump = [...input.lumps]
+    .filter((lump) => lump.product.rateConfirmed && lump.amount > 0)
+    .sort((a, b) => b.netInterest12 / b.amount - a.netInterest12 / a.amount)[0]
   for (const debt of input.uncompared ?? []) {
+    const interest = (debt.balance * debt.ratePct) / 100
+    const forgone =
+      bestLump === undefined ? 0 : (debt.balance * bestLump.netInterest12) / bestLump.amount
+    const could = whole(interest - forgone)
     notCounted.push({
       label: `${debt.label} cleared from savings`,
-      annualEur: null,
-      why: `At ${String(debt.ratePct)}% on ${euro(debt.balance)} it costs about ${euro(whole((debt.balance * debt.ratePct) / 100))} a year in interest, but its monthly repayment and months left were not given, so clearing it is not worked out or counted.`,
+      annualEur: could > 0 ? could : null,
+      why: `At ${String(debt.ratePct)}% on ${euro(debt.balance)} it costs about ${euro(whole(interest))} a year in interest${bestLump === undefined ? '' : `, against about ${euro(whole(forgone))} the same money would earn after DIRT in ${displayName(bestLump.product)}`}. Its monthly repayment and months left were not given, so the plan does not work out clearing it and the figure is not counted.`,
     })
   }
 
