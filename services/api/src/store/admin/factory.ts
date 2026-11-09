@@ -7,6 +7,7 @@ import type { AdminExternals } from './externals.ts'
 import { supabaseAdminFormsStore } from './forms.ts'
 import type { AdminStores } from './index.ts'
 import { supabaseAdminInspectStore } from './inspect.ts'
+import { supabaseAdminMarketStore } from './market.ts'
 import { supabaseAdminOverviewStore } from './overview.ts'
 import { supabaseAdminPushStore } from './push.ts'
 import { supabaseAdminSimulateStore } from './simulate.ts'
@@ -20,6 +21,7 @@ export function createAdminStores(db: Db, externals: AdminExternals): AdminStore
     config: supabaseAdminConfigStore(db, externals),
     forms: supabaseAdminFormsStore(db),
     inspect: supabaseAdminInspectStore(db),
+    market: supabaseAdminMarketStore(db),
     overview: supabaseAdminOverviewStore(db),
     push: supabaseAdminPushStore(db, externals),
     simulate: supabaseAdminSimulateStore(db),
