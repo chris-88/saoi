@@ -28,6 +28,15 @@ describe('search: deposits', () => {
     expect(result.attributions[0]).toMatch(/CCPC|Competition/)
   })
 
+  it('flags a top-three rate that rests on CCPC’s one figure, and only the top three', () => {
+    const result = search(market, { category: 'deposit', amount: 10_000, limit: 10 }, AS_OF)
+    result.results.forEach((row) => {
+      const flagged = row.flags.some((flag) => /not confirmed/.test(flag))
+      expect(flagged, row.product.id).toBe(row.rank <= 3 && !row.product.rateConfirmed)
+    })
+    expect(result.results.slice(0, 3).some((row) => !row.product.rateConfirmed)).toBe(true)
+  })
+
   it('takes `limit` and an objective', () => {
     const result = search(
       market,

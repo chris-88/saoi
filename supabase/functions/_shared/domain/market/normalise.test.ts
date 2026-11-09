@@ -86,7 +86,7 @@ describe('normaliseMarket', () => {
     // Raisin Bank itself is reached through the platform too.
     expect(view('raisin_bank:deposit.c8504').platform?.name).toBe('Raisin')
     // A foreign bank that is not on the platform: guarantee, no platform.
-    const bunq = view('bunq:deposit.c3147')
+    const bunq = view('bunq:deposit.bunq_savings')
     expect(bunq.platform).toBeNull()
     expect(bunq.depositGuarantee?.country).toBe('Netherlands')
     // An Irish bank: recorded by Saoi, not stated by CCPC.
@@ -171,6 +171,31 @@ describe('normaliseMarket', () => {
         / BER [A-G]/.test(product.name),
     )
     expect(boiBer?.terms.kind === 'mortgage' && boiBer.terms.berFromName).toBe(true)
+  })
+
+  it('reads bunq from its own page: a bonus that gives way to base rates at each reset', () => {
+    const bunq = view('bunq:deposit.bunq_savings')
+    expect(bunq.provenance.source).toBe('bank')
+    expect(bunq.provenance.preferredOver.map((row) => row.productId)).toEqual(['deposit.c3147'])
+    expect(market.viewOfRow.get('bunq:deposit.c3147')).toBe('bunq:deposit.bunq_savings')
+    expect(view('bunq:savings.bunq_savings').provenance.source).toBe('bank')
+    expect(bunq.terms.kind === 'deposit' && bunq.terms.thresholdBonus).toMatchObject({
+      bonusAerPct: 3.11,
+      resetMonths: [1, 7],
+      lookbackMonths: 6,
+    })
+    expect(bunq.depositGuarantee?.country).toBe('Netherlands')
+    expect(bunq.checks.join(' ')).toMatch(/may not take DIRT at source/)
+    expect(view('aib:savings.c396').checks.join(' ')).not.toMatch(/DIRT at source/)
+  })
+
+  it('marks a rate resting on CCPC’s one figure as not confirmed', () => {
+    expect(view('aib:savings.c396').rateConfirmed).toBe(false)
+    expect(view('banca_cf:deposit.c7028').rateConfirmed).toBe(false)
+    expect(view('bunq:savings.bunq_savings').rateConfirmed).toBe(true)
+    expect(view('boi:savings.supersaver').rateConfirmed).toBe(true)
+    expect(view('nordax:deposit.c7830').rateConfirmed).toBe(true)
+    expect(view('aib:loan.c174').rateConfirmed).toBe(true)
   })
 
   it('flags eligibility it cannot confirm on every product', () => {

@@ -2,9 +2,10 @@ import { describe, expect, it } from 'vitest'
 import type { DepositTerms, ProductView } from '../../contracts/market-tools.ts'
 import { MARKET_FIXTURE } from './fixture.ts'
 import { normaliseMarket } from './normalise.ts'
-import { addMonths, annuityPayment, bestRung, simulateDeposit } from './simulate.ts'
+import { addMonths, annuityPayment, bestRung, calendarMonth, simulateDeposit } from './simulate.ts'
 
 const market = normaliseMarket(MARKET_FIXTURE)
+const AS_OF = '2026-11-09'
 const terms = (id: string): DepositTerms => {
   const product: ProductView | undefined = market.products.find((p) => p.id === id)
   if (product?.terms.kind !== 'deposit') throw new Error(`no deposit ${id}`)
@@ -19,6 +20,7 @@ const flat = (aerPct: number, overrides: Partial<DepositTerms> = {}): DepositTer
   basis: 'variable',
   bands: [{ fromEur: 0, toEur: null, aerPct }],
   lumpSumAerPct: null,
+  thresholdBonus: null,
   introductory: null,
   ladder: [],
   takesMonthly: true,
@@ -132,6 +134,57 @@ describe('simulateDeposit', () => {
       horizonMonths: 12,
     })
     expect(figures.notPlaced.lumpSum).toBe(1_000)
+  })
+})
+
+describe('a threshold bonus (bunq)', () => {
+  const bunq = terms('bunq:deposit.bunq_savings')
+
+  it('pays the bonus on every euro only until the first reset, then base up to the threshold', () => {
+    // Opened in December; the threshold is set on 1 January at December's balance, so a steady
+    // €10,000 earns 3.11% for one month and the base 1.61% for the other eleven.
+    const steady = simulateDeposit(bunq, {
+      lumpSum: 10_000,
+      monthly: 0,
+      horizonMonths: 12,
+      asOf: AS_OF,
+    }).figures
+    const expected = (10_000 * (3.11 / 12 + (1.61 * 11) / 12)) / 100
+    expect(steady.grossInterest).toBeGreaterThan(expected - 1)
+    expect(steady.grossInterest).toBeLessThan(expected + 3)
+    const headline = simulateDeposit(flat(3.11), {
+      lumpSum: 10_000,
+      monthly: 0,
+      horizonMonths: 12,
+    }).figures
+    expect(steady.grossInterest).toBeLessThan(headline.grossInterest * 0.6)
+  })
+
+  it('keeps the bonus on new money above the threshold until the next reset raises it', () => {
+    const saving = simulateDeposit(bunq, {
+      lumpSum: 0,
+      monthly: 800,
+      horizonMonths: 24,
+      asOf: AS_OF,
+    }).figures
+    const allBonus = simulateDeposit(flat(3.11), {
+      lumpSum: 0,
+      monthly: 800,
+      horizonMonths: 24,
+    }).figures
+    const allBase = simulateDeposit(flat(1.61), {
+      lumpSum: 0,
+      monthly: 800,
+      horizonMonths: 24,
+    }).figures
+    expect(saving.grossInterest).toBeLessThan(allBonus.grossInterest)
+    expect(saving.grossInterest).toBeGreaterThan(allBase.grossInterest)
+    expect(saving.stop).toBeNull()
+  })
+
+  it('reads the calendar from the date', () => {
+    expect(calendarMonth('2026-11-09', 2)).toBe(1)
+    expect(calendarMonth(undefined, 7)).toBe(7)
   })
 })
 

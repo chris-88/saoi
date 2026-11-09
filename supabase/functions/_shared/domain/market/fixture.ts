@@ -1,3 +1,4 @@
+import { bunqSnapshot } from '../../market/bunq.snapshot.ts'
 import type { MarketRecord } from './types.ts'
 
 /**
@@ -7,7 +8,7 @@ import type { MarketRecord } from './types.ts'
  * cards, accounts and mortgages. Read from the live table; `details` trimmed to the fields the
  * engine reads.
  */
-export const MARKET_FIXTURE: readonly MarketRecord[] = [
+const CCPC_AND_BOI: readonly MarketRecord[] = [
   {
     product: {
       provider: 'aareal',
@@ -3391,4 +3392,14 @@ export const MARKET_FIXTURE: readonly MarketRecord[] = [
     firstSeenAt: '2026-11-09T12:14:36.808Z',
     supersededAt: null,
   },
+]
+
+/** Plus bunq's own rows, read from bunq's page (committed snapshot, 2026-11-09). */
+export const MARKET_FIXTURE: readonly MarketRecord[] = [
+  ...CCPC_AND_BOI,
+  ...bunqSnapshot.products.map((product) => ({
+    product,
+    firstSeenAt: product.checkedAt,
+    supersededAt: null,
+  })),
 ]

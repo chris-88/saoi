@@ -61,6 +61,15 @@ export function addMonths(asOf: string, months: number): string {
   return `${String(y)}-${String(m).padStart(2, '0')}`
 }
 
+/**
+ * The calendar month (1 to 12) of projection month `n`. Without a date, month 1 is taken as
+ * January, so a half-yearly reset first falls in month 7.
+ */
+export function calendarMonth(asOf: string | undefined, month: number): number {
+  if (asOf === undefined) return ((month - 1) % 12) + 1
+  return Number(addMonths(asOf, month).slice(5, 7))
+}
+
 /** Months from `asOf` to a `YYYY-MM` or `YYYY-MM-DD` target; at least one. */
 export function monthsUntil(asOf: string, target: string): number {
   const [ay, am] = asOf.split('-').map(Number)
@@ -175,7 +184,19 @@ export function simulateDeposit(terms: DepositTerms, input: DepositInput): Simul
   const months: SimulatedMonth[] = []
 
   let accrued = 0
+  // A threshold bonus (bunq): null until the first reset, then the highest balance of the
+  // lookback window, worked out from this projection's own month-end balances.
+  const bonus = terms.thresholdBonus
+  let threshold: number | null = null
+  const monthEnds: number[] = []
   for (let month = 1; month <= known; month += 1) {
+    if (
+      bonus !== null &&
+      month > 1 &&
+      bonus.resetMonths.includes(calendarMonth(input.asOf, month))
+    ) {
+      threshold = Math.max(0, ...monthEnds.slice(-bonus.lookbackMonths))
+    }
     regularPot += placed.monthly
     paidIn += placed.monthly
     if (!separateLump) {
@@ -187,7 +208,13 @@ export function simulateDeposit(terms: DepositTerms, input: DepositInput): Simul
 
     let interest: number
     if (fixedRate !== null) interest = held * monthlyOfAer(fixedRate)
-    else {
+    else if (bonus !== null) {
+      interest =
+        threshold === null
+          ? held * monthlyOfAer(bonus.bonusAerPct)
+          : bandedInterest(Math.min(held, threshold), bonus.baseBands, (aer) => aer) +
+            Math.max(0, held - threshold) * monthlyOfAer(bonus.bonusAerPct)
+    } else {
       const regular = bandedInterest(regularPot, terms.bands, rateAt(month))
       const lump = separateLump ? lumpPot * monthlyOfAer(terms.lumpSumAerPct ?? 0) : 0
       interest = regular + lump
@@ -209,6 +236,7 @@ export function simulateDeposit(terms: DepositTerms, input: DepositInput): Simul
       balance: round2(lumpPot + regularPot + accrued),
       netInterest: round2(gross - dirt),
     })
+    monthEnds.push(lumpPot + regularPot + accrued)
   }
 
   const net = gross - dirt

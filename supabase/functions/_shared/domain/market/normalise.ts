@@ -57,6 +57,13 @@ function irish(): DepositGuarantee {
   }
 }
 
+/** Providers whose deposits Saoi records as Irish-licensed: DIRT is taken at source. */
+const IRISH_PROVIDERS: ReadonlySet<string> = new Set(
+  Object.entries(RECORDED_GUARANTEES)
+    .filter(([, guarantee]) => guarantee.country === 'Ireland')
+    .map(([provider]) => provider),
+)
+
 /** The adjective a source uses for a scheme, to the country. */
 const SCHEME_COUNTRIES: Readonly<Record<string, string>> = {
   german: 'Germany',
@@ -290,8 +297,21 @@ function viewFor(input: ViewInput): ProductView {
           )
         : null,
     unknowns,
+    rateConfirmed: rateConfirmed(product, terms),
     checks: checksFor(product, providerName, terms, platform),
   }
+}
+
+/**
+ * Whether a savings or deposit rate is confirmed beyond CCPC's one figure. CCPC states a rate
+ * and nothing after it; bunq's "3.11% variable" turned out to be a bonus that lasts only until
+ * the next threshold reset. A fixed term is confirmed (the money comes back at maturity); a
+ * provider's own page, or a stated reversion, confirms the rest.
+ */
+function rateConfirmed(product: MarketProduct, terms: ProductTerms): boolean {
+  if (terms.kind !== 'deposit') return true
+  if (product.source === 'bank' || terms.access === 'fixed_term') return true
+  return terms.introductory !== null && terms.introductory.thenAerPct !== null
 }
 
 function providerNamesFrom(records: readonly MarketRecord[]): Map<string, string> {
@@ -512,6 +532,19 @@ function depositTerms(
     aerPct: ladder.length > 1 ? null : (rates.aerPct ?? ladder[0]?.aerPct ?? null),
     basis: rates.basis,
     bands: ladder.length > 0 ? [] : bandsOf(rates),
+    thresholdBonus:
+      rates.thresholdBonus === undefined
+        ? null
+        : {
+            bonusAerPct: rates.thresholdBonus.bonusAerPct,
+            resetMonths: [...rates.thresholdBonus.resetMonths],
+            lookbackMonths: rates.thresholdBonus.lookbackMonths,
+            baseBands: rates.thresholdBonus.baseTiers.map((tier) => ({
+              fromEur: tier.minEur,
+              toEur: tier.maxEur,
+              aerPct: tier.aerPct,
+            })),
+          },
     lumpSumAerPct: rates.lumpSumAerPct ?? null,
     introductory,
     ladder: [...ladder].sort((a, b) => a.months - b.months),
@@ -621,6 +654,11 @@ function checksFor(
   const checks: string[] = []
   const name = product.providerProductName
   if (platform) checks.push('Needs a Raisin account, opened online at raisin.ie.')
+  if (terms.kind === 'deposit' && terms.dirtApplies && !IRISH_PROVIDERS.has(product.provider)) {
+    checks.push(
+      'Tax: a bank outside Ireland may not take DIRT at source; the interest is then declared to Revenue. The figures take DIRT off at 33% either way.',
+    )
+  }
   if (/child|kid|junior|teen/i.test(name)) checks.push('The name suggests it is for children.')
   if (/student|third level|graduate/i.test(name)) {
     checks.push('The name suggests it is for students.')
