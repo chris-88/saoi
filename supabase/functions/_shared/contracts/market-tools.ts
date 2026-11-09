@@ -959,3 +959,18 @@ export const buildPlanResponseSchema = z.object({
   unplaced: z.object({ lumpSum: eur, monthly: eur }),
 })
 export type BuildPlanResponse = z.infer<typeof buildPlanResponseSchema>
+
+// ---------------------------------------------------------------------------------------------
+// About: how Saoi ranks, how Saoi earns
+// ---------------------------------------------------------------------------------------------
+
+export const ABOUT_TOPICS = ['ranking', 'earnings'] as const
+
+export const aboutResponseSchema = z.object({
+  topic: z.enum(ABOUT_TOPICS),
+  title: z.string(),
+  text: z.string().describe('Markdown.'),
+  updatedOn: z.string().describe('When the text was last revised: YYYY-MM-DD.'),
+})
+export type AboutTopic = (typeof ABOUT_TOPICS)[number]
+export type About = z.infer<typeof aboutResponseSchema>
