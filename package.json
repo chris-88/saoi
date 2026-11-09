@@ -19,16 +19,16 @@
     "check": "npm run typecheck && npm run lint && npm run format:check && npm run seed:check && npm run test"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.117.2",
+    "@supabase/supabase-js": "^2.119.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
     "@eslint/js": "^10.0.1",
-    "@types/node": "^24.13.3",
-    "@vitest/coverage-v8": "^5.0.3",
+    "@types/node": "^24.19.2",
+    "@vitest/coverage-v8": "^5.1.0",
     "eslint": "^10.11.0",
-    "globals": "^17.12.0",
+    "globals": "^17.14.0",
     "prettier": "^3.9.10",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.71.0",
