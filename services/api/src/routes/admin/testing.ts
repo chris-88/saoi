@@ -29,6 +29,7 @@ export function adminTestApp(stores: Partial<AdminStores> = {}, overrides: Parti
     config: unmocked('config'),
     forms: unmocked('forms'),
     inspect: unmocked('inspect'),
+    market: unmocked('market'),
     overview: unmocked('overview'),
     push: unmocked('push'),
     simulate: unmocked('simulate'),

@@ -7,6 +7,7 @@ import { catalogueRoutes } from './catalogue.ts'
 import { configRoutes } from './config.ts'
 import { formsRoutes } from './forms.ts'
 import { inspectRoutes } from './inspect.ts'
+import { marketRoutes } from './market.ts'
 import { overviewRoutes } from './overview.ts'
 import { pushRoutes } from './push.ts'
 import { simulateRoutes } from './simulate.ts'
@@ -31,5 +32,6 @@ export function adminRoutes(stores: AdminStores) {
   router.route('/', configRoutes)
   router.route('/', catalogueRoutes)
   router.route('/', formsRoutes)
+  router.route('/', marketRoutes)
   return router
 }

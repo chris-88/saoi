@@ -4,6 +4,7 @@ import type { AdminCatalogueStore } from './catalogue.ts'
 import type { AdminConfigStore } from './config.ts'
 import type { AdminFormsStore } from './forms.ts'
 import type { AdminInspectStore } from './inspect.ts'
+import type { AdminMarketStore } from './market.ts'
 import type { AdminOverviewStore } from './overview.ts'
 import type { AdminPushStore } from './push.ts'
 import type { AdminSimulateStore } from './simulate.ts'
@@ -20,6 +21,7 @@ export type AdminStores = {
   readonly config: AdminConfigStore
   readonly forms: AdminFormsStore
   readonly inspect: AdminInspectStore
+  readonly market: AdminMarketStore
   readonly overview: AdminOverviewStore
   readonly push: AdminPushStore
   readonly simulate: AdminSimulateStore
