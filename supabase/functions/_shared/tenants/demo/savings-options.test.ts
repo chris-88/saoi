@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { demoSavingsOptions } from './savings-options.ts'
 import { boiSnapshot } from '../../market/boi.snapshot.ts'
+import { depositRatesOf } from '../../market/schema.ts'
 import { arrange, type SavingsSituation } from '../../domain/savings/arrange.ts'
 
 const byId = (id: string) => demoSavingsOptions.find((option) => option.id === id)
@@ -9,7 +10,7 @@ const byId = (id: string) => demoSavingsOptions.find((option) => option.id === i
 const market = (id: string) => {
   const record = boiSnapshot.products.find((candidate) => candidate.productId === id)
   expect(record, id).toBeDefined()
-  return record!
+  return { ...record!, rates: depositRatesOf(record!) }
 }
 
 describe('translating the pack into something that can be arranged', () => {

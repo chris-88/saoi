@@ -16,6 +16,7 @@ export const boiSnapshot: MarketSnapshot = {
   products: [
     {
       provider: 'boi',
+      source: 'bank',
       productId: 'savings.supersaver',
       category: 'savings',
       providerProductName: 'SuperSaver Account',
@@ -42,6 +43,7 @@ export const boiSnapshot: MarketSnapshot = {
     },
     {
       provider: 'boi',
+      source: 'bank',
       productId: 'savings.goalsaver',
       category: 'savings',
       providerProductName: 'GoalSaver Account',
@@ -66,6 +68,7 @@ export const boiSnapshot: MarketSnapshot = {
     },
     {
       provider: 'boi',
+      source: 'bank',
       productId: 'savings.mortgagesaver',
       category: 'savings',
       providerProductName: 'MortgageSaver account',
@@ -102,6 +105,7 @@ export const boiSnapshot: MarketSnapshot = {
     },
     {
       provider: 'boi',
+      source: 'bank',
       productId: 'savings.instant_access',
       category: 'deposit',
       providerProductName: 'Instant Access Demand Account',
@@ -122,6 +126,7 @@ export const boiSnapshot: MarketSnapshot = {
     },
     {
       provider: 'boi',
+      source: 'bank',
       productId: 'savings.notice_31_day',
       category: 'deposit',
       providerProductName: '365 31 Day Notice Account',
@@ -143,6 +148,7 @@ export const boiSnapshot: MarketSnapshot = {
     },
     {
       provider: 'boi',
+      source: 'bank',
       productId: 'savings.advantage_fixed',
       category: 'deposit',
       providerProductName: 'Advantage Fixed Term Deposit Account',

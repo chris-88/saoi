@@ -6,6 +6,7 @@ export type MarketProductFilter = {
   /** All versions, not only the current one. */
   readonly history: boolean
   readonly provider?: string | undefined
+  readonly source?: 'bank' | 'ccpc' | undefined
   readonly productId?: string | undefined
 }
 
@@ -20,13 +21,15 @@ export function supabaseAdminMarketStore(db: Db): AdminMarketStore {
       let query = db
         .from('market_products')
         .select(
-          'provider, product_id, category, provider_product_name, rates, conditions, source_url, effective_from, first_seen_at, checked_at, superseded_at',
+          'provider, source, product_id, category, provider_product_name, rates, conditions, source_url, provider_url, source_product_id, source_updated_at, attribution, unknown, effective_from, first_seen_at, checked_at, superseded_at',
         )
         .order('provider', { ascending: true })
+        .order('source', { ascending: true })
         .order('product_id', { ascending: true })
         .order('first_seen_at', { ascending: false })
       if (!filter.history) query = query.is('superseded_at', null)
       if (filter.provider !== undefined) query = query.eq('provider', filter.provider)
+      if (filter.source !== undefined) query = query.eq('source', filter.source)
       if (filter.productId !== undefined) query = query.eq('product_id', filter.productId)
 
       const rows = must(await query, 'market products') ?? []
@@ -35,12 +38,19 @@ export function supabaseAdminMarketStore(db: Db): AdminMarketStore {
       for (const row of rows) {
         const parsed = marketProductVersionSchema.safeParse({
           provider: row.provider,
+          source: row.source,
           category: row.category,
           productId: row.product_id,
           providerProductName: row.provider_product_name,
           rates: row.rates,
           conditions: row.conditions,
           sourceUrl: row.source_url,
+          providerUrl: row.provider_url,
+          sourceProductId: row.source_product_id,
+          sourceUpdatedAt:
+            row.source_updated_at === null ? null : new Date(row.source_updated_at).toISOString(),
+          attribution: row.attribution,
+          unknown: row.unknown,
           effectiveFrom: row.effective_from,
           // Postgres may hand back `2026-11-09 12:00:00+00`; the console wants ISO.
           firstSeenAt: new Date(row.first_seen_at).toISOString(),

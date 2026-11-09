@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { boiSnapshot } from '../../market/boi.snapshot.ts'
+import { depositRatesOf } from '../../market/schema.ts'
 import { publishedProducts } from './market.ts'
 import { rateOf } from './rates.ts'
 
@@ -19,7 +20,7 @@ const byId = (id: string) => {
 const market = (id: string) => {
   const record = boiSnapshot.products.find((candidate) => candidate.productId === id)
   expect(record, `${id} has gone from the market snapshot`).toBeDefined()
-  return record!.rates
+  return depositRatesOf(record!)
 }
 
 describe('reading a rate out of the pack', () => {

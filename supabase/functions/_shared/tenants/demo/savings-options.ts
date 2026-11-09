@@ -36,6 +36,9 @@ function optionFor(product: KnowledgeProduct): SavingsOption | null {
   const market = marketOf(product)
   if (market === null) return null
   const { rates, conditions } = market
+  // A source that does not say which kinds of money the account takes cannot be arranged.
+  if (conditions.takesLumpSum === undefined || conditions.takesMonthly === undefined) return null
+  const { takesLumpSum, takesMonthly } = conditions
 
   /*
    * The headline is the rate on money held, and for MortgageSaver it only applies to monthly
@@ -53,8 +56,8 @@ function optionFor(product: KnowledgeProduct): SavingsOption | null {
     name: product.name,
     annualRate: rates.aerPct === null ? null : fraction(rates.aerPct),
     ...(terms.length > 0 ? { terms } : {}),
-    takesLumpSum: conditions.takesLumpSum,
-    takesMonthly: conditions.takesMonthly,
+    takesLumpSum,
+    takesMonthly,
     ...(conditions.minLumpSumEur === undefined ? {} : { minLumpSum: conditions.minLumpSumEur }),
     ...(conditions.maxLumpSumEur === undefined ? {} : { maxLumpSum: conditions.maxLumpSumEur }),
     ...(conditions.minMonthlyEur === undefined ? {} : { minMonthly: conditions.minMonthlyEur }),

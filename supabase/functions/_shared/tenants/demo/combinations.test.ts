@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { demoCombinations, combinationsSection } from './combinations.ts'
 import { boiSnapshot } from '../../market/boi.snapshot.ts'
+import { depositRatesOf } from '../../market/schema.ts'
 import { SURFACEABLE_PRODUCTS } from './kb-prompt.ts'
 
 /**
@@ -45,7 +46,7 @@ describe('product combinations', () => {
     const market = (id: string) => {
       const record = boiSnapshot.products.find((p) => p.productId === id)
       expect(record, id).toBeDefined()
-      return record!
+      return { ...record!, rates: depositRatesOf(record!) }
     }
     const superSaver = market('savings.supersaver').rates
     const mortgageSaver = market('savings.mortgagesaver')

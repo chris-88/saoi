@@ -887,6 +887,12 @@ export type Database = {
           rates: Json
           source_url: string
           superseded_at: string | null
+          attribution: string | null
+          provider_url: string | null
+          source: string
+          source_product_id: string | null
+          source_updated_at: string | null
+          unknown: string[]
         }
         Insert: {
           category: string
@@ -901,6 +907,12 @@ export type Database = {
           rates: Json
           source_url: string
           superseded_at?: string | null
+          attribution?: string | null
+          provider_url?: string | null
+          source?: string
+          source_product_id?: string | null
+          source_updated_at?: string | null
+          unknown?: string[]
         }
         Update: {
           category?: string
@@ -915,6 +927,12 @@ export type Database = {
           rates?: Json
           source_url?: string
           superseded_at?: string | null
+          attribution?: string | null
+          provider_url?: string | null
+          source?: string
+          source_product_id?: string | null
+          source_updated_at?: string | null
+          unknown?: string[]
         }
         Relationships: []
       }
@@ -1577,7 +1595,7 @@ export type Database = {
       }
       is_admin: { Args: never; Returns: boolean }
       market_record_refresh: {
-        Args: { p_products: Json; p_provider: string; p_retired?: string[] }
+        Args: { p_products: Json; p_provider: string; p_retired?: string[]; p_source: string }
         Returns: Json
       }
       messages_by_day: {
