@@ -8,6 +8,7 @@ import {
   MORTGAGE_CUSTOMER_TYPES,
 } from '../../supabase/functions/_shared/market/schema.ts'
 import { providerFor } from './ccpc-providers.ts'
+import { cashbackOffered } from '../../supabase/functions/_shared/market/cashback.ts'
 import { decodeEntities } from './html.ts'
 
 /**
@@ -341,7 +342,9 @@ export function mortgage(item: CcpcItem, customerType: MortgageCustomerType): Bu
       ltvMinPct: numberIn(pick(fields, 'Minimum LTV')),
       ltvMaxPct: numberIn(pick(fields, 'Maximum LTV')),
       ber: ber === '' || /^(all|any|n\/a)$/i.test(ber) ? null : ber,
-      cashback: yesNo(pick(fields, 'Cashback')),
+      cashback:
+        cashbackOffered(pick(fields, 'Cashback')) ??
+        cashbackOffered(pick(fields, 'Cashback description')),
       customerTypes: [customerType],
     },
     {},

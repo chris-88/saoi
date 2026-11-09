@@ -224,8 +224,16 @@ export function review(market: Market, request: ReviewRequest, asOf: AsOf): Revi
     assumptions,
     dataCheckedAt: oldestCheck(compared),
     attributions: attributionsOf(compared),
+    next: REVIEW_NEXT,
   }
 }
+
+/** What the host relays after a review: the way to a plan, and what saving it adds. */
+export const REVIEW_NEXT = [
+  'Nothing has been stored. These findings are figures for the customer to weigh; they decide what matters.',
+  'Once they have chosen goals (with an amount and a date where they have one), saoi_build_plan turns this into a plan with products, figures and the month each goal is reached.',
+  'A plan can then be saved into the Saoi app with saoi_save_plan, where it carries on: alerts when a chosen product’s rate changes, reminders as the goal date nears, and a partner can join the plan.',
+].join(' ')
 
 function byPriority(a: Goal, b: Goal): number {
   return (a.priority ?? 99) - (b.priority ?? 99)

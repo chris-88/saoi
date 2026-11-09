@@ -299,17 +299,31 @@ function cannotTakeReason(terms: DepositTerms, lumpSum: number, monthly: number)
   return 'Does not take this kind of money (a lump sum, or monthly saving)'
 }
 
+/**
+ * The deposit guarantee, where it is something to know: another country's scheme, no scheme, or
+ * not recorded. An Irish-scheme deposit needs no flag; its record is on the product.
+ */
+export function guaranteeFlag(product: ProductView): string | null {
+  const guarantee = product.depositGuarantee
+  if (guarantee === null) return null
+  if (guarantee.basis === 'unknown') {
+    return `Which deposit guarantee covers it is not recorded: confirm with ${product.providerName} before placing money.`
+  }
+  if (guarantee.scheme === null) {
+    return guarantee.note ?? 'Not covered by a deposit guarantee scheme.'
+  }
+  if (guarantee.country !== 'Ireland') {
+    return `Protected by the ${guarantee.scheme}${guarantee.coverEur === null ? '' : ` up to ${euro(guarantee.coverEur)}`}, not the Irish scheme.`
+  }
+  return null
+}
+
 function savingsFlags(product: ProductView, figures: SavingsFigures): string[] {
   const terms = product.terms
   const flags: string[] = []
   if (product.platform !== null) flags.push(product.platform.note)
-  if (product.depositGuarantee !== null && product.depositGuarantee.country !== 'Ireland') {
-    flags.push(
-      product.depositGuarantee.scheme === null
-        ? 'Which deposit guarantee scheme covers it is not stated.'
-        : `Protected by the ${product.depositGuarantee.scheme}${product.depositGuarantee.coverEur === null ? '' : ` up to ${euro(product.depositGuarantee.coverEur)}`}, not the Irish scheme.`,
-    )
-  }
+  const guarantee = guaranteeFlag(product)
+  if (guarantee !== null) flags.push(guarantee)
   if (figures.stop !== null) flags.push(figures.stop.reason)
   if (figures.notPlaced.monthly > 0) {
     flags.push(

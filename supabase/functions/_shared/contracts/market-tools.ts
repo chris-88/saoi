@@ -96,16 +96,35 @@ export const depositGuaranteeSchema = z
     scheme: z
       .string()
       .nullable()
-      .describe('The scheme that protects the deposit, e.g. "German Deposit Guarantee Scheme".'),
+      .describe(
+        'The scheme that protects the deposit, e.g. "Deposit Guarantee Scheme (Central Bank of Ireland)", "Dutch Deposit Guarantee Scheme (De Nederlandsche Bank)". Null: not recorded.',
+      ),
     country: z.string().nullable(),
-    coverEur: eur.nullable().describe('Cover per person per bank, where known.'),
+    coverEur: eur
+      .nullable()
+      .describe(
+        'Cover per person per institution, where a limit is known. Null: no limit recorded (see `note`).',
+      ),
+    note: z
+      .string()
+      .nullable()
+      .describe(
+        'Anything that changes how the cover reads, e.g. a shared licence or a State guarantee with no limit.',
+      ),
     basis: z
       .enum(['stated_by_source', 'recorded_by_saoi', 'unknown'])
       .describe(
-        '`stated_by_source`: the source names the scheme. `recorded_by_saoi`: Saoi’s own record of where the provider is licensed. `unknown`: neither.',
+        '`recorded_by_saoi`: Saoi’s record, read from a primary page (`sourceUrl`, `checkedOn`). `stated_by_source`: the comparison source’s own text names the scheme. `unknown`: neither; confirm with the provider.',
       ),
+    sourceUrl: z
+      .string()
+      .nullable()
+      .describe(
+        'The primary page the record was read from: the provider’s site, the Central Bank of Ireland, depositguarantee.ie.',
+      ),
+    checkedOn: z.string().nullable().describe('When that page was read: YYYY-MM-DD.'),
   })
-  .describe('Which deposit guarantee scheme covers the money.')
+  .describe('Which deposit guarantee scheme covers the money, and where that was read.')
 
 export const depositTermsSchema = z.object({
   kind: z.literal('deposit'),
@@ -584,6 +603,11 @@ export const reviewResponseSchema = z.object({
   assumptions: z.array(z.string()),
   dataCheckedAt: z.string().nullable(),
   attributions: z.array(z.string()),
+  next: z
+    .string()
+    .describe(
+      'For the host to relay: what can be done next, including a plan saved into the Saoi app.',
+    ),
 })
 export type ReviewResponse = z.infer<typeof reviewResponseSchema>
 
@@ -886,16 +910,52 @@ export type DebtResponse = z.infer<typeof debtResponseSchema>
 // Build plan (the plan itself is `MarketPlan`, `contracts/market-plan.ts`)
 // ---------------------------------------------------------------------------------------------
 
+export const DEFAULT_MIN_LOCK_GAIN_EUR = 100
+export const DEFAULT_MIN_LOCK_GAIN_PCT_PER_YEAR = 0.25
+
 export const buildPlanRequestSchema = z.object({
   situation: situationSchema,
   goals: z.array(goalSchema).min(1).max(8),
-  emergencyFundMonths: z
+  emergencyBufferEur: eur
+    .optional()
+    .describe(
+      'An emergency buffer to hold first, in the best instant-access account, in euro. Wins over `emergencyBufferMonths` and over an `emergency_fund` goal’s `targetAmount`. 0 holds none. To try a different buffer, call again with a new figure.',
+    ),
+  emergencyBufferMonths: z
     .number()
     .min(0)
     .max(12)
     .optional()
     .describe(
-      'With an `emergency_fund` goal and no target: months of outgoings to hold. Default 3.',
+      'An emergency buffer sized as months of outgoings (`situation.outgoings`, rent plus other). Used when `emergencyBufferEur` is absent. Without either field the buffer comes from an `emergency_fund` goal (its `targetAmount`, else 3 months of outgoings); with neither, none is held.',
+    ),
+  emergencyFundMonths: z
+    .number()
+    .min(0)
+    .max(12)
+    .optional()
+    .describe('Older name for `emergencyBufferMonths`; that field wins when both are sent.'),
+  keepAccessible: z
+    .boolean()
+    .optional()
+    .describe(
+      'True: every euro stays in instant access, nothing in a fixed term or notice account (the customer wants to reach the money at any time). Default false: a term is used only where it beats instant access by the lock thresholds.',
+    ),
+  goalDateCertain: z
+    .boolean()
+    .optional()
+    .describe(
+      'False: the main goal may come sooner than its date (a house sale agreed early, a purchase brought forward), so nothing is locked. Default true.',
+    ),
+  minLockGainEur: eur
+    .optional()
+    .describe(
+      `A fixed term or notice account is used only if the plan with it leaves at least this much more, after DIRT, at the goal date than the best plan in instant access. Default ${String(DEFAULT_MIN_LOCK_GAIN_EUR)}.`,
+    ),
+  minLockGainPctPerYear: pct
+    .optional()
+    .describe(
+      `...and at least this much more a year, as a percentage of the lump sum placed. Default ${String(DEFAULT_MIN_LOCK_GAIN_PCT_PER_YEAR)}. Below either threshold the plan keeps the money in instant access and says why, with both figures.`,
     ),
   maxAccounts: z
     .number()
@@ -962,6 +1022,58 @@ export const buildPlanResponseSchema = z.object({
       'For a house deposit with an income given: what the projected deposit supports under the Central Bank limits.',
     ),
   unplaced: z.object({ lumpSum: eur, monthly: eur }),
+  liquidity: z
+    .object({
+      decision: z
+        .enum(['locked', 'instant_access', 'not_compared'])
+        .describe(
+          '`locked`: a fixed term or notice account beat instant access by the thresholds. `instant_access`: it did not, or the customer asked to keep the money accessible, or the goal date is not certain. `not_compared`: no lump sum, or no term ends by the goal date.',
+        ),
+      why: z.string().describe('The reason, with both figures where they were worked out.'),
+      lockedNetPosition: z
+        .number()
+        .nullable()
+        .describe('Savings less debt at the horizon with terms allowed, after DIRT.'),
+      instantNetPosition: z
+        .number()
+        .nullable()
+        .describe('The same with every euro in instant access.'),
+      gainEur: z.number().nullable().describe('Locked less instant.'),
+      gainPctPerYear: z
+        .number()
+        .nullable()
+        .describe('The gain a year as a percentage of the lump sum placed.'),
+      thresholdEur: eur,
+      thresholdPctPerYear: pct,
+    })
+    .describe('Whether money is locked away, and why: the liquidity rule, stated.'),
+  whatIf: z
+    .object({
+      extraMonthly: z
+        .object({
+          extra: eur.describe('The extra a month tried: €100.'),
+          addsAtHorizon: z.number().describe('What it adds to savings at the horizon, after DIRT.'),
+          goalReachedOn: z.string().nullable(),
+        })
+        .nullable(),
+      goalReachedAtCurrentPace: z
+        .string()
+        .nullable()
+        .describe(
+          'YYYY-MM the main goal’s target is reached at this plan’s pace, looking up to ten years ahead in instant access where the horizon is not enough. Null without a target, or when it is not reached within the figures.',
+        ),
+      lines: z
+        .array(z.string())
+        .describe(
+          'The what-ifs in words, with their figures, for the host to relay. To try one, call saoi_build_plan again with the changed input; do not adjust the figures by hand.',
+        ),
+    })
+    .describe('How the result moves when one input changes.'),
+  next: z
+    .string()
+    .describe(
+      'For the host to relay: what can be done next with this plan, including saving it into the Saoi app.',
+    ),
 })
 export type BuildPlanResponse = z.infer<typeof buildPlanResponseSchema>
 
