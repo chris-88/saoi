@@ -173,13 +173,16 @@ export function firstHome(market: Market, request: FirstHomeRequest): FirstHomeR
     limit: 25,
   })
 
-  // Green rates, from the market: a rate for a BER, or a product the lender calls green.
+  // Green rates, from the market: a rate for a BER, or a product the lender calls green. High-value
+  // rates (for larger loans only) are left out of both sides.
   const loanLtv = valueFor > 0 ? ((loanFor ?? Math.max(0, valueFor - deposit)) / valueFor) * 100 : 0
   const inBand = market.products.flatMap((product) =>
     product.terms.kind === 'mortgage' &&
     product.terms.buyerTypes.includes(firstTimeBuyer ? 'first_time_buyer' : 'mover') &&
     (product.terms.ltvMinPct ?? 0) <= loanLtv + 1e-9 &&
     (product.terms.ltvMaxPct ?? 100) >= loanLtv - 1e-9 &&
+    !product.terms.highValue &&
+    !/higher value/i.test(product.name) &&
     product.terms.initialRatePct !== null
       ? [{ product, terms: product.terms, rate: product.terms.initialRatePct }]
       : [],

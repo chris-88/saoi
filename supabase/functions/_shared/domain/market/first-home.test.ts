@@ -121,6 +121,8 @@ describe('a first home: €62,000 gross, €35,000 saved, a new build at €380,
   it('states the First Home scheme only as far as it is confirmed, and green rates from the data', () => {
     expect(result.firstHomeScheme.confirmed).toBe(false)
     expect(result.greenRates.note).toMatch(/No Central Bank or government rule/)
+    expect(result.greenRates.cheapestGreen?.name ?? '').not.toMatch(/HVM|high(er)? value/i)
+    expect(result.greenRates.cheapestStandard?.name ?? '').not.toMatch(/HVM|high(er)? value/i)
     expect(() => firstHomeResponseSchema.parse(result)).not.toThrow()
     expect(JSON.stringify(result).toLowerCase()).not.toMatch(/you should|we recommend/)
   })
