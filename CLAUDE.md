@@ -296,6 +296,12 @@ The engine behind the Saoi MCP tools, in `_shared/domain/market/` (pure; contrac
   register, depositguarantee.ie), each with its source URL and checked date; a provider not
   recorded there falls back to the scheme CCPC's text names, and otherwise stays unknown and is
   flagged. Re-read the record when a provider is added or changes licence.
+- **Assumed repayments** (`plan.ts`, Chris 2026-11-09): a non-mortgage debt with a balance and
+  rate but no repayment or months left is modelled as repaid in equal monthly instalments over
+  the plan's horizon, so clearing and keeping are both worked out and the saving counts in money
+  found. `assumedRepayments` lists each; its note leads the presentation after the position, sits
+  in the assumptions and `next`, and the first question asks for the actual repayment. The plan's
+  situation keeps what the customer said (no repayment is written in).
 - **Plans** (`plan.ts`): the emergency buffer is an amount, months of outgoings, or an
   `emergency_fund` goal, held apart in instant access. The debts and the split run twice, with
   terms allowed and with everything in instant access; a term is used only where it leaves at

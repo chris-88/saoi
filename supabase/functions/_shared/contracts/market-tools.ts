@@ -1264,7 +1264,23 @@ const positionSchema = z.object({
     .describe('YYYY-MM the main goal is reached, if within the figures.'),
 })
 
+export const assumedRepaymentSchema = z
+  .object({
+    debtId: z.string(),
+    label: z.string(),
+    balance: eur,
+    months: z.number().int().describe('Repaid evenly over this many months: the plan’s horizon.'),
+    monthlyRepayment: eur.describe('The level repayment that assumes, at the debt’s rate.'),
+    note: z.string().describe('The assumption in words, for the host to relay.'),
+  })
+  .describe(
+    'A debt given with a balance and rate but no repayment or months left, modelled as repaid in equal monthly instalments over the plan’s horizon (Chris, 2026-11-09). A conservative modelling assumption: the actual repayment gives the exact figure.',
+  )
+
 export const buildPlanResponseSchema = z.object({
+  assumedRepayments: z
+    .array(assumedRepaymentSchema)
+    .describe('Debts whose repayment was assumed. Empty when every repayment was given.'),
   presentation: z
     .array(z.string())
     .describe(

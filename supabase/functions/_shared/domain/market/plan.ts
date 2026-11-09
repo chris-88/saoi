@@ -138,6 +138,8 @@ export const PLAN_NEXT = [
   'To change an assumption (the buffer, keeping the money accessible, the monthly amount, the date), call saoi_build_plan again with the new inputs; the figures come from that call.',
 ].join(' ')
 
+const lowerFirst = (text: string): string => `${text.charAt(0).toLowerCase()}${text.slice(1)}`
+
 export function buildPlan(
   market: Market,
   request: BuildPlanRequest,
@@ -161,6 +163,38 @@ export function buildPlan(
     main?.targetDate === undefined
       ? monthName(addMonths(asOf, horizon))
       : monthName(main.targetDate.slice(0, 7))
+
+  // ---- Debts with no repayment given: an even repayment over the horizon is assumed ----------
+  // Chris, 2026-11-09: a balance and a rate are enough to compare clearing against keeping if the
+  // debt is taken as repaid in equal monthly instalments over the plan's months. It is stated as
+  // an assumption everywhere it shows, and the real repayment is asked for.
+  const assumedRepayments: BuildPlanResponse['assumedRepayments'] = []
+  const modelled: Situation = {
+    ...situation,
+    debts: situation.debts.map((debt) => {
+      if (
+        debt.kind === 'mortgage' ||
+        debt.ratePct === undefined ||
+        debt.balance <= 0 ||
+        debt.monthlyRepayment !== undefined ||
+        debt.monthsRemaining !== undefined
+      ) {
+        return debt
+      }
+      const even: Debt = { ...debt, monthsRemaining: horizon }
+      const payment = round2(repaymentOf(even) ?? 0)
+      assumedRepayments.push({
+        debtId: debt.id,
+        label: debt.label,
+        balance: debt.balance,
+        months: horizon,
+        monthlyRepayment: payment,
+        note: `Assumed: the ${lowerFirst(debt.label)}’s ${euro(debt.balance)} repaid evenly over ${String(horizon)} months (about ${euro(payment)} a month at ${String(debt.ratePct)}%), as no repayment was given; with the actual repayment the figure is exact.`,
+      })
+      return even
+    }),
+  }
+  for (const item of assumedRepayments) assumptions.push(clip(item.note, 300))
 
   // ---- The money to place -------------------------------------------------------------------
   const available = situation.savings.filter((item) => item.access !== 'fixed_term')
@@ -306,7 +340,7 @@ export function buildPlan(
     }
   }
   const run = (lockAllowed: boolean): Run =>
-    solveDebts(situation, placer(lockAllowed, horizon, main?.targetAmount), {
+    solveDebts(modelled, placer(lockAllowed, horizon, main?.targetAmount), {
       lockAllowed,
       lump,
       monthly,
@@ -419,7 +453,7 @@ export function buildPlan(
     goalLabel: main?.label ?? null,
     buffer: bufferAtHorizon,
     owed: owedAtHorizon,
-    debts: situation.debts,
+    debts: modelled.debts,
     steps: chosen.steps,
     ceilings: chosen.ceilings,
     notNetted: chosen.notNetted,
@@ -591,7 +625,7 @@ export function buildPlan(
     dataCheckedAt: [...products.map((product) => product.checkedAt)].sort()[0] ?? createdAt,
   }
 
-  const moneyFound = moneyFoundForPlan(market, situation, {
+  const moneyFound = moneyFoundForPlan(market, modelled, {
     horizonMonths: horizon,
     lumps: allLines.flatMap((line) =>
       line.lumpSum > 0 && line.product.terms.kind === 'deposit'
@@ -623,7 +657,7 @@ export function buildPlan(
           ]
         : [],
     ),
-    uncompared: situation.debts.flatMap((debt) =>
+    uncompared: modelled.debts.flatMap((debt) =>
       chosen.ceilings.includes(debt.label) && debt.ratePct !== undefined
         ? [{ label: debt.label, balance: debt.balance, ratePct: debt.ratePct }]
         : [],
@@ -662,6 +696,7 @@ export function buildPlan(
 
   // ---- Present to the customer ------------------------------------------------------------------
   const presentation = planPresentation({
+    assumed: assumedRepayments.map((item) => item.note),
     moneyFound,
     when: whenLabel,
     position: position.line,
@@ -684,6 +719,7 @@ export function buildPlan(
   })
 
   return {
+    assumedRepayments,
     presentation,
     questions,
     position,
@@ -700,7 +736,10 @@ export function buildPlan(
     unplaced: current.unplaced,
     liquidity,
     whatIf: { extraMonthly, goalReachedAtCurrentPace, lines: whatIfLines },
-    next: PLAN_NEXT,
+    next:
+      assumedRepayments.length === 0
+        ? PLAN_NEXT
+        : `${PLAN_NEXT} The ${assumedRepayments.map((item) => lowerFirst(item.label)).join(' and ')} figures assume an even repayment over ${String(horizon)} months: the actual monthly repayment, or the months left, makes them exact.`,
   }
 }
 
@@ -1139,6 +1178,7 @@ function planSituation(situation: Situation): MarketPlan['situation'] {
  * No instructions: the customer decides.
  */
 function planPresentation(input: {
+  assumed: readonly string[]
   moneyFound: BuildPlanResponse['moneyFound']
   when: string
   position: string
@@ -1159,11 +1199,11 @@ function planPresentation(input: {
   extraMonthly: BuildPlanResponse['whatIf']['extraMonthly']
   helpToBuy: BuildPlanResponse['helpToBuy']
 }): string[] {
-  const out: string[] = [input.moneyFound.headline, input.position]
+  const out: string[] = [input.moneyFound.headline, input.position, ...input.assumed]
   for (const scenario of input.scenarios) {
     const better = scenario.cleared >= scenario.kept ? 'cleared' : 'kept'
     out.push(
-      `${scenario.label}, cleared or kept (both worked out in this call, each everything held less what is still owed at ${input.when}): cleared from savings now, ${euro(scenario.cleared)}; kept, ${euro(scenario.kept)} (${euro(scenario.keptOwed)} still owed then). ${better === 'cleared' ? 'Clearing it' : 'Keeping it'} leaves ${euro(round2(Math.abs(scenario.cleared - scenario.kept)))} more. This plan has it ${scenario.chosen}.`,
+      `${scenario.label}, cleared or kept (both worked out in this call, each everything held less what is still owed at ${input.when}): cleared from savings now, ${euro(scenario.cleared)}; kept, ${euro(scenario.kept)} (${scenario.keptOwed > 0 ? `${euro(scenario.keptOwed)} still owed then` : 'repaid by then'}). ${better === 'cleared' ? 'Clearing it' : 'Keeping it'} leaves ${euro(round2(Math.abs(scenario.cleared - scenario.kept)))} more. This plan has it ${scenario.chosen}.`,
     )
   }
   if (input.mainLabel !== null && input.targetAmount !== undefined) {
@@ -1228,7 +1268,6 @@ function planPosition(input: {
 }): BuildPlanResponse['position'] {
   // Whole euro: the position is a headline, and its parts add up to it to the euro.
   const eur0 = (value: number): string => euro(Math.round(value))
-  const lowerFirst = (text: string): string => `${text.charAt(0).toLowerCase()}${text.slice(1)}`
   const goal =
     input.goalLabel === null
       ? 'the savings'
