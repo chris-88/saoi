@@ -209,13 +209,7 @@ export function savingsCandidates(
   products: readonly ProductView[],
   request: Pick<
     SearchRequest,
-    | 'category'
-    | 'amount'
-    | 'monthlyAmount'
-    | 'horizonMonths'
-    | 'access'
-    | 'maxNoticeDays'
-    | 'includePlatforms'
+    'category' | 'amount' | 'monthlyAmount' | 'horizonMonths' | 'access' | 'maxNoticeDays'
   >,
   asOf: AsOf,
   excluded: { add(reason: string): void },
@@ -241,10 +235,6 @@ export function savingsCandidates(
     if (terms.kind !== 'deposit') return []
     if (NOT_FOR_ADULT_SAVING.test(product.name)) {
       excluded.add('For children or students, by its name')
-      return []
-    }
-    if (request.includePlatforms === false && product.platform !== null) {
-      excluded.add('Opened through a deposit platform (Raisin), and platforms were left out')
       return []
     }
     if (

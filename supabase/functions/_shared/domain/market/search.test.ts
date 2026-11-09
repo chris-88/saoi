@@ -16,14 +16,10 @@ describe('search: deposits', () => {
       r.figures.kind === 'savings' ? r.figures.netInterest : 0,
     )
     expect([...nets].sort((a, b) => b - a)).toEqual(nets)
-    // Nordax's 24-month term at 3.45% is known for the whole horizon and leads.
-    expect(result.results[0]?.product.id).toBe('nordax:deposit.c7830')
-    expect(result.results[0]?.flags.join(' ')).toMatch(/Raisin/)
-    expect(result.results[0]?.flags.join(' ')).toMatch(/Swedish Deposit Guarantee Scheme/)
-    // A 3-month introductory rate with nothing stated after it does not outrank rates that hold.
-    const raisin = result.results.find((r) => r.product.id === 'raisin_bank:deposit.c8504')
-    expect(raisin).toBeUndefined()
-    // The 60-month term outlives the horizon and is left out, counted.
+    // Only providers that operate in Ireland: no Raisin platform bank.
+    expect(result.results.every((r) => r.product.platform === null)).toBe(true)
+    expect(result.results.map((r) => r.product.provider)).not.toContain('nordax')
+    // A term that outlives the horizon is left out, counted.
     expect(result.excluded.some((e) => /ends after the 24-month horizon/.test(e.reason))).toBe(true)
     expect(result.attributions[0]).toMatch(/CCPC|Competition/)
   })
@@ -51,15 +47,6 @@ describe('search: deposits', () => {
     const order = { instant: 0, notice: 1, fixed_term: 2 } as Record<string, number>
     const ranks = access.map((kind) => order[kind] ?? 9)
     expect([...ranks].sort((a, b) => a - b)).toEqual(ranks)
-  })
-
-  it('leaves platform products out on request', () => {
-    const result = search(
-      market,
-      { category: 'deposit', amount: 25_000, horizonMonths: 24, includePlatforms: false },
-      AS_OF,
-    )
-    expect(result.results.every((r) => r.product.platform === null)).toBe(true)
   })
 
   it('refuses an objective that does not apply', () => {

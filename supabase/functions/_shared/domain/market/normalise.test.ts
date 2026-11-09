@@ -5,8 +5,10 @@ import { normaliseMarket } from './normalise.ts'
 import type { MarketRecord } from './types.ts'
 
 const market = normaliseMarket(MARKET_FIXTURE)
+/** With Raisin's platform banks, which the comparison leaves out: for the tests about them. */
+const withPlatforms = normaliseMarket(MARKET_FIXTURE, { includePlatforms: true })
 const view = (id: string): ProductView => {
-  const found = market.products.find((product) => product.id === id)
+  const found = [...market.products, ...withPlatforms.products].find((product) => product.id === id)
   if (found === undefined) throw new Error(`no view ${id}`)
   return found
 }
@@ -196,6 +198,26 @@ describe('normaliseMarket', () => {
     expect(view('boi:savings.supersaver').rateConfirmed).toBe(true)
     expect(view('nordax:deposit.c7830').rateConfirmed).toBe(true)
     expect(view('aib:loan.c174').rateConfirmed).toBe(true)
+  })
+
+  it('compares only providers that operate in Ireland: Raisin’s platform banks are left out', () => {
+    const providers = new Set(market.products.map((product) => product.provider))
+    for (const raisin of [
+      'nordax',
+      'banca_cf',
+      'creditplus',
+      'ibl_banca',
+      'aareal',
+      'raisin_bank',
+    ]) {
+      expect(providers.has(raisin), raisin).toBe(false)
+    }
+    for (const irish of ['boi', 'aib', 'bunq', 'avant_money', 'moco', 'state_savings']) {
+      expect(providers.has(irish), irish).toBe(true)
+    }
+    expect(market.products.every((product) => product.platform === null)).toBe(true)
+    expect(market.viewOfRow.has('nordax:deposit.c7830')).toBe(false)
+    expect(withPlatforms.products.some((product) => product.provider === 'nordax')).toBe(true)
   })
 
   it('flags eligibility it cannot confirm on every product', () => {

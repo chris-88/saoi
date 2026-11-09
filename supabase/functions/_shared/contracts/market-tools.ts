@@ -345,12 +345,6 @@ export const searchRequestSchema = z
       .optional()
       .describe('Savings and deposits: only this kind of access. Default any.'),
     maxNoticeDays: z.number().int().nonnegative().max(1000).optional(),
-    includePlatforms: z
-      .boolean()
-      .optional()
-      .describe(
-        'Include products opened through a deposit platform (Raisin). Default true; they are flagged.',
-      ),
     providers: z
       .array(z.string().regex(/^[a-z0-9_]{2,40}$/))
       .max(30)
@@ -632,7 +626,6 @@ export const projectionRequestSchema = z
         'With no `lines`: the monthly saving to place in the best available regular savers.',
       ),
     targetAmount: eur.optional().describe('A goal: the month it is reached is reported.'),
-    includePlatforms: z.boolean().optional(),
   })
   .describe('Amounts, a horizon, and either named products or "best available".')
 export type ProjectionRequest = z.infer<typeof projectionRequestSchema>
@@ -904,10 +897,6 @@ export const buildPlanRequestSchema = z.object({
     .describe(
       'With an `emergency_fund` goal and no target: months of outgoings to hold. Default 3.',
     ),
-  includePlatforms: z
-    .boolean()
-    .optional()
-    .describe('Allow products opened through Raisin. Default true.'),
   maxAccounts: z
     .number()
     .int()

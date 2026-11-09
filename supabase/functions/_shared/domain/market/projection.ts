@@ -67,7 +67,6 @@ export function project(
       throw new MarketInputError('Give `lines`, or a `lumpSum` or `monthly` amount to place.')
     }
     const pool = allocatable(market.products, {
-      includePlatforms: request.includePlatforms ?? true,
       horizonMonths: horizon,
       lockAllowed: true,
     })

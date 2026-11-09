@@ -4,7 +4,8 @@ import { MARKET_FIXTURE } from './fixture.ts'
 import { normaliseMarket } from './normalise.ts'
 import { addMonths, annuityPayment, bestRung, calendarMonth, simulateDeposit } from './simulate.ts'
 
-const market = normaliseMarket(MARKET_FIXTURE)
+// Platforms included: these tests are about the arithmetic, and Raisin's rows exercise it.
+const market = normaliseMarket(MARKET_FIXTURE, { includePlatforms: true })
 const AS_OF = '2026-11-09'
 const terms = (id: string): DepositTerms => {
   const product: ProductView | undefined = market.products.find((p) => p.id === id)

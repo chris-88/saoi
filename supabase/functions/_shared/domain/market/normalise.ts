@@ -107,7 +107,19 @@ const rowKey = (product: MarketProduct): string =>
   `${product.provider}|${product.source}|${product.productId}`
 const rowId = (product: MarketProduct): string => `${product.provider}:${product.productId}`
 
-export function normaliseMarket(records: readonly MarketRecord[]): Market {
+/**
+ * Saoi compares providers that operate in Ireland (Chris, 2026-11-09): Irish banks and credit
+ * unions, State Savings, and EU banks with an Irish branch or service (bunq, Revolut, Avant
+ * Money, MoCo). Banks reached only through the Raisin deposit platform are left out of the
+ * comparison; their rows stay in `market_products`. `includePlatforms` is for tests.
+ */
+export type NormaliseOptions = { readonly includePlatforms?: boolean }
+
+export function normaliseMarket(
+  records: readonly MarketRecord[],
+  options: NormaliseOptions = {},
+): Market {
+  const includePlatforms = options.includePlatforms ?? false
   const versions = new Map<string, MarketRecord[]>()
   for (const record of records) {
     const key = rowKey(record.product)
@@ -122,6 +134,10 @@ export function normaliseMarket(records: readonly MarketRecord[]): Market {
   const used = new Set<string>()
 
   const emit = (view: ProductView, rows: readonly MarketRecord[]) => {
+    if (view.platform !== null && !includePlatforms) {
+      for (const row of rows) used.add(rowKey(row.product))
+      return
+    }
     products.push(view)
     recordsOf.set(
       view.id,

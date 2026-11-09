@@ -98,7 +98,6 @@ export function buildPlan(
   createdAt: string,
 ): BuildPlanResponse {
   const { situation, goals } = request
-  const includePlatforms = request.includePlatforms ?? true
   const maxAccounts = request.maxAccounts ?? DEFAULT_MAX_ACCOUNTS
   const reasoning: string[] = []
   const assumptions: string[] = [...SAVINGS_ASSUMPTIONS]
@@ -145,7 +144,6 @@ export function buildPlan(
     } else {
       const take = Math.min(target, lump)
       const pool = allocatable(market.products, {
-        includePlatforms,
         horizonMonths: horizon,
         lockAllowed: false,
       })
@@ -171,7 +169,6 @@ export function buildPlan(
 
   // ---- 2. Debts -------------------------------------------------------------------------------
   const pool = allocatable(market.products, {
-    includePlatforms,
     horizonMonths: horizon,
     lockAllowed,
   })
