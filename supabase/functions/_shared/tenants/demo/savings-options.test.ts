@@ -1,24 +1,33 @@
 import { describe, expect, it } from 'vitest'
 import { demoSavingsOptions } from './savings-options.ts'
-import { demoKnowledgeBase } from './knowledge-base.ts'
+import { boiSnapshot } from '../../market/boi.snapshot.ts'
 import { arrange, type SavingsSituation } from '../../domain/savings/arrange.ts'
 
 const byId = (id: string) => demoSavingsOptions.find((option) => option.id === id)
 
+/** The market record behind an option: what the engine's numbers must agree with. */
+const market = (id: string) => {
+  const record = boiSnapshot.products.find((candidate) => candidate.productId === id)
+  expect(record, id).toBeDefined()
+  return record!
+}
+
 describe('translating the pack into something that can be arranged', () => {
-  it('carries the rates across as fractions, by whichever shape the pack states them in', () => {
-    expect(byId('savings.supersaver')?.annualRate).toBeCloseTo(0.03)
-    expect(byId('savings.mortgagesaver')?.annualRate).toBeCloseTo(0.02)
-    expect(byId('savings.notice_31_day')?.annualRate).toBeCloseTo(0.01)
+  it('carries the market rates across as fractions', () => {
+    for (const id of ['savings.supersaver', 'savings.mortgagesaver', 'savings.notice_31_day']) {
+      expect(byId(id)?.annualRate, id).toBeCloseTo((market(id).rates.aerPct ?? 0) / 100, 6)
+    }
   })
 
   it('reads the fixed-term ladder as terms rather than one rate', () => {
     const terms = byId('savings.advantage_fixed')?.terms ?? []
+    const published = market('savings.advantage_fixed').rates.terms ?? []
 
     expect(terms.map((term) => term.months)).toEqual([6, 12, 18])
     // Compared loosely: 2.24 / 100 is not 0.0224 in binary, and never will be.
-    for (const [index, expected] of [0.0151, 0.0215, 0.0224].entries()) {
-      expect(terms[index]?.annualRate).toBeCloseTo(expected, 6)
+    for (const term of terms) {
+      const stated = published.find((candidate) => candidate.months === term.months)
+      expect(term.annualRate).toBeCloseTo((stated?.aerPct ?? 0) / 100, 6)
     }
   })
 
@@ -53,22 +62,20 @@ describe('translating the pack into something that can be arranged', () => {
   })
 
   /**
-   * The bonus conditions are numbers here and sentences in the pack. They are the reason €200
-   * is the number, so they are checked against the prose rather than trusted.
+   * The bonus conditions are the reason €200 is the number. They come from the product page by
+   * way of the market record, and must arrive in the engine unchanged.
    */
-  it('keeps the bonus conditions in step with the pack’s own words', () => {
-    const bonus = byId('savings.mortgagesaver')?.bonus
-    expect(bonus?.amount).toBe(2000)
+  it('carries the bonus conditions across from the market record', () => {
+    const bonus = market('savings.mortgagesaver').conditions.bonus
 
-    const stated = (
-      demoKnowledgeBase.products.find((product) => product.id === 'savings.mortgagesaver')
-        ?.pricing_and_rates as { bonus_conditions?: readonly string[] }
-    ).bonus_conditions?.join(' | ')
-
-    expect(stated).toMatch(new RegExp(`\\b${String(bonus?.minMonthly)}\\b`))
-    expect(stated).toMatch(new RegExp(`\\b${String(bonus?.minMonths)}\\b`))
-    expect(stated).toMatch(/5,?000/)
-    expect(stated).toMatch(new RegExp(`\\b${String(bonus?.withinMonths)}\\b`))
+    expect(byId('savings.mortgagesaver')?.bonus).toEqual({
+      amount: bonus?.amountEur,
+      requiresMortgageHere: true,
+      minMonthly: bonus?.minMonthlyEur,
+      minMonths: bonus?.minMonths,
+      minTotal: bonus?.minTotalEur,
+      withinMonths: bonus?.withinMonths,
+    })
   })
 })
 

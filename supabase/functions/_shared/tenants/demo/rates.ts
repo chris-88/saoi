@@ -1,4 +1,6 @@
+import type { MarketProduct } from '../../market/schema.ts'
 import type { KnowledgeProduct } from './kb-types.ts'
+import { marketOf } from './market.ts'
 
 /**
  * The headline figure for a product, read out of the pack's pricing object.
@@ -29,7 +31,53 @@ function euro(value: unknown): string | null {
   return typeof value === 'number' ? `€${value.toLocaleString('en-IE')}` : null
 }
 
+/**
+ * The figure from market data, which is where every product the refresh covers gets one.
+ *
+ * The same headlines the pack shapes produced, so a card reads the same whichever source it
+ * came from; the note gains whatever else the page states (SuperSaver's reversion rate and its
+ * €30,000 tier), because the catch belongs beside the headline.
+ */
+function marketRate(market: MarketProduct): Rate {
+  const rates = market.rates
+  const tier =
+    rates.tierCapEur === undefined || rates.aboveTierAerPct === undefined
+      ? null
+      : `${String(rates.aboveTierAerPct)}% on anything above ${euro(rates.tierCapEur) ?? ''}`
+
+  if (rates.terms !== undefined) {
+    const longestFirst = [...rates.terms].sort((a, b) => b.months - a.months)
+    const best = Math.max(...rates.terms.map((term) => term.aerPct))
+    return {
+      headline: `up to ${String(best)}% AER fixed`,
+      note: longestFirst
+        .map((term) => `${String(term.months)}m: ${String(term.aerPct)}%`)
+        .join(', '),
+    }
+  }
+
+  const headline = rates.aerPct ?? 0
+  if (rates.basis === 'fixed' && rates.fixedMonths !== undefined) {
+    const then =
+      rates.thenAerPct === undefined
+        ? null
+        : `Then the standard variable rate, ${String(rates.thenAerPct)}% AER`
+    const notes = [then, tier].filter((note): note is string => note !== null)
+    return {
+      headline: `${String(headline)}% AER fixed for ${String(rates.fixedMonths)} months`,
+      note: notes.length === 0 ? null : notes.join('; '),
+    }
+  }
+
+  // A lump sum paid at a different rate means the headline is for monthly saving only.
+  const monthlyOnly = rates.lumpSumAerPct === undefined ? '' : ' on monthly savings'
+  return { headline: `${String(headline)}% AER ${rates.basis}${monthlyOnly}`, note: tier }
+}
+
 export function rateOf(product: KnowledgeProduct): Rate | null {
+  const market = marketOf(product)
+  if (market !== null) return marketRate(market)
+
   const pricing = product.pricing_and_rates
   const snapshot = (pricing.snapshot ?? {}) as Record<string, unknown>
 

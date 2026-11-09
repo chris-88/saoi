@@ -3,6 +3,7 @@ import type { KnowledgeProduct } from './kb-types.ts'
 import { demoProducts } from './products.ts'
 import { rateAsOf, rateOf } from './rates.ts'
 import { combinationsSection } from './combinations.ts'
+import { publishedProducts } from './market.ts'
 
 /**
  * Demo Bank's illustrative retail offering, as the prompt sees it.
@@ -24,7 +25,7 @@ export function surfaceable(product: KnowledgeProduct): boolean {
 }
 
 export const SURFACEABLE_PRODUCTS: readonly KnowledgeProduct[] =
-  demoKnowledgeBase.products.filter(surfaceable)
+  publishedProducts.filter(surfaceable)
 
 /**
  * The products a turn may put in front of a customer, from whichever catalogue the turn holds.
@@ -34,7 +35,7 @@ export const SURFACEABLE_PRODUCTS: readonly KnowledgeProduct[] =
  * edits them in the console (§51).
  */
 export function surfaceableProducts(
-  products: readonly KnowledgeProduct[] = demoKnowledgeBase.products,
+  products: readonly KnowledgeProduct[] = publishedProducts,
 ): readonly KnowledgeProduct[] {
   return products.filter(surfaceable)
 }
@@ -48,7 +49,7 @@ export function surfaceableProducts(
  */
 export function knowledgeProduct(
   id: string,
-  products: readonly KnowledgeProduct[] = demoKnowledgeBase.products,
+  products: readonly KnowledgeProduct[] = publishedProducts,
 ): KnowledgeProduct | undefined {
   return products.find((product) => product.id === id)
 }
@@ -156,7 +157,7 @@ function illustrativeRates(): string {
  * so an edited catalogue costs one rewrite of the prefix and nothing after.
  */
 export function knowledgeBaseSection(
-  products: readonly KnowledgeProduct[] = demoKnowledgeBase.products,
+  products: readonly KnowledgeProduct[] = publishedProducts,
 ): string {
   return [
     '# Products',
@@ -167,7 +168,7 @@ export function knowledgeBaseSection(
     '',
     ...surfaceableProducts(products).map(describe),
     '',
-    combinationsSection(),
+    combinationsSection(products),
     '',
     illustrativeRates(),
   ].join('\n\n')

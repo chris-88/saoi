@@ -1,0 +1,58 @@
+import { BOI_MARKET_PRODUCT_IDS } from '../../market/boi-sources.ts'
+import { boiSnapshot } from '../../market/boi.snapshot.ts'
+import { type MarketProduct, marketProductSchema } from '../../market/schema.ts'
+import type { KnowledgeProduct } from './kb-types.ts'
+import { demoKnowledgeBase } from './knowledge-base.ts'
+
+/**
+ * Market data laid over the catalogue.
+ *
+ * The catalogue (`knowledge-base.ts`, or the console's rows) says what a product is; market
+ * data says what it pays today and on what terms, read off the provider's site by
+ * `npm run market:refresh`. For every product the market covers, the figures come from the
+ * market record and from nowhere else: the catalogue's own `pricing_and_rates.snapshot` is
+ * dropped, so a product the refresh has no current row for shows no rate rather than last
+ * month's. The record rides on the product as `pricing_and_rates.market`, which is how
+ * `rateOf`, the savings engine and the combinations read it without another argument.
+ */
+
+export function withMarketData(
+  products: readonly KnowledgeProduct[],
+  market: readonly MarketProduct[],
+): readonly KnowledgeProduct[] {
+  const byId = new Map(market.map((record) => [record.productId, record]))
+
+  return products.map((product) => {
+    if (!BOI_MARKET_PRODUCT_IDS.has(product.id)) return product
+    const record = byId.get(product.id)
+    const {
+      snapshot: _stale,
+      source_rate_as_of: _staleAsOf,
+      ...pricing
+    } = product.pricing_and_rates
+
+    return {
+      ...product,
+      pricing_and_rates: {
+        ...pricing,
+        ...(record === undefined
+          ? {}
+          : { market: record, source_rate_as_of: record.checkedAt.slice(0, 10) }),
+      },
+      source_urls: record === undefined ? product.source_urls : [record.sourceUrl],
+      last_verified: record === undefined ? product.last_verified : record.checkedAt.slice(0, 10),
+    }
+  })
+}
+
+/** The market record a product carries, if any. Re-validated: the product came from a row. */
+export function marketOf(product: KnowledgeProduct): MarketProduct | null {
+  const parsed = marketProductSchema.safeParse(product.pricing_and_rates['market'])
+  return parsed.success ? parsed.data : null
+}
+
+/** The published catalogue with the committed market snapshot over it: the default everywhere. */
+export const publishedProducts: readonly KnowledgeProduct[] = withMarketData(
+  demoKnowledgeBase.products,
+  boiSnapshot.products,
+)

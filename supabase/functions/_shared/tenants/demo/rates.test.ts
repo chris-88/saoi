@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { demoKnowledgeBase } from './knowledge-base.ts'
+import { boiSnapshot } from '../../market/boi.snapshot.ts'
+import { publishedProducts } from './market.ts'
 import { rateOf } from './rates.ts'
 
 const byId = (id: string) => {
-  const product = demoKnowledgeBase.products.find((candidate) => candidate.id === id)
+  const product = publishedProducts.find((candidate) => candidate.id === id)
   expect(product, `${id} has gone from the pack`).toBeDefined()
   return product!
 }
@@ -14,32 +15,50 @@ const byId = (id: string) => {
  * The comparison card showed features and no figure, which made three savings accounts look
  * interchangeable when one of them pays a full percentage point more than another.
  */
+/** The figures as the committed market snapshot has them, so these hold when the site moves. */
+const market = (id: string) => {
+  const record = boiSnapshot.products.find((candidate) => candidate.productId === id)
+  expect(record, `${id} has gone from the market snapshot`).toBeDefined()
+  return record!.rates
+}
+
 describe('reading a rate out of the pack', () => {
   it('leads with the introductory rate and says what follows it', () => {
     const rate = rateOf(byId('savings.supersaver'))
 
-    expect(rate?.headline).toBe('3% AER fixed for 12 months')
+    expect(rate?.headline).toBe(
+      `${String(market('savings.supersaver').aerPct)}% AER fixed for 12 months`,
+    )
     expect(rate?.note).toMatch(/then the standard/i)
   })
 
   it('quotes the tiered rate with the tier, not just the flattering half', () => {
     const rate = rateOf(byId('savings.mortgagesaver'))
 
-    expect(rate?.headline).toBe('2% AER variable on monthly savings')
+    const rates = market('savings.mortgagesaver')
+
+    expect(rate?.headline).toBe(`${String(rates.aerPct)}% AER variable on monthly savings`)
     // 0.5% above €15,000 is the part that decides whether the strategy is any good.
-    expect(rate?.note).toContain('0.5%')
-    expect(rate?.note).toContain('€15,000')
+    expect(rate?.note).toContain(`${String(rates.aboveTierAerPct)}%`)
+    expect(rate?.note).toContain(`€${(rates.tierCapEur ?? 0).toLocaleString('en-IE')}`)
   })
 
   it('reads a plain variable rate', () => {
-    expect(rateOf(byId('savings.instant_access'))?.headline).toBe('0.1% AER variable')
+    expect(rateOf(byId('savings.instant_access'))?.headline).toBe(
+      `${String(market('savings.instant_access').aerPct)}% AER variable`,
+    )
   })
 
   it('reads a term ladder, longest first', () => {
     const rate = rateOf(byId('savings.advantage_fixed'))
 
-    expect(rate?.headline).toBe('up to 2.24% AER fixed')
-    expect(rate?.note).toContain('6m: 1.51%')
+    const terms = market('savings.advantage_fixed').terms ?? []
+    const best = Math.max(...terms.map((term) => term.aerPct))
+    const six = terms.find((term) => term.months === 6)
+
+    expect(rate?.headline).toBe(`up to ${String(best)}% AER fixed`)
+    expect(rate?.note).toContain(`6m: ${String(six?.aerPct)}%`)
+    expect(rate?.note?.indexOf('18m')).toBe(0)
   })
 
   it('leads a card on the APR a customer is actually shown', () => {
@@ -61,7 +80,7 @@ describe('reading a rate out of the pack', () => {
   })
 
   it('never produces an empty or malformed headline', () => {
-    for (const product of demoKnowledgeBase.products) {
+    for (const product of publishedProducts) {
       const rate = rateOf(product)
       if (rate === null) continue
 
@@ -72,7 +91,7 @@ describe('reading a rate out of the pack', () => {
   })
 
   it('reads a figure for most of the savings family, which is the point', () => {
-    const savings = demoKnowledgeBase.products.filter((p) => p.family === 'saving')
+    const savings = publishedProducts.filter((p) => p.family === 'saving')
     const withRate = savings.filter((p) => rateOf(p) !== null)
 
     expect(withRate.length).toBeGreaterThanOrEqual(savings.length - 2)
