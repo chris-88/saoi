@@ -358,17 +358,39 @@ const LOAN_PURPOSES = [
   'Holiday loans',
 ] as const
 
+/**
+ * A loan's longest term in months. CCPC's words carry the unit ("60 months", "10 Years"), and
+ * win; reading "10 Years" as a number stored ten months. Without words, the structured
+ * `MaximumTerm`, which is in years (Bank of Ireland's green loan: 10, beside "120 months"). Words
+ * with no unit ("7") are not guessed at: unknown.
+ */
+export function loanTermMonths(
+  stated: string | undefined,
+  structuredYears: number | null,
+): { readonly months: number | null; readonly unknown: boolean } {
+  if (stated === undefined || stated.trim() === '') {
+    return {
+      months:
+        structuredYears !== null && structuredYears > 0 ? Math.round(structuredYears * 12) : null,
+      unknown: structuredYears === null,
+    }
+  }
+  const value = numberIn(stated)
+  if (value === null || value <= 0) return { months: null, unknown: true }
+  if (/month|mth/i.test(stated)) return { months: Math.round(value), unknown: false }
+  if (/year|yr/i.test(stated)) return { months: Math.round(value * 12), unknown: false }
+  return { months: null, unknown: true }
+}
+
 export function loan(item: CcpcItem): Built {
   const fields = fieldsOf(item)
   const apr = numberIn(scalar(item, 'Rate'))
   if (apr === null) throw new Error(`no rate on ${item.ProductName}`)
   const type = pick(fields, 'Rate type') ?? ''
-  const months =
-    numberIn(pick(fields, 'Maximum term')) ??
-    (numberIn(scalar(item, 'MaximumTerm')) === null
-      ? null
-      : (numberIn(scalar(item, 'MaximumTerm')) ?? 0) * 12)
+  const term = loanTermMonths(pick(fields, 'Maximum term'), numberIn(scalar(item, 'MaximumTerm')))
+  const months = term.months
   const unknown = ['rates.minAmountEur']
+  if (term.unknown) unknown.push('rates.maxTermMonths')
   if (!/fixed|variable/i.test(type)) unknown.push('rates.rateType')
 
   return base(
@@ -379,7 +401,7 @@ export function loan(item: CcpcItem): Built {
       aprPct: apr,
       rateType: /fixed/i.test(type) ? 'fixed' : /variable/i.test(type) ? 'variable' : null,
       maxAmountEur: numberIn(scalar(item, 'MaximumAmount')),
-      maxTermMonths: months !== null && months > 0 ? Math.round(months) : null,
+      maxTermMonths: months,
       purposes: LOAN_PURPOSES.filter((purpose) => pick(fields, purpose) === '1'),
     },
     {},
