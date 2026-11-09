@@ -281,7 +281,13 @@ function viewFor(input: ViewInput): ProductView {
     terms,
     provenance: provenanceOf(rows, input.setAside, input.versions),
     platform: platform ? { name: 'Raisin', note: raisinNote(providerName) } : null,
-    depositGuarantee: terms.kind === 'deposit' ? guaranteeOf(product, unknowns) : null,
+    depositGuarantee:
+      terms.kind === 'deposit'
+        ? guaranteeOf(
+            rows.map((row) => row.product),
+            unknowns,
+          )
+        : null,
     unknowns,
     checks: checksFor(product, providerName, terms, platform),
   }
@@ -576,19 +582,27 @@ function platformOf(product: MarketProduct): boolean {
 const raisinNote = (providerName: string): string =>
   `Opened through Raisin (raisin.ie), not with ${providerName} directly: a free Raisin account comes first. The deposit is held by ${providerName}.`
 
-function guaranteeOf(product: MarketProduct, unknowns: UnknownField[]): DepositGuarantee {
-  const adjective = /\b([A-Z][a-z]+)\s+Deposit\s+Guarantee\s+Scheme/.exec(textOf(product))?.[1]
+function guaranteeOf(
+  products: readonly MarketProduct[],
+  unknowns: UnknownField[],
+): DepositGuarantee {
+  const head = products[0]
+  if (head === undefined) throw new Error('no products')
+  // Every rung's words: a ladder's shortest term is not always the row that names the scheme.
+  const text = products.map(textOf).join('\n')
+  const adjective = /\b([A-Za-z]+)\s+deposit\s+guarantee\s+(?:scheme|fund)/i.exec(text)?.[1]
   const country = adjective === undefined ? undefined : SCHEME_COUNTRIES[adjective.toLowerCase()]
   if (adjective !== undefined && country !== undefined) {
+    const name = adjective.charAt(0).toUpperCase() + adjective.slice(1).toLowerCase()
     return {
-      scheme: `${adjective} Deposit Guarantee Scheme`,
+      scheme: `${name} Deposit Guarantee Scheme`,
       country,
       // Harmonised across the EU by the Deposit Guarantee Schemes Directive.
       coverEur: 100_000,
       basis: 'stated_by_source',
     }
   }
-  const recorded = RECORDED_GUARANTEES[product.provider]
+  const recorded = RECORDED_GUARANTEES[head.provider]
   if (recorded !== undefined) return recorded
   unknowns.push({ field: 'depositGuarantee', meaning: 'which deposit guarantee scheme covers it' })
   return { scheme: null, country: null, coverEur: null, basis: 'unknown' }

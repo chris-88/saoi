@@ -79,6 +79,10 @@ describe('normaliseMarket', () => {
     })
     expect(nordax.checks.some((check) => /Raisin/.test(check))).toBe(true)
 
+    // Named in lower case, and on a ladder.
+    expect(view('creditplus:deposit.ladder_fixed_term_deposit').depositGuarantee?.country).toBe(
+      'Germany',
+    )
     // Raisin Bank itself is reached through the platform too.
     expect(view('raisin_bank:deposit.c8504').platform?.name).toBe('Raisin')
     // A foreign bank that is not on the platform: guarantee, no platform.
