@@ -164,9 +164,11 @@ describe('keeping a debt is modelled by keeping it', () => {
     expect(result.position.owedIsCeiling).toBe(true)
     expect(result.position.owed).toBe(9_000)
     expect(result.position.line).toMatch(/today’s balance, the most it can be/)
-    expect(
-      result.moneyFound.notCounted.some((item) => /car loan cleared from savings/.test(item.label)),
-    ).toBe(true)
+    const loanNote = result.moneyFound.notCounted.find((item) =>
+      /car loan cleared from savings/.test(item.label),
+    )
+    expect(loanNote?.annualEur).toBeGreaterThan(600)
+    expect(loanNote?.why).toMatch(/not counted/)
     expect(result.questions.join(' ')).toMatch(/monthly repayment or the months left/)
 
     const cleared = plan({
