@@ -59,8 +59,9 @@ const LOAN_PURPOSE_LABELS: Readonly<Record<NonNullable<SearchRequest['purpose']>
 /** Results this high carry the flag below when their rate rests on CCPC's one figure. */
 const UNCONFIRMED_FLAG_TOP = 3
 
+/** Under 200 characters: it travels into a plan's checks, which the plan contract caps there. */
 export const UNCONFIRMED_RATE =
-  'Introductory or tiered rate not confirmed: CCPC states this one rate and nothing after it, and Saoi has not read the provider’s own terms. The provider may pay it only for a period or only on part of the balance; check its terms.'
+  'Introductory or tiered rate not confirmed: CCPC states only this rate. The provider may pay it only for a period or on part of the balance; check its terms.'
 
 const NOT_FOR_ADULT_SAVING = /child|kid|junior|teen|student|third level/i
 

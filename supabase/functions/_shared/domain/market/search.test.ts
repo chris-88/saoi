@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { MARKET_FIXTURE } from './fixture.ts'
 import { normaliseMarket } from './normalise.ts'
-import { MarketInputError, berMatches, search } from './search.ts'
+import { MarketInputError, UNCONFIRMED_RATE, berMatches, search } from './search.ts'
 
 const market = normaliseMarket(MARKET_FIXTURE)
 const AS_OF = '2026-11-09'
@@ -31,6 +31,10 @@ describe('search: deposits', () => {
       expect(flagged, row.product.id).toBe(row.rank <= 3 && !row.product.rateConfirmed)
     })
     expect(result.results.slice(0, 3).some((row) => !row.product.rateConfirmed)).toBe(true)
+  })
+
+  it('keeps the unconfirmed-rate flag short enough for a plan’s checks', () => {
+    expect(UNCONFIRMED_RATE.length).toBeLessThanOrEqual(200)
   })
 
   it('takes `limit` and an objective', () => {
