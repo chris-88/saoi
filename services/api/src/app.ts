@@ -1,5 +1,7 @@
 import { OpenAPIHono } from '@hono/zod-openapi'
 import { cors } from 'hono/cors'
+import { createMiddleware } from 'hono/factory'
+import type { MiddlewareHandler } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { secureHeaders } from 'hono/secure-headers'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
@@ -19,6 +21,7 @@ import { adminRoutes } from './routes/admin/index.ts'
 import type { AdminStores } from './store/admin/index.ts'
 import { sessionRoutes } from './routes/session/index.ts'
 import { documentRoutes } from './routes/documents/index.ts'
+import { planRoutes, type PlanRouteOptions } from './routes/plans/index.ts'
 import type { CaseStore } from './store/cases.ts'
 import type { PartnerStore } from './store/partners.ts'
 import type { SessionStore } from './store/sessions.ts'
@@ -34,6 +37,8 @@ export type AppDeps = {
   readonly admin?: AdminStores
   /** The conversation turn. Unset, `POST /api/cases/:caseId/turns` is not mounted. */
   readonly turn?: TurnRouteOptions
+  /** Saved plans. Unset, `/api/plans` and `/api/plans/claim` are not mounted. */
+  readonly plans?: PlanRouteOptions
   readonly config?: Partial<RouteConfig>
   readonly version: string
   /** Browser origins allowed by CORS. Empty or unset denies every origin. */
@@ -42,6 +47,16 @@ export type AppDeps = {
   readonly feed?: Partial<Pick<FeedOptions, 'pollMs' | 'keepAliveMs'>>
   readonly log?: Logger
 }
+
+/** Routes nobody signs in to. Each one carries its own size cap and rate limit. */
+const PUBLIC_ROUTES: ReadonlySet<string> = new Set(['POST /api/plans'])
+const isPublic = (method: string, path: string): boolean =>
+  PUBLIC_ROUTES.has(`${method} ${path.replace(/\/+$/, '')}`)
+
+const unlessPublic = (inner: MiddlewareHandler<AppEnv>) =>
+  createMiddleware<AppEnv>((c, next) =>
+    isPublic(c.req.method, c.req.path) ? next() : inner(c, next),
+  )
 
 const DEFAULT_CONFIG: RouteConfig = { presenterKey: '', audienceMaxCases: 50 }
 const DEFAULT_RATE_LIMIT = { max: 120, windowMs: 60_000 }
@@ -140,8 +155,12 @@ export function createApp(deps: AppDeps) {
   app.doc('/openapi.json', { openapi: '3.1.0', info })
   app.doc('/api/openapi.json', { openapi: '3.1.0', info })
 
-  app.use('/api/*', requireAuth(deps.verifyToken))
-  app.use('/api/*', rateLimit(deps.rateLimit ?? DEFAULT_RATE_LIMIT))
+  // Every `/api` route needs a signed-in (or anonymous) user except the few that are public on
+  // purpose, which guard themselves: saving a plan is called by the MCP server, not a browser.
+  const auth = requireAuth(deps.verifyToken)
+  const limit = rateLimit(deps.rateLimit ?? DEFAULT_RATE_LIMIT)
+  app.use('/api/*', unlessPublic(auth))
+  app.use('/api/*', unlessPublic(limit))
   // Order matters. The session and document routes sit under `/api/cases/...` but have their own
   // access rules (a presenter may switch into any case; a partner may upload), so they are
   // mounted before `caseRoutes`, whose `requireCaseAccess` admits the primary customer only.
@@ -151,6 +170,7 @@ export function createApp(deps: AppDeps) {
   // Before `caseRoutes`, whose guard admits the primary only: a partner is refused here with 403.
   if (deps.turn) app.route('/', turnRoutes(deps.turn))
   app.route('/', caseRoutes)
+  if (deps.plans) app.route('/', planRoutes(deps.plans))
   if (deps.admin) app.route('/', adminRoutes(deps.admin))
 
   return app

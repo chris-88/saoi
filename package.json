@@ -15,6 +15,7 @@
     "seed:generate": "node scripts/generate-seed.ts",
     "seed:check": "node scripts/generate-seed.ts check",
     "market:refresh": "node scripts/market/refresh.ts",
+    "plan:sample": "node scripts/plan-handoff/save-sample.ts",
     "compare:models": "node --env-file=.env scripts/compare-models.ts",
     "db:types": "supabase gen types typescript --linked > supabase/functions/_shared/db/database.types.ts",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm run seed:check && npm run test"

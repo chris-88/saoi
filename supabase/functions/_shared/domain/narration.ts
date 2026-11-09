@@ -21,6 +21,7 @@ export const NARRATABLE_EVENTS = [
   'checkin_due',
   'accounts_linked',
   'transfer_settled',
+  'plan_claimed',
 ] as const
 
 export type NarratableEvent = (typeof NARRATABLE_EVENTS)[number]
@@ -105,6 +106,14 @@ export function describeEvent(event: {
       const to = typeof event.payload['to'] === 'string' ? event.payload['to'] : name
       return `${amount}${from} arrived in your ${to}.`
     }
+    /*
+     * A plan made in the customer's own AI, opened in the app. Narrated so the first turn
+     * after the claim link is a return turn about it, the same way the bank moving is.
+     */
+    case 'plan_claimed':
+      return typeof event.payload['title'] === 'string'
+        ? `The plan you made with your AI assistant is here: ${event.payload['title']}.`
+        : 'The plan you made with your AI assistant is here.'
     default:
       return null
   }

@@ -528,6 +528,11 @@ export type CaseDigest = {
   /** §27, parked earlier, and the thing they were waiting for has happened. */
   readonly revived?: readonly { readonly name: string; readonly reason: string }[]
   /**
+   * Plans the customer made in their own AI assistant and opened here (`saved-plans.ts`).
+   * Built from the stored plan; the card on screen shows its figures.
+   */
+  readonly broughtPlans?: readonly { readonly title: string; readonly lines: readonly string[] }[]
+  /**
    * Whether what they asked for is what suits them, worked out from what they have said about
    * the amount and how soon they mean to repay it. Already decided; the figures are not yours.
    */
@@ -825,6 +830,19 @@ function digestSection(digest: CaseDigest): string {
       'product menu. Lead with what they came in about, and let the rest wait until it helps',
       'them:',
       ...goals.map((line) => `- ${line}`),
+      '',
+    )
+  }
+
+  const brought = digest.broughtPlans ?? []
+  for (const plan of brought) {
+    lines.push(
+      '## The plan they brought from their own AI assistant',
+      "They made this with their AI assistant, using Saoi's market data, and opened it here.",
+      'It is information, not advice: it ranks products by the basis it states. The plan card',
+      'shows every figure, so do not recite them and do not redo any arithmetic. Saoi cannot',
+      'open any of these products for them; they apply with each provider directly.',
+      ...plan.lines.map((line) => `- ${line}`),
       '',
     )
   }

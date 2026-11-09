@@ -8,6 +8,7 @@ import { supabaseStore } from './store/cases.ts'
 import { supabasePartnerStore } from './store/partners.ts'
 import { supabaseSessionStore } from './store/sessions.ts'
 import { supabaseUploadStore } from './store/uploads.ts'
+import { supabasePlanStore } from './store/plans.ts'
 import { createAdminStores } from './store/admin/factory.ts'
 import { anthropicModels, fixtureModels } from './turn/generate.ts'
 import { createTurnRunner } from './turn/turn.ts'
@@ -45,6 +46,7 @@ const app = createApp({
   sessions: supabaseSessionStore(db),
   partners: supabasePartnerStore(db),
   uploads: supabaseUploadStore(db),
+  plans: { store: supabasePlanStore(db), appBaseUrl: env.APP_BASE_URL },
   admin: createAdminStores(db, {
     ...(env.ANTHROPIC_API_KEY === undefined ? {} : { anthropicApiKey: env.ANTHROPIC_API_KEY }),
     saoiModel: env.SAOI_MODEL,

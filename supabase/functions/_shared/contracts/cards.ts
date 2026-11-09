@@ -495,6 +495,64 @@ export const accountOpenedCardSchema = z.object({
 })
 
 /**
+ * A plan the customer made in their own AI and brought into the app (`market-plan.ts`).
+ *
+ * Built by the server from the stored plan, never by the model (Invariant 2), and shown once,
+ * before Saoirse speaks, on the first turn after the claim link was opened: the same pattern as
+ * the account welcome. Every figure is the plan's own; the card adds no arithmetic. Each
+ * product carries where its figures came from and when they were checked, and what the data
+ * does not say, because a plan read on a phone a week later is read without the conversation
+ * that produced it.
+ *
+ * Something to read, not something to decide: not in `AWAITING_CARDS`.
+ */
+export const savedPlanCardSchema = z.object({
+  type: z.literal('saved_plan'),
+  planId: z.uuid(),
+  title: z.string(),
+  summary: z.string(),
+  goals: z
+    .array(
+      z.object({
+        label: z.string(),
+        /** "€30,000 by June 2028", or null when the plan set no target. */
+        target: z.string().nullable(),
+      }),
+    )
+    .max(8),
+  products: z
+    .array(
+      z.object({
+        name: z.string(),
+        providerName: z.string(),
+        /** What it is doing in the plan: "Monthly saving", "Lump sum". */
+        role: z.string(),
+        /** "€500 a month", "€20,000 once", both, or nothing. */
+        amounts: z.array(z.string()).max(2),
+        /** "3.00% AER", or null. */
+        rate: z.string().nullable(),
+        /** The projection in one line, or null. */
+        projected: z.string().nullable(),
+        /** "CCPC, checked 9 Nov 2026" or "Bank of Ireland's site, checked 9 Nov 2026". */
+        provenance: z.string(),
+        unknowns: z.array(z.string()).max(20),
+        checks: z.array(z.string()).max(10),
+        url: z.string().nullable(),
+      }),
+    )
+    .max(12),
+  /** Payoff order, first first: "Car loan: pay off first. Costs more than savings earn." */
+  debts: z.array(z.string()).max(20),
+  /** The ranking basis, stated. */
+  basis: z.string(),
+  assumptions: z.array(z.string()).max(20),
+  /** Attribution owed to a source the figures came from, once each. */
+  attributions: z.array(z.string()).max(4),
+  createdAt: z.string(),
+  dataCheckedAt: z.string(),
+})
+
+/**
  * Open banking, simulated (Nexus, a stand-in aggregator). Three cards.
  *
  * `connect_accounts` is the consent: the customer picks the bank and allows exactly the scope
@@ -582,6 +640,7 @@ export const cardSchema = z.discriminatedUnion('type', [
   dataNoticeCardSchema,
   signInCardSchema,
   accountOpenedCardSchema,
+  savedPlanCardSchema,
   connectAccountsCardSchema,
   accountsOverviewCardSchema,
   transferCardSchema,
@@ -610,6 +669,7 @@ export const CARD_TYPES = [
   'data_notice',
   'sign_in',
   'account_opened',
+  'saved_plan',
   'connect_accounts',
   'accounts_overview',
   'transfer',

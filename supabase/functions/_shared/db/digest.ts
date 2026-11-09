@@ -213,6 +213,7 @@ export function buildCaseDigest(
     readonly plans?: readonly { readonly title: string; readonly lines: readonly string[] }[]
     readonly checkin?: CaseDigest['checkin']
     readonly revived?: CaseDigest['revived']
+    readonly broughtPlans?: CaseDigest['broughtPlans']
     /** Where the customer is trying to get to, from the Goal Engine. */
     readonly goals?: readonly string[]
     /** Whether what they are looking at is what suits them. */
@@ -314,6 +315,7 @@ export function buildCaseDigest(
     ...(options.plans === undefined ? {} : { plans: options.plans }),
     ...(options.checkin === undefined ? {} : { checkin: options.checkin }),
     ...(options.revived === undefined ? {} : { revived: options.revived }),
+    ...(options.broughtPlans === undefined ? {} : { broughtPlans: options.broughtPlans }),
     ...(options.goals === undefined ? {} : { goals: options.goals }),
     ...(options.suitability === undefined ? {} : { suitability: options.suitability }),
     ...(options.prospect === undefined ? {} : { prospect: options.prospect }),

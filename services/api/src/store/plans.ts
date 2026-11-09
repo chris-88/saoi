@@ -1,0 +1,205 @@
+import type { Database, Json } from '@shared/db/database.types.ts'
+import { mustWrite, writeEvent } from '@shared/db/case-repository.ts'
+import { factsFromPlan } from '@shared/db/saved-plans.ts'
+import type { MarketPlan } from '@shared/contracts/market-plan.ts'
+import type { Db } from './client.ts'
+
+/**
+ * Plans saved from the customer's own AI (`saved_plans`), and what claiming one writes.
+ *
+ * Who may claim and which conversation it lands in is the route's business; this is data
+ * access plus the one write that matters for a race, `markClaimed`, which is a single
+ * conditional update so two browsers opening the same link cannot both win.
+ */
+
+export type StoredPlan = {
+  readonly id: string
+  readonly title: string
+  /** As stored; the route parses it. */
+  readonly document: unknown
+  readonly client: string | null
+  readonly createdAt: string
+  readonly expiresAt: string
+  readonly claimedAt: string | null
+  readonly claimedBy: string | null
+  readonly caseId: string | null
+}
+
+export type PlanStore = {
+  save(input: {
+    plan: MarketPlan
+    client: string | null
+    tokenHash: string
+    expiresAt: string
+  }): Promise<{ id: string }>
+  /** Plans saved since then, for the daily ceiling on a public route. */
+  savedSince(sinceIso: string): Promise<number>
+  findByTokenHash(tokenHash: string): Promise<StoredPlan | null>
+  /** Whether any plan has been claimed into this case. */
+  caseHasPlan(caseId: string): Promise<boolean>
+  /**
+   * Claims the plan for this user and case, only if nobody has and it has not expired. True
+   * when this call won.
+   */
+  markClaimed(input: { planId: string; userId: string; caseId: string }): Promise<boolean>
+  /**
+   * Everything the claim records on the case: the situation's facts that map cleanly
+   * (`customer_stated`, keys the case does not already hold), `plan_saved` and `plan_claimed`,
+   * and `last_seen_at` when the case has none, so the claim is news the next turn narrates.
+   */
+  recordClaim(input: {
+    planId: string
+    caseId: string
+    participantId: string
+    plan: MarketPlan
+    client: string | null
+    savedAt: string
+  }): Promise<{ facts: readonly string[] }>
+}
+
+type Row = Database['public']['Tables']['saved_plans']['Row']
+
+const toStored = (row: Row): StoredPlan => ({
+  id: row.id,
+  title: row.title,
+  document: row.document,
+  client: row.client,
+  createdAt: row.created_at,
+  expiresAt: row.expires_at,
+  claimedAt: row.claimed_at,
+  claimedBy: row.claimed_by,
+  caseId: row.case_id,
+})
+
+export function supabasePlanStore(db: Db): PlanStore {
+  return {
+    async save({ plan, client, tokenHash, expiresAt }) {
+      const result = await db
+        .from('saved_plans')
+        .insert({
+          version: plan.version,
+          document: plan as unknown as Json,
+          title: plan.title,
+          client,
+          token_hash: tokenHash,
+          expires_at: expiresAt,
+        })
+        .select('id')
+        .single()
+      if (result.error || !result.data) {
+        throw new Error(`Could not save the plan: ${result.error?.message ?? 'no row'}`)
+      }
+      return { id: result.data.id }
+    },
+
+    async savedSince(sinceIso) {
+      const result = await db
+        .from('saved_plans')
+        .select('id', { count: 'exact', head: true })
+        .gte('created_at', sinceIso)
+      if (result.error) throw new Error(`Could not count plans: ${result.error.message}`)
+      return result.count ?? 0
+    },
+
+    async findByTokenHash(tokenHash) {
+      const result = await db
+        .from('saved_plans')
+        .select('*')
+        .eq('token_hash', tokenHash)
+        .maybeSingle()
+      if (result.error) throw new Error(`Could not read the plan: ${result.error.message}`)
+      return result.data === null ? null : toStored(result.data)
+    },
+
+    async caseHasPlan(caseId) {
+      const result = await db
+        .from('saved_plans')
+        .select('id', { count: 'exact', head: true })
+        .eq('case_id', caseId)
+      if (result.error) throw new Error(`Could not read plans: ${result.error.message}`)
+      return (result.count ?? 0) > 0
+    },
+
+    async markClaimed({ planId, userId, caseId }) {
+      const now = new Date().toISOString()
+      const result = await db
+        .from('saved_plans')
+        .update({ claimed_at: now, claimed_by: userId, case_id: caseId })
+        .eq('id', planId)
+        .is('claimed_at', null)
+        .gt('expires_at', now)
+        .select('id')
+      if (result.error) throw new Error(`Could not claim the plan: ${result.error.message}`)
+      return (result.data ?? []).length === 1
+    },
+
+    async recordClaim({ planId, caseId, participantId, plan, client, savedAt }) {
+      // Before the events, so they fall after it and the next start reports `hasUpdates`.
+      const theCase = await db.from('cases').select('last_seen_at').eq('id', caseId).maybeSingle()
+      if (!theCase.data?.last_seen_at) {
+        mustWrite(
+          await db
+            .from('cases')
+            .update({ last_seen_at: new Date(Date.now() - 1_000).toISOString() })
+            .eq('id', caseId),
+          'the case',
+        )
+      }
+
+      // What the case already holds wins: the plan is a snapshot from somewhere else.
+      const held = await db
+        .from('facts')
+        .select('key')
+        .eq('case_id', caseId)
+        .is('superseded_by', null)
+      const heldKeys = new Set((held.data ?? []).map((row) => String(row.key)))
+      const fresh = factsFromPlan(plan).filter((fact) => !heldKeys.has(fact.key))
+
+      if (fresh.length > 0) {
+        mustWrite(
+          await db.from('facts').insert(
+            fresh.map((fact) => ({
+              case_id: caseId,
+              key: fact.key,
+              participant_id: fact.subject === 'household' ? null : participantId,
+              subject_kind:
+                fact.subject === 'household' ? ('household' as const) : ('participant' as const),
+              value: fact.value as Json,
+              source: 'customer_stated' as const,
+              verified: false,
+            })),
+          ),
+          'the plan’s facts',
+        )
+        for (const fact of fresh) {
+          await writeEvent(db, {
+            caseId,
+            type: 'context_captured',
+            actor: 'customer',
+            payload: { key: fact.key, from: 'saved_plan' },
+          })
+        }
+      }
+
+      await writeEvent(db, {
+        caseId,
+        type: 'plan_saved',
+        actor: 'customer',
+        payload: { planId, client, savedAt },
+      })
+      await writeEvent(db, {
+        caseId,
+        type: 'plan_claimed',
+        actor: 'customer',
+        payload: {
+          planId,
+          title: plan.title,
+          products: plan.recommendation.products.length,
+          facts: fresh.length,
+        },
+      })
+
+      return { facts: fresh.map((fact) => fact.key) }
+    },
+  }
+}

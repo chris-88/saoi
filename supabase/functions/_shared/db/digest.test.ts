@@ -410,6 +410,15 @@ describe('what the digest is given, it keeps', () => {
     expect(digest.checkin?.purpose).toBe('Review')
     expect(digest.revived).toHaveLength(1)
   })
+
+  it('carries a plan brought from their own AI through to the prompt', () => {
+    const digest = buildCaseDigest(loaded(), {
+      broughtPlans: [{ title: 'House deposit', lines: ['Next: monthly saving with AIB'] }],
+    })
+    expect(digest.broughtPlans).toEqual([
+      { title: 'House deposit', lines: ['Next: monthly saving with AIB'] },
+    ])
+  })
 })
 
 describe('what the bank asked for after submission (§41)', () => {

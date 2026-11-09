@@ -104,15 +104,18 @@ export function createTurnRunner(deps: TurnDeps): TurnRunner {
     })
     meter.gateDone()
 
-    const { pendingNotice, pendingReuse, pendingWelcome } = await recordCustomerTurn(admin, {
-      turn: { ...turn, caseId },
-      participantId,
-      customerMessage,
-      isCustomerTurn,
-      gate,
-      loaded,
-      appBaseUrl: deps.appBaseUrl,
-    })
+    const { pendingNotice, pendingReuse, pendingWelcome, pendingPlan } = await recordCustomerTurn(
+      admin,
+      {
+        turn: { ...turn, caseId },
+        participantId,
+        customerMessage,
+        isCustomerTurn,
+        gate,
+        loaded,
+        appBaseUrl: deps.appBaseUrl,
+      },
+    )
 
     if (!gate.allowed) {
       const messageId = await persistBlocked(admin, {
@@ -180,6 +183,12 @@ export function createTurnRunner(deps: TurnDeps): TurnRunner {
           called,
         })
 
+        // The plan they brought is the reason for this turn: it is on screen before anything.
+        if (pendingPlan !== undefined) {
+          shown.push(pendingPlan)
+          yield { type: 'card', card: pendingPlan }
+        }
+
         // Before everything, the reuse card included: the account being open is the news, and
         // the model's sentence follows what the customer can already see.
         if (pendingWelcome !== undefined) {
@@ -232,7 +241,7 @@ export function createTurnRunner(deps: TurnDeps): TurnRunner {
           after.authLevel !== 'authenticated' &&
           soundsLikeReturning(customerMessage)
 
-        if (after && (asking || worthSigningInFor(after))) {
+        if (after && (asking || worthSigningInFor(after) || generation.signInForPlan)) {
           const suppressed = !asking && (await caseHasEvent(admin, caseId, SIGN_IN_PROMPT_EVENT))
           if (!suppressed) {
             await writeEvent(admin, {

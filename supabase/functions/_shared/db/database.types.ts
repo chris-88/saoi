@@ -1460,6 +1460,56 @@ export type Database = {
           },
         ]
       }
+      saved_plans: {
+        Row: {
+          case_id: string | null
+          claimed_at: string | null
+          claimed_by: string | null
+          client: string | null
+          created_at: string
+          document: Json
+          expires_at: string
+          id: string
+          title: string
+          token_hash: string
+          version: number
+        }
+        Insert: {
+          case_id?: string | null
+          claimed_at?: string | null
+          claimed_by?: string | null
+          client?: string | null
+          created_at?: string
+          document: Json
+          expires_at: string
+          id?: string
+          title: string
+          token_hash: string
+          version: number
+        }
+        Update: {
+          case_id?: string | null
+          claimed_at?: string | null
+          claimed_by?: string | null
+          client?: string | null
+          created_at?: string
+          document?: Json
+          expires_at?: string
+          id?: string
+          title?: string
+          token_hash?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "saved_plans_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tokens: {
         Row: {
           case_id: string
