@@ -315,7 +315,7 @@ describe('build_plan: what the first Claude test showed (2026-11-09)', () => {
     const result = plan({ minLockGainEur: 0, minLockGainPctPerYear: 0 })
     expect(result.liquidity.decision).toBe('locked')
     expect(locks(result).length).toBe(1)
-    expect(result.whatIf.lines.join(' ')).toMatch(/Keeping every euro in instant access instead/)
+    expect(result.whatIf.lines.join(' ')).toMatch(/What if every euro stayed in instant access/)
   })
 
   it('states where the freed loan repayment goes', () => {
@@ -332,7 +332,9 @@ describe('build_plan: what the first Claude test showed (2026-11-09)', () => {
     // €100 a month for 24 months, plus its interest.
     expect(result.whatIf.extraMonthly?.addsAtHorizon).toBeGreaterThan(2_400)
     expect(result.whatIf.extraMonthly?.addsAtHorizon).toBeLessThan(2_600)
-    expect(result.whatIf.lines.join(' ')).toMatch(/Car loan: cleared from the lump sum/)
+    expect(result.whatIf.lines.join(' ')).toMatch(
+      /What if the Car loan were kept instead of cleared/,
+    )
     expect(result.next).toMatch(/24 hours/)
     expect(result.next).toMatch(/Saoirse/)
     // Only what exists is promised; what is not built yet says so.
@@ -443,7 +445,7 @@ describe('what the host reads first (after the second Claude test)', () => {
     if (scenario === undefined) return
     expect(text).toContain(`cleared from savings now, ${euro(scenario.cleared.netPosition)}`)
     expect(text).toContain(`kept, ${euro(scenario.kept.netPosition)}`)
-    expect(text).toMatch(/savings less what is still owed/)
+    expect(text).toMatch(/everything held less what is still owed/)
     expect(text).not.toMatch(DIRECTIVE)
     expect(result.presentation.at(-1)).toMatch(/the customer decides/)
   })
@@ -472,7 +474,9 @@ describe('what the host reads first (after the second Claude test)', () => {
     )
     const all = [...kept.presentation, ...kept.reasoning, ...kept.whatIf.lines].join('\n')
     expect(kept.plan.debts[0]?.action).toBe('keep_paying')
-    expect(all).toMatch(/net at November 2028 \(€[\d,.]+ saved less €[\d,.]+ still owed\)/)
+    expect(all).toMatch(
+      /€[\d,]+ net at November 2028, everything held less what is still owed: €[\d,]+ towards the house deposit, less €[\d,]+ still owed on the car loan\./,
+    )
     expect(all).not.toMatch(/projected at November 2028/)
   })
 

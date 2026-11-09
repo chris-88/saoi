@@ -257,6 +257,21 @@ export const marketPlanSchema = z
       basis: text(400),
     }),
     assumptions: z.array(text(300)).max(20).default([]),
+    /**
+     * Where the plan ends, everything included: towards the goal, the emergency buffer, less
+     * what is still owed. `line` says it in one sentence with the parts named. Optional: plans
+     * saved before 2026-11-09 do not have it.
+     */
+    position: z
+      .object({
+        at: monthOrDay,
+        total: z.number().min(-100_000_000).max(100_000_000),
+        towardsGoal: eur,
+        buffer: eur,
+        owed: eur,
+        line: text(400),
+      })
+      .optional(),
     createdAt: isoDateTime,
     /** When the oldest market figure in the plan was last checked. */
     dataCheckedAt: isoDateTime,

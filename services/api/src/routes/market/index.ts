@@ -315,15 +315,21 @@ const buildPlanRoute = createRoute({
   description:
     'Given a situation and chosen goals: an emergency buffer (`emergencyBufferEur`, ' +
     '`emergencyBufferMonths` of outgoings, or an emergency_fund goal) in the best instant ' +
-    'access, kept apart; each debt costing more than savings earn worked out cleared and kept, ' +
-    'with both figures, and a cleared debt’s repayment saved; the rest split across the market ' +
+    'access, kept apart; each debt as `debts[].plan` says: `compare` (default) works it out ' +
+    'cleared and kept, with both figures, and takes the one leaving more; `keep` keeps it, still ' +
+    'owed; `clear` clears it from savings (a cleared debt’s repayment is saved). To model keeping ' +
+    'a debt, send it with `plan: "keep"`: never drop it from the call. Money in a current ' +
+    'account (`access: "current_account"`) counts as earning what CCPC states current accounts ' +
+    'pay (0%); the rest split across the market ' +
     '(regular savers to their monthly caps, the lump sum to a fixed term or notice account that ' +
     'ends by the goal’s date only where it beats instant access by `minLockGainEur` and ' +
     '`minLockGainPctPerYear`, otherwise instant access; `keepAccessible` or ' +
     '`goalDateCertain: false` keep everything in instant access; at most €100,000 per ' +
     'provider); projected to the date the main goal is reached; what-ifs (an extra €100 a ' +
     'month, each debt cleared or kept, the month a target is reached at this pace); for a ' +
-    'house deposit, what it supports under the Central Bank limits. To change an assumption, ' +
+    'house deposit, what it supports under the Central Bank limits. `position` is everything held ' +
+    'at the end (towards the goal and the buffer, named) less what is still owed; the questions ' +
+    'that would sharpen the plan come with it, as in saoi_money_check. To change an assumption, ' +
     'call again with the new inputs rather than adjusting the figures. Returns `plan` (a ' +
     '`MarketPlan`, the body `POST /api/plans` takes: send it unchanged to save it behind a ' +
     'one-time link), the reasoning, every figure, and `next` for the host to relay. ' +

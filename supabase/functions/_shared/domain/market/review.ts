@@ -9,6 +9,7 @@ import { costOf } from './debt.ts'
 import { attributionsOf, displayName, euro, oldestCheck } from './figures.ts'
 import { HELP_TO_BUY } from '../../market/first-home-rules.ts'
 import { firstHome } from './first-home.ts'
+import { withHeldRates } from './held-rates.ts'
 import { moneyFoundForReview } from './money-found.ts'
 import { savingsCandidates } from './search.ts'
 import { DIRT_RATE, monthsUntil, round2 } from './simulate.ts'
@@ -49,11 +50,15 @@ export function bestInstantAccess(market: Market, amount: number, asOf: AsOf) {
 }
 
 export function review(market: Market, request: ReviewRequest, asOf: AsOf): ReviewResponse {
-  const { situation, goals } = request
+  const { goals } = request
+  // A current account with no rate given earns what CCPC says current accounts pay (0%).
+  const rates = withHeldRates(market, request.situation)
+  const situation = rates.situation
   const findings: Finding[] = []
   const assumptions = [
     'Savings rates are compared after DIRT at 33%, over twelve months, in instant-access accounts.',
     'Variable rates are assumed to stay as published.',
+    ...rates.basis,
   ]
   const held = situation.savings
   const total = held.reduce((sum, item) => sum + item.balance, 0)
@@ -79,7 +84,7 @@ export function review(market: Market, request: ReviewRequest, asOf: AsOf): Revi
     findings.push({
       kind: 'idle_money',
       headline: `${euro(item.balance)} in ${item.label} earns ${euro(now)} a year after DIRT`,
-      detail: `At ${item.aerPct}% it earns ${euro(now)} a year. The highest instant-access rate Saoi holds${bestName === null ? '' : ` (${bestName})`} would pay about ${euro(could)} after DIRT on the same money, with access kept.`,
+      detail: `${item.access === 'current_account' ? 'A current account: ' : ''}At ${String(item.aerPct)}% it earns ${euro(now)} a year. The highest instant-access rate Saoi holds${bestName === null ? '' : ` (${bestName})`} would pay about ${euro(could)} after DIRT on the same money, with access kept.`,
       figures: {
         balance: item.balance,
         earnsNow: now,
@@ -253,7 +258,7 @@ export function review(market: Market, request: ReviewRequest, asOf: AsOf): Revi
   }
 
   const compared = best === null ? [] : [best.product]
-  const moneyFound = moneyFoundForReview(market, situation, asOf)
+  const moneyFound = moneyFoundForReview(market, request.situation, asOf)
   const presentation = [
     moneyFound.headline,
     ...findings

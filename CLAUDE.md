@@ -302,13 +302,25 @@ The engine behind the Saoi MCP tools, in `_shared/domain/market/` (pure; contrac
   least `minLockGainEur` (default €100) and `minLockGainPctPerYear` (0.25%) more by the goal date,
   and never with `keepAccessible` or `goalDateCertain: false`. `liquidity` states the decision with
   both figures; `whatIf` gives an extra €100 a month, each debt cleared or kept, and the month a
-  target is reached; a cleared debt's repayment is saved and the reasoning says so. Review and
-  plan results carry `next`, the offer to save for the host to relay.
+  target is reached, every line starting "What if"; a cleared debt's repayment is saved and the
+  reasoning says so. Each debt takes `plan`: `compare` (default), `keep` or `clear`; keeping a
+  debt is modelled by keeping it in the call, never by dropping it. A debt with no repayment or
+  months left counts today's balance as still owed (the most it can be) and is not compared.
+  `position` (and `plan.position`, first in `plan.assumptions`) is everything held at the end,
+  towards the goal plus the buffer, less what is still owed, with the parts named; every net
+  figure includes the buffer, and with no debts given the line says so instead of "net". Review
+  and plan results carry `next`, the offer to save for the host to relay; a plan also carries the
+  money check's `questions`, so build_plan and money_check present the same for the same input.
 - **Money check** (`money-check.ts`): the one-call entry (Chris, 2026-11-09: "connect it and
   just talk"). Takes whatever the customer has said, however partial; returns the review, a plan
   when there is money to place (for "the savings held, no date" when no goal was given, stated in
   `planGoalAssumed`), up to three questions that would sharpen it, the presentation, and the
   24-hour save link. The granular tools are for follow-ups.
+- **Held rates** (`held-rates.ts`, after the fourth Claude test): money in a current account
+  (`access: 'current_account'`, or a "current account" label with no access given) and no rate
+  given earns what CCPC's current-account table states (the provider's row, else 0% when every
+  stated rate is 0%), with the basis in `moneyFound.basis` and a line in its headline. A savings
+  account without a rate stays unknown.
 - **Money found** (`money-found.ts`): review and plan results lead with `moneyFound`, one euro a
   year in parts (idle cash against the best confirmed instant-access rate after DIRT, debt
   interest not paid less what the money would earn, a mortgage switch at a band reaching 90% LTV,
@@ -349,8 +361,8 @@ amounts, projections and unknowns, the payoff order, the ranking basis, assumpti
   Drafts: 30 a minute per address; past a limit, or if the write fails, the plan comes back with
   `saveLink: null` and says so.
 - **Presentation**: review, plan and first-home results lead with `presentation`, the sentences
-  a host reads first: money found, one net figure per scenario (savings less what is still owed,
-  never a gross pot alone), the split, the liquidity call, Help to Buy for a home, the save link,
+  a host reads first: money found, the position with its parts, one net figure per scenario (everything held less what is still owed,
+  never a gross pot alone), the split, the liquidity call, Help to Buy for a home, the questions, the save link,
   and that the customer decides. No imperatives.
 - **Claiming** (`#/plan/<token>` in saoi-web) puts it in the browser's current conversation when
   that is empty, otherwise a new one (`source: 'plan'`, under the audience cap, refused before
