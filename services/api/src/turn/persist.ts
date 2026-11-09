@@ -10,6 +10,12 @@ import {
   welcomeCardFor,
   welcomedAccounts,
 } from '@shared/db/welcome.ts'
+import {
+  loadClaimedPlans,
+  savedPlanCard,
+  shownPlans,
+  SAVED_PLAN_CARD,
+} from '@shared/db/saved-plans.ts'
 import { asksSomething } from '@shared/domain/conversation/turn-shape.ts'
 import { isRepeatedMessage } from '@shared/domain/conversation/repeat.ts'
 import { syncFormApplications } from '@shared/db/form-applications.ts'
@@ -22,6 +28,7 @@ export type PendingCards = {
   readonly pendingNotice: Card | undefined
   readonly pendingReuse: Card | undefined
   readonly pendingWelcome: Card | undefined
+  readonly pendingPlan: Card | undefined
 }
 
 /**
@@ -199,6 +206,28 @@ export async function recordCustomerTurn(
   }
 
   /**
+   * A plan made in their own AI, opened here: shown once, before Saoirse speaks, on whatever
+   * turn comes first after the claim. The same pattern as the welcome above, keyed by plan id
+   * and read from the transcript. Built from the stored plan (Invariant 2).
+   */
+  let pendingPlan: Card | undefined
+  const claimed = await loadClaimedPlans(admin, turn.caseId)
+  if (claimed.length > 0) {
+    const shown = await admin
+      .from('messages')
+      .select('cards')
+      .eq('case_id', turn.caseId)
+      .contains('cards', JSON.stringify([{ type: SAVED_PLAN_CARD }]))
+    if (shown.error !== null) {
+      console.error(`shown plans could not be read: ${shown.error.message}`)
+    } else {
+      const already = shownPlans(shown.data ?? [])
+      const owed = claimed.find((entry) => !already.has(entry.id))
+      if (owed !== undefined) pendingPlan = savedPlanCard(owed)
+    }
+  }
+
+  /**
    * A tap is recorded as what it was.
    *
    * It used to be saved as a customer message, so "Started Savings account, Joint current
@@ -221,7 +250,7 @@ export async function recordCustomerTurn(
     })
   }
 
-  return { pendingNotice, pendingReuse, pendingWelcome }
+  return { pendingNotice, pendingReuse, pendingWelcome, pendingPlan }
 }
 
 /** A blocked turn never reaches the model (Invariant 4): the block is recorded, the canned reply saved. */

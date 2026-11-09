@@ -29,6 +29,7 @@ import { suggestionsFor } from '@shared/domain/quotes/suitability.ts'
 import { isProduct, type Product } from '@shared/domain/journey.ts'
 import { describeProspect, wouldInvolve } from '@shared/domain/prospect.ts'
 import { describeGoals, goalContextFor } from '@shared/db/goals.ts'
+import { loadClaimedPlans, savedPlanDigestLines } from '@shared/db/saved-plans.ts'
 import { participantFor, type LoadedCase } from '@shared/db/loaded-case.ts'
 
 /** The case and the catalogue Saoirse speaks from this turn. */
@@ -313,6 +314,16 @@ export async function buildGeneration(
 
   const { stage, arrangement } = computeStage({ loaded, goals, keptPlans, savingsOptions })
 
+  /*
+   * A plan they made in their own AI and opened here. In the digest on every turn, not only
+   * the first: it is the reason the conversation exists, and "what was step two again?" is a
+   * question for next week too.
+   */
+  const broughtPlans = (await loadClaimedPlans(admin, turn.caseId)).map((claimed) => ({
+    title: claimed.plan.title,
+    lines: savedPlanDigestLines(claimed),
+  }))
+
   const digest = buildCaseDigest(loaded, {
     sensitiveDisclosure: gate.suppressHumour,
     stage,
@@ -328,6 +339,7 @@ export async function buildGeneration(
       ? {}
       : { arrangementNeeds: arrangement.needs.map((need) => need.why) }),
     ...(revived.length === 0 ? {} : { revived }),
+    ...(broughtPlans.length === 0 ? {} : { broughtPlans }),
     ...(dueNow === null
       ? {}
       : {
@@ -428,7 +440,26 @@ export async function buildGeneration(
     })
   }
 
-  if (turn.trigger === 'return') {
+  /*
+   * They have just opened a plan made in their own AI. The card is already on screen; the turn
+   * says what it is and what comes next, from the digest's own lines, and stops.
+   */
+  const openedPlan =
+    turn.trigger === 'return' &&
+    loaded.eventsSinceLastSeen.some((event) => event.type === 'plan_claimed')
+
+  if (openedPlan) {
+    history.push({
+      role: 'user',
+      content:
+        '(The customer has just opened, in this app, the plan they made with their own AI ' +
+        'assistant. The plan card is on screen directly above your reply and shows every ' +
+        'figure. Open by welcoming them and saying in a sentence what the plan is, from "The ' +
+        'plan they brought from their own AI assistant". Then say what is next, which is the ' +
+        'line that begins "Next:". Do not repeat the figures and do not work anything out. ' +
+        'Ask whether they want to start there or talk any of it through. Keep it short.)',
+    })
+  } else if (turn.trigger === 'return') {
     // §36 — the customer did not ask anything; they came back. Lead with what changed.
     history.push({
       role: 'user',
