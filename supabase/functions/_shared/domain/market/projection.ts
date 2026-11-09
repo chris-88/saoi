@@ -6,7 +6,7 @@ import type {
 } from '../../contracts/market-tools.ts'
 import { allocate, allocatable } from './allocate.ts'
 import { attributionsOf, euro, oldestCheck } from './figures.ts'
-import { MarketInputError, SAVINGS_ASSUMPTIONS } from './search.ts'
+import { MarketInputError, SAVINGS_ASSUMPTIONS, UNCONFIRMED_RATE } from './search.ts'
 import { addMonths, round2, simulateDeposit } from './simulate.ts'
 import type { AsOf, Market } from './types.ts'
 
@@ -67,7 +67,6 @@ export function project(
       throw new MarketInputError('Give `lines`, or a `lumpSum` or `monthly` amount to place.')
     }
     const pool = allocatable(market.products, {
-      includePlatforms: request.includePlatforms ?? true,
       horizonMonths: horizon,
       lockAllowed: true,
     })
@@ -100,6 +99,7 @@ export function project(
     })
     const figures = simulation.figures
     const notes: string[] = []
+    if (!line.product.rateConfirmed) notes.push(UNCONFIRMED_RATE)
     if (figures.stop !== null) notes.push(figures.stop.reason)
     if (figures.notPlaced.monthly > 0) {
       notes.push(

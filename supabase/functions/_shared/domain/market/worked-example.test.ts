@@ -67,7 +67,7 @@ describe('worked example: review_situation', () => {
     expect(kinds).toContain('debt_costs_more_than_savings_earn')
     const idle = result.findings.find((finding) => finding.kind === 'idle_money')
     expect(idle?.figures['earnsNow']).toBe(0)
-    expect(idle?.figures['couldEarnInstantAccess']).toBeGreaterThan(400)
+    expect(idle?.figures['couldEarnInstantAccess']).toBeGreaterThan(300)
     const loan = result.findings.find(
       (finding) => finding.kind === 'debt_costs_more_than_savings_earn',
     )

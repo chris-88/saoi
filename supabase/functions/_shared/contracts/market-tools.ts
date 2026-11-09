@@ -145,6 +145,17 @@ export const depositTermsSchema = z.object({
   maxMonthlyEur: eur.nullable().describe('The most that can be paid in each month.'),
   minLumpSumEur: eur.nullable(),
   maxLumpSumEur: eur.nullable(),
+  thresholdBonus: z
+    .object({
+      bonusAerPct: pct,
+      resetMonths: z.array(z.number().int()),
+      lookbackMonths: z.number().int(),
+      baseBands: z.array(z.object({ fromEur: eur, toEur: eur.nullable(), aerPct: pct })),
+    })
+    .nullable()
+    .describe(
+      'A bonus that gives way to base rates (bunq): every euro earns the bonus until the first reset (the first day of each month in `resetMonths`); then the threshold is the highest balance of the past `lookbackMonths`, the balance up to it earns `baseBands`, and only the part above it earns the bonus.',
+    ),
   dirtApplies: z
     .boolean()
     .describe(
@@ -240,6 +251,11 @@ export const productViewSchema = z
     platform: platformSchema.nullable(),
     depositGuarantee: depositGuaranteeSchema.nullable(),
     unknowns: z.array(unknownFieldSchema),
+    rateConfirmed: z
+      .boolean()
+      .describe(
+        'False for a savings or deposit rate read only from CCPC with nothing stated about what follows it: the provider may pay it only for a period, or only on part of the balance. Shown as a flag when it ranks in the top three.',
+      ),
     checks: z
       .array(z.string())
       .describe(
@@ -329,12 +345,6 @@ export const searchRequestSchema = z
       .optional()
       .describe('Savings and deposits: only this kind of access. Default any.'),
     maxNoticeDays: z.number().int().nonnegative().max(1000).optional(),
-    includePlatforms: z
-      .boolean()
-      .optional()
-      .describe(
-        'Include products opened through a deposit platform (Raisin). Default true; they are flagged.',
-      ),
     providers: z
       .array(z.string().regex(/^[a-z0-9_]{2,40}$/))
       .max(30)
@@ -616,7 +626,6 @@ export const projectionRequestSchema = z
         'With no `lines`: the monthly saving to place in the best available regular savers.',
       ),
     targetAmount: eur.optional().describe('A goal: the month it is reached is reported.'),
-    includePlatforms: z.boolean().optional(),
   })
   .describe('Amounts, a horizon, and either named products or "best available".')
 export type ProjectionRequest = z.infer<typeof projectionRequestSchema>
@@ -888,10 +897,6 @@ export const buildPlanRequestSchema = z.object({
     .describe(
       'With an `emergency_fund` goal and no target: months of outgoings to hold. Default 3.',
     ),
-  includePlatforms: z
-    .boolean()
-    .optional()
-    .describe('Allow products opened through Raisin. Default true.'),
   maxAccounts: z
     .number()
     .int()

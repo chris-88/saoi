@@ -50,14 +50,22 @@ The top five are shown unless more are asked for. Saoi's own earnings play no pa
 ## Where the data comes from
 
 Two sources, side by side: the provider's own website (Bank of Ireland's savings and deposit
-products so far) and the Competition and Consumer Protection Commission's comparison tables,
-for every provider CCPC lists. Where Saoi reads a provider directly, that row is shown and the
+products, and bunq's savings account, so far) and the Competition and Consumer Protection
+Commission's comparison tables. Where Saoi reads a provider directly, that row is shown and the
 CCPC row for the same product is set aside and named. Every product carries its source, when it
 was last checked, when Saoi last saw it change, and every field the source does not give.
 
-Products from banks in other EU countries offered through the Raisin platform are included and
-flagged: a Raisin account comes first, and the money is protected by the bank's home-country
-deposit guarantee scheme, not Ireland's.
+## Which providers are compared
+
+Providers that operate in Ireland: Irish banks and credit unions, Ireland State Savings, and banks
+from other EU countries with an Irish branch or service (such as bunq, Revolut, Avant Money and
+MoCo). Their deposits may be protected by their home country's deposit guarantee scheme rather
+than Ireland's, and the result says which. Banks reached only through a deposit platform, such
+as Raisin, are not compared.
+
+A savings rate that rests on CCPC's single figure, with nothing stated about what follows it, is
+flagged as not confirmed when it ranks near the top: some providers pay their headline rate only
+for a period, or only on part of the balance.
 
 ## What the data does not say
 

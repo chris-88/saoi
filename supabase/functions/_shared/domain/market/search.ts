@@ -56,6 +56,12 @@ const LOAN_PURPOSE_LABELS: Readonly<Record<NonNullable<SearchRequest['purpose']>
   student: 'Student loans',
 }
 
+/** Results this high carry the flag below when their rate rests on CCPC's one figure. */
+const UNCONFIRMED_FLAG_TOP = 3
+
+export const UNCONFIRMED_RATE =
+  'Introductory or tiered rate not confirmed: CCPC states this one rate and nothing after it, and Saoi has not read the provider’s own terms. The provider may pay it only for a period or only on part of the balance; check its terms.'
+
 const NOT_FOR_ADULT_SAVING = /child|kid|junior|teen|student|third level/i
 
 type Candidate = {
@@ -171,7 +177,10 @@ export function search(market: Market, request: SearchRequest, asOf: AsOf): Sear
     rank: index + 1,
     product: candidate.product,
     figures: candidate.figures,
-    flags: candidate.flags,
+    flags:
+      index < UNCONFIRMED_FLAG_TOP && !candidate.product.rateConfirmed
+        ? [UNCONFIRMED_RATE, ...candidate.flags]
+        : candidate.flags,
   }))
 
   return {
@@ -200,13 +209,7 @@ export function savingsCandidates(
   products: readonly ProductView[],
   request: Pick<
     SearchRequest,
-    | 'category'
-    | 'amount'
-    | 'monthlyAmount'
-    | 'horizonMonths'
-    | 'access'
-    | 'maxNoticeDays'
-    | 'includePlatforms'
+    'category' | 'amount' | 'monthlyAmount' | 'horizonMonths' | 'access' | 'maxNoticeDays'
   >,
   asOf: AsOf,
   excluded: { add(reason: string): void },
@@ -232,10 +235,6 @@ export function savingsCandidates(
     if (terms.kind !== 'deposit') return []
     if (NOT_FOR_ADULT_SAVING.test(product.name)) {
       excluded.add('For children or students, by its name')
-      return []
-    }
-    if (request.includePlatforms === false && product.platform !== null) {
-      excluded.add('Opened through a deposit platform (Raisin), and platforms were left out')
       return []
     }
     if (

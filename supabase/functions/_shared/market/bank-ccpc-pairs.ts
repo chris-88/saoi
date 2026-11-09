@@ -1,7 +1,8 @@
 /**
  * Which CCPC row is the same product as a row read from the provider's own site.
  *
- * Bank of Ireland is read two ways: from its own pages (`bank`) and from CCPC (`ccpc`). CCPC
+ * Bank of Ireland and bunq are read two ways: from their own pages (`bank`) and from CCPC (`ccpc`).
+ * CCPC
  * lists Advantage as three products (one per term) where the bank's page is one product with a
  * ladder, and names products its own way, so the pairing is by name, recorded here once. The
  * refresh cross-checks each pair (`scripts/market/crosscheck.ts`); the comparison engine
@@ -50,4 +51,18 @@ export const BANK_CCPC_PAIRS: readonly BankCcpcPair[] = [
     category: 'deposit' as const,
     termMonths: months,
   })),
+  // bunq: CCPC's "bunq Free" (3.11%, no cap, nothing after) is the savings account bunq's own
+  // page describes with a bonus that gives way to base rates at each threshold reset.
+  {
+    provider: 'bunq',
+    bankId: 'savings.bunq_savings',
+    ccpcName: /^bunq Free$/i,
+    category: 'savings',
+  },
+  {
+    provider: 'bunq',
+    bankId: 'deposit.bunq_savings',
+    ccpcName: /^bunq Free$/i,
+    category: 'deposit',
+  },
 ]

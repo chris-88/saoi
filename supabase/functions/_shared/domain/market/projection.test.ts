@@ -10,7 +10,6 @@ const AS_OF = '2026-11-09'
 
 describe('allocate', () => {
   const pool = allocatable(market.products, {
-    includePlatforms: true,
     horizonMonths: 24,
     lockAllowed: true,
   })
@@ -51,7 +50,6 @@ describe('allocate', () => {
 
   it('locks nothing away when the date is not known', () => {
     const open = allocatable(market.products, {
-      includePlatforms: true,
       horizonMonths: 24,
       lockAllowed: false,
     })
@@ -89,7 +87,7 @@ describe('project', () => {
       {
         horizonMonths: 24,
         lines: [
-          { productId: 'nordax:deposit.c7830', lumpSum: 25_000 },
+          { productId: 'aib:deposit.ladder_personal_fixed_term_deposit', lumpSum: 25_000 },
           { productId: 'boi:savings.supersaver', monthly: 800 },
         ],
         targetAmount: 40_000,
@@ -106,8 +104,9 @@ describe('project', () => {
   })
 
   it('stops the totals where a line’s rate runs out, and says so', () => {
+    // Raisin's 3-month offer is the fixture's one rate with nothing stated after it.
     const result = project(
-      market,
+      normaliseMarket(MARKET_FIXTURE, { includePlatforms: true }),
       {
         horizonMonths: 12,
         lines: [

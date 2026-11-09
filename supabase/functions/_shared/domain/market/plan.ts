@@ -13,7 +13,7 @@ import { displayName, euro, interestToClear } from './figures.ts'
 import { affordability } from './mortgage.ts'
 import { project } from './projection.ts'
 import { monthlyOutgoings } from './review.ts'
-import { SAVINGS_ASSUMPTIONS } from './search.ts'
+import { SAVINGS_ASSUMPTIONS, UNCONFIRMED_RATE } from './search.ts'
 import { monthsUntil, round2, simulateDeposit } from './simulate.ts'
 import type { AsOf, Market } from './types.ts'
 
@@ -98,7 +98,6 @@ export function buildPlan(
   createdAt: string,
 ): BuildPlanResponse {
   const { situation, goals } = request
-  const includePlatforms = request.includePlatforms ?? true
   const maxAccounts = request.maxAccounts ?? DEFAULT_MAX_ACCOUNTS
   const reasoning: string[] = []
   const assumptions: string[] = [...SAVINGS_ASSUMPTIONS]
@@ -145,7 +144,6 @@ export function buildPlan(
     } else {
       const take = Math.min(target, lump)
       const pool = allocatable(market.products, {
-        includePlatforms,
         horizonMonths: horizon,
         lockAllowed: false,
       })
@@ -171,7 +169,6 @@ export function buildPlan(
 
   // ---- 2. Debts -------------------------------------------------------------------------------
   const pool = allocatable(market.products, {
-    includePlatforms,
     horizonMonths: horizon,
     lockAllowed,
   })
@@ -545,6 +542,7 @@ function planProduct(
   )
   const figures = projection.lines[0]?.figures
   const checks = [
+    ...(product.rateConfirmed ? [] : [UNCONFIRMED_RATE]),
     ...(product.depositGuarantee !== null &&
     product.depositGuarantee.country !== 'Ireland' &&
     product.depositGuarantee.scheme !== null

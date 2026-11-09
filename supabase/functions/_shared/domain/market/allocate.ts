@@ -47,7 +47,6 @@ const NOT_FOR_ADULT_SAVING = /child|kid|junior|teen|student|third level/i
 export function allocatable(
   products: readonly ProductView[],
   options: {
-    readonly includePlatforms: boolean
     readonly horizonMonths: number
     readonly lockAllowed: boolean
   },
@@ -56,7 +55,6 @@ export function allocatable(
     const terms = product.terms
     if (terms.kind !== 'deposit') return false
     if (NOT_FOR_ADULT_SAVING.test(product.name)) return false
-    if (!options.includePlatforms && product.platform !== null) return false
     if (terms.access === 'fixed_term') {
       return (
         options.lockAllowed && terms.ladder.some((rung) => rung.months <= options.horizonMonths)
