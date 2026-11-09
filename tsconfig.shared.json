@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.shared.tsbuildinfo",
+    // The shared code runs in saoi-api (Node) and is copied into the browser apps
+    // (saoi-web, saoi-admin), so it is checked against both sets of globals.
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "paths": {
+      "@domain/*": ["./supabase/functions/_shared/domain/*"],
+      "@contracts/*": ["./supabase/functions/_shared/contracts/*"],
+      "@db/*": ["./supabase/functions/_shared/db/*"],
+      "@llm/*": ["./supabase/functions/_shared/llm/*"],
+      "@tenants/*": ["./supabase/functions/_shared/tenants/*"]
+    }
+  },
+  "include": ["supabase/functions/_shared"]
+}

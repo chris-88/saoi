@@ -7,13 +7,5 @@
     "module": "nodenext",
     "moduleResolution": "nodenext"
   },
-  "include": [
-    "vite.config.ts",
-    "vitest.config.ts",
-    "playwright.config.ts",
-    "e2e",
-    "evals",
-    "scripts",
-    "tests"
-  ]
+  "include": ["vitest.config.ts", "evals", "scripts", "tests"]
 }

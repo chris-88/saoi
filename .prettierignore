@@ -2,4 +2,3 @@ dist
 coverage
 supabase/functions/_shared/db/database.types.ts
 .claude/
-brand/
