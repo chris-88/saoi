@@ -25,14 +25,10 @@ jobs:
 
       - run: npm ci
 
-      # The same command as local: typecheck, lint, format:check, seed:check, test, build and
-      # the published-bundle secret scan (the site is public, anything in dist/ is readable).
+      # The same command as local: typecheck, lint, format:check, seed:check and the tests of the
+      # shared domain, contracts and prompts. The browser apps are saoi-web and saoi-admin.
       - name: Check
         run: npm run check
-        env:
-          VITE_BASE_PATH: ${{ vars.VITE_BASE_PATH }}
-          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
-          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
 
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high

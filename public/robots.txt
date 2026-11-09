@@ -1,3 +1,0 @@
-# A Bank-of-Ireland-branded prototype on a personal domain. Not for indexing.
-User-agent: *
-Disallow: /

@@ -1,7 +1,7 @@
 # saoi-api
 
 The business-logic service for Saoirse: Node 24, TypeScript, [Hono](https://hono.dev) with
-`@hono/zod-openapi`. It is the only backend the app talks to, at `VITE_SAOI_API_URL`; the Supabase
+`@hono/zod-openapi`. It is the only backend saoi-web and saoi-admin talk to, at `VITE_SAOI_API_URL`; the Supabase
 Edge Functions it replaced were retired on 2026-11-06.
 
 ## Endpoints
@@ -44,7 +44,7 @@ are Postgres functions called with `rpc`, because supabase-js cannot hold a tran
 
 The presenter console, ported from the `admin` Edge Function. Its own guard, `requireAdmin` (a row
 in `admin_users`, else 403), runs before any body is validated. Responses are the bare payloads
-`src/admin/adminClient.ts` expects. Destructive routes need `confirm: true` in the body and write
+`src/admin/adminClient.ts` in saoi-admin expects. Destructive routes need `confirm: true` in the body and write
 an `admin_audit` row in the same transaction (a Postgres function called through RPC; see
 `supabase/migrations/20261104150000_admin_audit.sql`).
 
@@ -172,7 +172,7 @@ Errors are `{ ok: false, error: { code, message, details?, requestId } }`. Anyth
 | `RATE_LIMIT_WINDOW_MS`                      | no        | Window length, default 60000.                                                                                                           |
 | `PRESENTER_KEY`                             | no        | Opens the switcher to every case for a device sending it as `X-Presenter-Key`. Unset, nobody is a presenter. Compared in constant time. |
 | `AUDIENCE_MAX_CASES`                        | no        | Customer cases a day before a new one is refused, default 50.                                                                           |
-| `APP_BASE_URL`                              | no        | Where the SPA is served; the partner invite link is `${APP_BASE_URL}/#/join/<token>`.                                                   |
+| `APP_BASE_URL`                              | no        | Where saoi-web is served; the partner invite link is `${APP_BASE_URL}/#/join/<token>`.                                                  |
 | `ANTHROPIC_API_KEY`                         | for turns | Required unless `LLM_PROVIDER=fixture`. `SAOI_MODEL` and `GATE_MODEL` pick the models.                                                  |
 | `LLM_PROVIDER`, `LLM_FIXTURE`               | no        | `anthropic` (default) or `fixture`, which replays a script and calls nothing. `LLM_FIXTURE` defaults to `opening`.                      |
 | `TURN_TIMEOUT_MS`, `TURN_MAX_OUTPUT_TOKENS` | no        | Wall clock for a whole turn (default 85000, max 95000) and the output ceiling of one round (default 3072).                              |
