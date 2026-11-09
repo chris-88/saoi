@@ -3,9 +3,9 @@ import {
   type Goal,
   type MoneyCheckRequest,
   type MoneyCheckResponse,
-  type Situation,
 } from '../../contracts/market-tools.ts'
-import { monthlyOutgoings, review } from './review.ts'
+import { questionsFor, SHARPEN, sharpenLines } from './questions.ts'
+import { review } from './review.ts'
 import { buildPlan } from './plan.ts'
 import type { AsOf, Market } from './types.ts'
 
@@ -25,51 +25,6 @@ const DEFAULT_GOAL: Goal = {
   kind: 'grow_savings',
   label: 'The savings held (no date set)',
   priority: 1,
-}
-
-/** The questions that would most change the answer, in order, at most three. */
-export function questionsFor(situation: Situation, goals: readonly Goal[]): string[] {
-  const out: string[] = []
-  const held = situation.savings.reduce((sum, item) => sum + item.balance, 0)
-  const home = goals.some((goal) => goal.kind === 'house_deposit')
-  if (held === 0 && situation.monthlySaving === undefined) {
-    out.push(
-      'How much is held in savings or a current account now, and how much can be put aside each month?',
-    )
-  }
-  if (goals.length === 0) {
-    out.push(
-      'What is the money for: a home, a car, a buffer for emergencies, or nothing in particular yet? And by when?',
-    )
-  }
-  if (home && situation.firstTimeBuyer === undefined) {
-    out.push('Is this a first home? Help to Buy and the lending limits depend on it.')
-  }
-  if (home && situation.income?.annualGross === undefined) {
-    out.push(
-      'What is the gross income a year (joint, if buying together)? It sets what the Central Bank limits allow.',
-    )
-  }
-  if (situation.savings.some((item) => item.aerPct === undefined)) {
-    out.push(
-      'What do the savings earn now, if known? Without the rate, the money they could earn elsewhere is not counted.',
-    )
-  }
-  if (
-    situation.debts.some(
-      (debt) =>
-        debt.ratePct === undefined ||
-        (debt.monthlyRepayment === undefined && debt.monthsRemaining === undefined),
-    )
-  ) {
-    out.push(
-      'For each loan or card: the interest rate, and the monthly repayment or the months left?',
-    )
-  }
-  if (monthlyOutgoings(situation) === null) {
-    out.push('Roughly what goes out each month, rent included? It sizes an emergency buffer.')
-  }
-  return out.slice(0, 3)
 }
 
 export function moneyCheck(
@@ -97,25 +52,24 @@ export function moneyCheck(
     )
   }
 
-  const ask =
-    questions.length === 0
-      ? []
-      : [
-          `To sharpen this, the customer could say: ${questions.map((q, i) => `(${String(i + 1)}) ${q}`).join(' ')}`,
-        ]
+  // A plan already carries the questions in its presentation (saoi_build_plan gives the same).
   const presentation =
     plan === null
-      ? [...reviewed.presentation.slice(0, -1), ...ask, ...reviewed.presentation.slice(-1)]
-      : [
-          ...plan.presentation.slice(0, -1),
-          ...(assumed === null
-            ? []
-            : [
-                'No goal was given, so this plan is for the savings held with no date: nothing is locked away.',
-              ]),
-          ...ask,
-          ...plan.presentation.slice(-1),
+      ? [
+          ...reviewed.presentation.slice(0, -1),
+          ...sharpenLines(questions),
+          ...reviewed.presentation.slice(-1),
         ]
+      : assumed === null
+        ? [...plan.presentation]
+        : [
+            ...plan.presentation.slice(0, -1).filter((line) => !line.startsWith(SHARPEN)),
+            'No goal was given, so this plan is for the savings held with no date: nothing is locked away.',
+            ...sharpenLines(questions),
+            ...plan.presentation.slice(-1),
+          ]
+  // With no goal given, the plan's questions are the money check's (which ask what it is for).
+  if (plan !== null && assumed !== null) plan = { ...plan, questions }
 
   return { presentation, questions, review: reviewed, plan, planGoalAssumed: assumed }
 }

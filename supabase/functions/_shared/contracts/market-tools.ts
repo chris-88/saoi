@@ -555,7 +555,15 @@ export type SearchResponse = z.infer<typeof searchResponseSchema>
 
 /** A debt as the customer described it: the plan contract's own shape. */
 export const DEBT_KINDS = PLAN_DEBT_KINDS
-export const debtSchema = planDebtSchema
+export const DEBT_PLAN_CHOICES = ['clear', 'keep', 'compare'] as const
+export const debtSchema = planDebtSchema.extend({
+  plan: z
+    .enum(DEBT_PLAN_CHOICES)
+    .optional()
+    .describe(
+      'For saoi_build_plan, what the customer wants modelled for this debt. `compare` (default): worked out both ways, cleared from savings and kept, and the plan takes the one leaving more. `keep`: kept and repaid as it is, still owed in the net position. `clear`: cleared from the savings held. To model keeping a debt, send it with `plan: "keep"`; never leave it out, or the plan has no debt to set against the savings.',
+    ),
+})
 export type Debt = z.infer<typeof debtSchema>
 
 export const heldSavingsSchema = z.object({
@@ -564,8 +572,15 @@ export const heldSavingsSchema = z.object({
   provider: text(60).optional(),
   aerPct: pct
     .optional()
-    .describe('What it earns now. Absent: not known (it is not treated as zero).'),
-  access: z.enum([...ACCESS_KINDS, 'current_account']).optional(),
+    .describe(
+      'What it earns now, if the customer said. Absent on a savings account: not known (never treated as zero). Absent on a current account: counted at the credit interest CCPC states for current accounts (0% in practice), with that basis stated.',
+    ),
+  access: z
+    .enum([...ACCESS_KINDS, 'current_account'])
+    .optional()
+    .describe(
+      'Where the money is. `current_account` for money in a current account ("sitting in my current account"): it is counted as earning what CCPC states current accounts pay (0% in practice), so moving it counts as money found. `instant`, `notice`, `fixed_term` for a savings or deposit account. Absent: read from the label ("current account" counts as one).',
+    ),
   fixedTermEndsOn: monthOrDay.optional(),
 })
 
@@ -1210,10 +1225,39 @@ export const buildPlanRequestSchema = z.object({
 })
 export type BuildPlanRequest = z.infer<typeof buildPlanRequestSchema>
 
+export const planPositionSchema = z
+  .object({
+    at: z.string().describe('YYYY-MM: the end of the months the plan covers.'),
+    total: z
+      .number()
+      .describe(
+        'Everything held then, after DIRT (towards the goal plus the buffer), less what is still owed on the debts given.',
+      ),
+    towardsGoal: eur.describe('Savings towards the main goal then, after DIRT.'),
+    buffer: eur.describe('The emergency buffer then, with its interest. 0 when none is held.'),
+    owed: eur.describe('Still owed then on the debts given. 0 when none is owed or none given.'),
+    owedIsCeiling: z
+      .boolean()
+      .describe(
+        'True when a debt’s repayment was not given, so today’s balance is counted as owed: the most it can be, and `total` the least.',
+      ),
+    debtsGiven: z
+      .boolean()
+      .describe(
+        'False when the call had no debts: `total` is then savings only, not a net position against debts.',
+      ),
+    line: z.string().describe('The position in one sentence, with its parts named.'),
+  })
+  .describe(
+    'What the plan holds at its end, everything included and each part named: towards the goal, the buffer, less what is still owed.',
+  )
+
 const positionSchema = z.object({
   savingsAtHorizon: eur.describe('Savings at the end of the months the figures cover, after DIRT.'),
   debtAtHorizon: eur.describe('What is still owed on the debt then.'),
-  netPosition: z.number().describe('Savings less debt.'),
+  netPosition: z
+    .number()
+    .describe('Everything held (towards the goal and the buffer) less what is still owed.'),
   goalReachedOn: z
     .string()
     .nullable()
@@ -1226,6 +1270,13 @@ export const buildPlanResponseSchema = z.object({
     .describe(
       'Present to the customer: the headline sentences, in order, as options with their figures. Lead with these; the fields below are the detail behind them.',
     ),
+  questions: z
+    .array(z.string())
+    .max(3)
+    .describe(
+      'The two or three questions that would sharpen the plan (the same as saoi_money_check asks), for the host to ask in its own words. Call again with the answers.',
+    ),
+  position: planPositionSchema,
   saveLink: z
     .object({
       url: z.string().describe('Opens the plan in the Saoi app, once.'),
@@ -1276,7 +1327,11 @@ export const buildPlanResponseSchema = z.object({
         amount: eur.describe('What clearing or overpaying would take from the lump sum.'),
         kept: positionSchema,
         cleared: positionSchema,
-        chosen: z.enum(['kept', 'cleared']).describe('The one with the larger net position.'),
+        chosen: z
+          .enum(['kept', 'cleared'])
+          .describe(
+            'The one in this plan: the customer’s choice when the debt’s `plan` is `keep` or `clear`, otherwise the larger net position.',
+          ),
       }),
     )
     .describe('Each debt that costs more than savings earn, with both outcomes worked out.'),

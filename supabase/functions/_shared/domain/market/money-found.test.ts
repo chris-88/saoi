@@ -47,9 +47,12 @@ describe('money found', () => {
   it('sums its parts, each sourced and dated, and never counts what it does not know', () => {
     const found = reviewOf(situation()).moneyFound
     expect(found.annualEur).toBe(found.parts.reduce((sum, part) => sum + part.annualEur, 0))
-    expect(found.parts.map((part) => part.kind)).toEqual(['debt_interest'])
-    // The current account's rate was not given: shown, not counted.
-    expect(found.notCounted.some((item) => /rate was not given/.test(item.why))).toBe(true)
+    // The current account's rate was not given: a current account earns 0% (CCPC), so the money
+    // left after the debt counts against it (Chris, after the fourth Claude test).
+    expect(found.parts.map((part) => part.kind)).toEqual(['debt_interest', 'idle_cash'])
+    expect(found.notCounted.some((item) => /rate was not given/.test(item.why))).toBe(false)
+    expect(found.headline).toMatch(/current account is counted as earning 0%/)
+    expect(found.basis).toMatch(/every current account in CCPC’s table .* states 0%/)
     for (const part of found.parts) expect(part.checkedAt).not.toBeNull()
     expect(found.headline).toMatch(/^Money found: about €[\d,]+ a year after DIRT/)
     expect(() => reviewResponseSchema.parse(reviewOf(situation()))).not.toThrow()
