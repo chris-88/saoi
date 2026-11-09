@@ -1,7 +1,7 @@
 /**
  * Which CCPC row is the same product as a row read from the provider's own site.
  *
- * Bank of Ireland and bunq are read two ways: from their own pages (`bank`) and from CCPC (`ccpc`).
+ * Bank of Ireland, bunq and MoCo are read two ways: from their own pages (`bank`) and from CCPC (`ccpc`).
  * CCPC
  * lists Advantage as three products (one per term) where the bank's page is one product with a
  * ladder, and names products its own way, so the pairing is by name, recorded here once. The
@@ -63,6 +63,20 @@ export const BANK_CCPC_PAIRS: readonly BankCcpcPair[] = [
     provider: 'bunq',
     bankId: 'deposit.bunq_savings',
     ccpcName: /^bunq Free$/i,
+    category: 'deposit',
+  },
+  // MoCo: CCPC's "MoCo EasySaver" (2.1%, nothing on who can open it), listed in both tables;
+  // MoCo's own pages confirm the rate and state the eligibility.
+  {
+    provider: 'moco',
+    bankId: 'savings.moco_easysaver',
+    ccpcName: /^MoCo EasySaver$/i,
+    category: 'savings',
+  },
+  {
+    provider: 'moco',
+    bankId: 'deposit.moco_easysaver',
+    ccpcName: /^MoCo EasySaver$/i,
     category: 'deposit',
   },
 ]

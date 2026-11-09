@@ -225,6 +225,16 @@ history (`market_products.source`):
   (`_shared/market/boi-sources.ts`, parsers in `scripts/market/boi.ts`), and bunq's savings
   account (`scripts/market/bunq.ts`), whose 3.11% is a bonus until the next 1 January or 1 July
   and then only above a threshold: stored as `rates.thresholdBonus`, modelled month by month.
+  MoCo's EasySaver (`scripts/market/moco.ts`, the savings page plus its FAQ via `alsoRead`):
+  2.1% variable for new accounts, and who can open it (`conditions.eligibility`: over 18,
+  resident in Ireland, not a US citizen, individuals, no joint accounts), daily interest
+  (`conditions.interestPaid`), `conditions.rateForNewAccounts`. The view carries
+  `eligibility` and states it in `checks` instead of "check eligibility". EBS, AIB and PTSB
+  refuse automated requests at their edge (Akamai 403, even on robots.txt) and State Savings
+  serves a bot challenge (Radware), all on 2026-11-09: not read, and the client is not
+  disguised to get past them. CCPC regular savers that say their rate is fixed for N months
+  (an introductory offer, or a "(Fixed)" name with a minimum savings period: EBS Family
+  Savings) are stored with `fixedMonths` and the reversion unknown, so figures stop there.
 - `ccpc`: the Competition and Consumer Protection Commission's comparison tables, broad: every
   provider CCPC lists, in savings, deposits, mortgages, loans, credit cards and current accounts
   (`scripts/market/ccpc.ts`, read from the JSON API behind ccpc.ie at compare.ccpc.ie). Rows
@@ -241,7 +251,7 @@ line in the refresh output. Shapes in `_shared/market/schema.ts`: `rates` is a u
 - **Stored** as versioned rows: a changed record supersedes the current row and inserts a new
   one, an unchanged one moves `checked_at`. `market_record_refresh(provider, source, ...)` writes
   one provider from one source in one transaction. `_shared/market/<provider>.snapshot.ts`
-  (generated, Bank of Ireland and bunq) are the bank-direct fallback when the table is empty;
+  (generated, Bank of Ireland, bunq and MoCo) are the bank-direct fallback when the table is empty;
   a turn's fallback takes Bank of Ireland's only. CCPC has no snapshot.
 - **Refreshed** by `npm run market:refresh` (dry run and diff), `-- --snapshot`, `-- --db` (needs
   `SUPABASE_URL=http://127.0.0.1:8002` and the service role key from
@@ -275,7 +285,7 @@ The engine behind the Saoi MCP tools, in `_shared/domain/market/` (pure; contrac
 | `POST /api/calc/first-home`                | `saoi_first_home`         | Help to Buy, CB limits with it, green rates        |
 
 - **Normalised** (`normalise.ts`): one view per product. CCPC's one-row-per-term fixed deposits
-  fold into ladders; Bank of Ireland's own rows replace their CCPC twins by the pairing in
+  fold into ladders; bank-direct rows (Bank of Ireland, bunq, MoCo) replace their CCPC twins by the pairing in
   `_shared/market/bank-ccpc-pairs.ts`; only providers that operate in Ireland are compared
   (Raisin's platform banks are dropped here, their rows kept; Chris, 2026-11-09); every view
   carries source, checked, last changed (from history), attribution, unknowns and eligibility

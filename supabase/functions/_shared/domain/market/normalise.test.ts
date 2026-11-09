@@ -191,6 +191,30 @@ describe('normaliseMarket', () => {
     expect(view('aib:savings.c396').checks.join(' ')).not.toMatch(/DIRT at source/)
   })
 
+  it('reads MoCo from its own pages: the rate confirmed, who can open it stated', () => {
+    const moco = view('moco:deposit.moco_easysaver')
+    expect(moco.provenance.source).toBe('bank')
+    expect(moco.provenance.preferredOver.map((row) => row.productId)).toEqual(['deposit.c8548'])
+    expect(market.viewOfRow.get('moco:deposit.c8548')).toBe('moco:deposit.moco_easysaver')
+    expect(moco.rateConfirmed).toBe(true)
+    expect(moco.eligibility).toEqual({
+      minAge: 18,
+      residentIn: 'Ireland',
+      notForUsCitizens: true,
+      individualsOnly: true,
+      jointAccounts: false,
+      needsAccountWithProvider: null,
+    })
+    expect(moco.terms.kind === 'deposit' && moco.terms.interestPaid).toBe('daily')
+    expect(moco.terms.kind === 'deposit' && moco.terms.rateForNewAccounts).toBe(true)
+    const checks = moco.checks.join(' ')
+    expect(checks).toMatch(/aged 18 or over, resident in Ireland, not a US citizen/)
+    expect(checks).toMatch(/rate for new accounts/)
+    expect(checks).not.toMatch(/who can open it is not recorded|CCPC does not record/)
+    for (const check of moco.checks) expect(check.length).toBeLessThanOrEqual(200)
+    expect(view('aib:savings.c396').eligibility).toBeNull()
+  })
+
   it('marks a rate resting on CCPC’s one figure as not confirmed', () => {
     expect(view('aib:savings.c396').rateConfirmed).toBe(false)
     expect(view('banca_cf:deposit.c7028').rateConfirmed).toBe(false)
@@ -229,7 +253,7 @@ describe('normaliseMarket', () => {
 
 describe('deposit guarantees, from primary pages', () => {
   it('records MoCo under the Austrian scheme, with its source and date', () => {
-    const moco = view('moco:deposit.c8548')
+    const moco = view('moco:deposit.moco_easysaver')
     expect(moco.depositGuarantee).toMatchObject({
       country: 'Austria',
       coverEur: 100_000,
@@ -252,7 +276,7 @@ describe('deposit guarantees, from primary pages', () => {
 
   it('leaves an unrecorded provider unknown, and names it', () => {
     const records: MarketRecord[] = MARKET_FIXTURE.filter(
-      (record) => record.product.provider === 'moco',
+      (record) => record.product.provider === 'moco' && record.product.source === 'ccpc',
     ).map((record) => ({ ...record, product: { ...record.product, provider: 'newbank' } }))
     const unknown = normaliseMarket(records).products[0]
     expect(unknown?.depositGuarantee?.basis).toBe('unknown')

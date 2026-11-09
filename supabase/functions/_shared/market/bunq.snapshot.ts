@@ -8,7 +8,7 @@ import type { MarketSnapshot } from './schema.ts'
 
 export const bunqSnapshot: MarketSnapshot = {
   provider: 'bunq',
-  checkedAt: '2026-11-09T13:32:08.343Z',
+  checkedAt: '2026-11-09T15:44:24.268Z',
   rateSheet: null,
   products: [
     {
@@ -43,6 +43,7 @@ export const bunqSnapshot: MarketSnapshot = {
       conditions: {
         takesLumpSum: true,
         takesMonthly: true,
+        interestPaid: 'weekly',
         prose: {
           'Bonus interest':
             'From your first deposit until the following January 1 or July 1, all your savings earn 3.11% Bonus Interest',
@@ -54,7 +55,7 @@ export const bunqSnapshot: MarketSnapshot = {
         },
       },
       sourceUrl: 'https://www.bunq.com/en-ie/personal/features/savings-accounts',
-      checkedAt: '2026-11-09T13:32:08.343Z',
+      checkedAt: '2026-11-09T15:44:24.268Z',
       effectiveFrom: null,
     },
     {
@@ -89,6 +90,7 @@ export const bunqSnapshot: MarketSnapshot = {
       conditions: {
         takesLumpSum: true,
         takesMonthly: true,
+        interestPaid: 'weekly',
         prose: {
           'Bonus interest':
             'From your first deposit until the following January 1 or July 1, all your savings earn 3.11% Bonus Interest',
@@ -100,7 +102,7 @@ export const bunqSnapshot: MarketSnapshot = {
         },
       },
       sourceUrl: 'https://www.bunq.com/en-ie/personal/features/savings-accounts',
-      checkedAt: '2026-11-09T13:32:08.343Z',
+      checkedAt: '2026-11-09T15:44:24.268Z',
       effectiveFrom: null,
     },
   ],

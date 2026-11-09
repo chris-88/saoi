@@ -1,8 +1,7 @@
-import type { MarketSource } from '../../supabase/functions/_shared/market/boi-sources.ts'
 import { bunqSnapshot } from '../../supabase/functions/_shared/market/bunq.snapshot.ts'
 import { ParseError, type Parsed, type Parser } from './boi.ts'
 import { htmlToLines } from './html.ts'
-import type { MarketProvider } from './provider.ts'
+import type { MarketProvider, ProviderSource } from './provider.ts'
 
 /**
  * bunq's savings account, read from bunq's own page.
@@ -120,6 +119,7 @@ export const savingsAccount: Parser = (html: string): Parsed => {
     conditions: {
       takesLumpSum: true,
       takesMonthly: true,
+      ...(weekly ? { interestPaid: 'weekly' as const } : {}),
       prose: {
         'Bonus interest': bonus[0],
         Threshold: lookback[0],
@@ -131,7 +131,7 @@ export const savingsAccount: Parser = (html: string): Parsed => {
   }
 }
 
-export const BUNQ_SOURCES: readonly (MarketSource & { readonly parse: Parser })[] = [
+export const BUNQ_SOURCES: readonly ProviderSource[] = [
   {
     productId: 'savings.bunq_savings',
     category: 'savings',

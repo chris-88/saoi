@@ -1,4 +1,5 @@
 import { bunqSnapshot } from '../../market/bunq.snapshot.ts'
+import { mocoSnapshot } from '../../market/moco.snapshot.ts'
 import type { MarketRecord } from './types.ts'
 
 /**
@@ -3394,10 +3395,16 @@ const CCPC_AND_BOI: readonly MarketRecord[] = [
   },
 ]
 
-/** Plus bunq's own rows, read from bunq's page (committed snapshot, 2026-11-09). */
+/** The fixture as it stood before MoCo's own pages were read: MoCo rests on CCPC alone. */
+export const withoutMocoBankRows = (records: readonly MarketRecord[]): readonly MarketRecord[] =>
+  records.filter(
+    (record) => !(record.product.provider === 'moco' && record.product.source === 'bank'),
+  )
+
+/** Plus bunq's and MoCo's own rows, read from their pages (committed snapshots, 2026-11-09). */
 export const MARKET_FIXTURE: readonly MarketRecord[] = [
   ...CCPC_AND_BOI,
-  ...bunqSnapshot.products.map((product) => ({
+  ...[...bunqSnapshot.products, ...mocoSnapshot.products].map((product) => ({
     product,
     firstSeenAt: product.checkedAt,
     supersededAt: null,

@@ -290,6 +290,7 @@ function viewFor(input: ViewInput): ProductView {
           )
         : null,
     unknowns,
+    eligibility: eligibilityOf(product),
     rateConfirmed: rateConfirmed(product, terms),
     checks: checksFor(product, providerName, terms, platform),
   }
@@ -549,6 +550,8 @@ function depositTerms(
     maxMonthlyEur: conditions.maxMonthlyEur ?? null,
     minLumpSumEur: conditions.minLumpSumEur ?? null,
     maxLumpSumEur: conditions.maxLumpSumEur ?? null,
+    interestPaid: conditions.interestPaid ?? null,
+    rateForNewAccounts: conditions.rateForNewAccounts ?? false,
     dirtApplies: conditions.details?.['DIRT applicable:'] !== DIRT_FREE,
     bonus:
       bonus === undefined
@@ -652,6 +655,35 @@ function guaranteeOf(
   }
 }
 
+/** Who can open it, where a provider page recording it was read; null otherwise. */
+function eligibilityOf(product: MarketProduct): ProductView['eligibility'] {
+  const stated = product.conditions.eligibility
+  if (stated === undefined) return null
+  return {
+    minAge: product.conditions.minAge ?? null,
+    residentIn: stated.residentIn ?? null,
+    notForUsCitizens: stated.notForUsCitizens ?? null,
+    individualsOnly: stated.individualsOnly ?? null,
+    jointAccounts: stated.jointAccounts ?? null,
+    needsAccountWithProvider: stated.needsAccountWithProvider ?? null,
+  }
+}
+
+/** The provider's stated eligibility as one short line (a plan check is capped at 200). */
+function eligibilityLine(eligibility: NonNullable<ProductView['eligibility']>): string {
+  const parts = [
+    ...(eligibility.minAge === null ? [] : [`aged ${String(eligibility.minAge)} or over`]),
+    ...(eligibility.residentIn === null ? [] : [`resident in ${eligibility.residentIn}`]),
+    ...(eligibility.notForUsCitizens === true ? ['not a US citizen'] : []),
+    ...(eligibility.individualsOnly === true ? ['individuals only'] : []),
+    ...(eligibility.jointAccounts === false ? ['no joint accounts'] : []),
+    ...(eligibility.needsAccountWithProvider === null
+      ? []
+      : [`needs ${eligibility.needsAccountWithProvider}`]),
+  ]
+  return parts.join(', ')
+}
+
 function checksFor(
   product: MarketProduct,
   providerName: string,
@@ -673,8 +705,17 @@ function checksFor(
   if (/varies by cu|credit union/i.test(name) || product.provider.startsWith('credit_union')) {
     checks.push('Credit union rates and terms vary by credit union; membership is needed.')
   }
-  if (product.conditions.minAge !== undefined) {
+  const eligibility = eligibilityOf(product)
+  if (eligibility !== null) {
+    const line = eligibilityLine(eligibility)
+    if (line !== '') checks.push(`Who can open it, from ${providerName}’s own page: ${line}.`)
+  } else if (product.conditions.minAge !== undefined) {
     checks.push(`Minimum age ${String(product.conditions.minAge)}.`)
+  }
+  if (terms.kind === 'deposit' && terms.rateForNewAccounts && terms.aerPct !== null) {
+    checks.push(
+      `${String(terms.aerPct)}% is ${providerName}’s rate for new accounts; an account already open may earn another rate.`,
+    )
   }
   if (terms.kind === 'deposit' && terms.bonus !== null) {
     checks.push(`The €${terms.bonus.amountEur.toLocaleString('en-IE')} bonus is conditional.`)
@@ -683,10 +724,12 @@ function checksFor(
     if (terms.highValue) checks.push('A high-value-mortgage rate: for larger loans only.')
     if (terms.ber !== null) checks.push(`The rate is for a property with BER ${terms.ber}.`)
   }
-  checks.push(
-    product.source === 'ccpc'
-      ? `Check eligibility with ${providerName}: CCPC does not record who can open it (for example, whether an account with ${providerName} is needed first).`
-      : `Check eligibility with ${providerName}: the rates and limits were read from its own page; who can open it is not recorded.`,
-  )
+  if (eligibility === null) {
+    checks.push(
+      product.source === 'ccpc'
+        ? `Check eligibility with ${providerName}: CCPC does not record who can open it (for example, whether an account with ${providerName} is needed first).`
+        : `Check eligibility with ${providerName}: the rates and limits were read from its own page; who can open it is not recorded.`,
+    )
+  }
   return checks
 }
