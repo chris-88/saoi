@@ -215,6 +215,32 @@ function base(
   }
 }
 
+/**
+ * How long a regular saver's rate is fixed for, where CCPC's own words say so: an introductory
+ * offer "for 12 months", or a product named "(Fixed)" with a minimum savings period in months
+ * (EBS Family Savings: 3% for a one-year term, then "a lower rate" CCPC does not state). What
+ * follows is unknown, so the engine's figures stop there rather than assume the rate holds.
+ */
+export function regularFixedMonths(
+  name: string,
+  intro: string | undefined,
+  fields: Record<string, string>,
+): number | null {
+  const months = (text: string | undefined): number | null => {
+    const match = /(\d+)\s*months?/i.exec(text ?? '') ?? /^\s*(\d+)\s*$/.exec(text ?? '')
+    const value = Number(match?.[1])
+    return match === null || !Number.isInteger(value) || value <= 0 || value > 120 ? null : value
+  }
+  if (intro !== undefined && !SAYS_NONE.test(intro) && /\bfixed\b/i.test(intro)) {
+    const stated = months(intro)
+    if (stated !== null) return stated
+  }
+  if (/\bfixed\b/i.test(name)) {
+    return months(pick(fields, 'Minimum savings period (months)'))
+  }
+  return null
+}
+
 /** Regular savings: monthly saving by direct debit. */
 export function regularSaving(item: CcpcItem): Built {
   const fields = fieldsOf(item)
@@ -244,8 +270,11 @@ export function regularSaving(item: CcpcItem): Built {
     : []
 
   const intro = pick(fields, 'Introductory offers')
-  if (intro !== undefined && !SAYS_NONE.test(intro)) unknown.push('rates.thenAerPct')
-  unknown.push('rates.basis')
+  const hasIntro = intro !== undefined && !SAYS_NONE.test(intro)
+  if (hasIntro) unknown.push('rates.thenAerPct')
+  const fixedMonths = regularFixedMonths(item.ProductName, intro, fields)
+  if (fixedMonths === null) unknown.push('rates.basis')
+  else unknown.push('rates.thenAerPct')
 
   const min = limit(pick(fields, 'Minimum lodgement per month'))
   const max = limit(pick(fields, 'Maximum lodgement per month'))
@@ -258,7 +287,8 @@ export function regularSaving(item: CcpcItem): Built {
     {
       kind: 'deposit',
       aerPct: aer,
-      basis: null,
+      basis: fixedMonths === null ? null : 'fixed',
+      ...(fixedMonths === null ? {} : { fixedMonths }),
       ...(tiers.length === 0 ? {} : { tiers }),
     },
     {

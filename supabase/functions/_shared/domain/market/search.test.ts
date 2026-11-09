@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MARKET_FIXTURE } from './fixture.ts'
+import { MARKET_FIXTURE, withoutMocoBankRows } from './fixture.ts'
 import { normaliseMarket } from './normalise.ts'
 import { MarketInputError, UNCONFIRMED_RATE, berMatches, search } from './search.ts'
 
@@ -25,12 +25,22 @@ describe('search: deposits', () => {
   })
 
   it('flags a top-three rate that rests on CCPC’s one figure, and only the top three', () => {
-    const result = search(market, { category: 'deposit', amount: 10_000, limit: 10 }, AS_OF)
+    // MoCo as CCPC alone lists it: 2.1% with nothing stated after it.
+    const ccpcMoco = normaliseMarket(withoutMocoBankRows(MARKET_FIXTURE))
+    const result = search(ccpcMoco, { category: 'deposit', amount: 10_000, limit: 10 }, AS_OF)
     result.results.forEach((row) => {
       const flagged = row.flags.some((flag) => /not confirmed/.test(flag))
       expect(flagged, row.product.id).toBe(row.rank <= 3 && !row.product.rateConfirmed)
     })
     expect(result.results.slice(0, 3).some((row) => !row.product.rateConfirmed)).toBe(true)
+  })
+
+  it('confirms MoCo’s rate from its own pages, and no longer flags it', () => {
+    const result = search(market, { category: 'deposit', amount: 10_000, limit: 10 }, AS_OF)
+    const moco = result.results.find((row) => row.product.provider === 'moco')
+    expect(moco?.product.id).toBe('moco:deposit.moco_easysaver')
+    expect(moco?.product.rateConfirmed).toBe(true)
+    expect(moco?.flags.some((flag) => /not confirmed/.test(flag))).toBe(false)
   })
 
   it('keeps the unconfirmed-rate flag short enough for a plan’s checks', () => {

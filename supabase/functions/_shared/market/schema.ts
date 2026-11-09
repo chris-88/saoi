@@ -200,6 +200,35 @@ export const savingsBonusSchema = z
   })
   .strict()
 
+export const INTEREST_PAID = [
+  'daily',
+  'weekly',
+  'monthly',
+  'quarterly',
+  'yearly',
+  'account_anniversary',
+  'maturity',
+] as const
+
+/**
+ * Who can open a product, read from the provider's own page. Every field is what the page
+ * states; a field it does not state is absent, never assumed.
+ */
+export const eligibilitySchema = z
+  .object({
+    /** The country the holder must live in. */
+    residentIn: z.string().trim().min(1).max(60).optional(),
+    /** Closed to citizens of the United States. */
+    notForUsCitizens: z.boolean().optional(),
+    /** Only individuals, not companies or clubs. */
+    individualsOnly: z.boolean().optional(),
+    /** Whether joint accounts can be opened. */
+    jointAccounts: z.boolean().optional(),
+    /** Another account with the provider that has to be held first, in the page's words. */
+    needsAccountWithProvider: z.string().trim().min(1).max(120).optional(),
+  })
+  .strict()
+
 const verbatim = z.record(z.string().max(200), z.string().max(20_000))
 
 export const marketConditionsSchema = z
@@ -212,6 +241,15 @@ export const marketConditionsSchema = z
     minLumpSumEur: eur.optional(),
     maxLumpSumEur: eur.optional(),
     minAge: z.number().int().positive().max(100).optional(),
+    /** Who can open it, as the provider's own page states it. Absent: not stated. */
+    eligibility: eligibilitySchema.optional(),
+    /** How often interest is credited, as the provider states it. */
+    interestPaid: z.enum(INTEREST_PAID).optional(),
+    /**
+     * The stated rate is for accounts opened now; accounts already open may earn another rate
+     * (MoCo publishes existing accounts' rate only after login).
+     */
+    rateForNewAccounts: z.boolean().optional(),
     bonus: savingsBonusSchema.optional(),
     /** The source's own prose, verbatim: introductory offers, bonuses, extra information. */
     prose: verbatim.optional(),

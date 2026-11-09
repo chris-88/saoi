@@ -1,5 +1,10 @@
 import { z } from 'zod'
-import { MARKET_CATEGORIES, MARKET_SOURCES, MORTGAGE_CUSTOMER_TYPES } from '../market/schema.ts'
+import {
+  INTEREST_PAID,
+  MARKET_CATEGORIES,
+  MARKET_SOURCES,
+  MORTGAGE_CUSTOMER_TYPES,
+} from '../market/schema.ts'
 import {
   PLAN_DEBT_KINDS,
   PLAN_GOAL_KINDS,
@@ -175,6 +180,15 @@ export const depositTermsSchema = z.object({
     .describe(
       'A bonus that gives way to base rates (bunq): every euro earns the bonus until the first reset (the first day of each month in `resetMonths`); then the threshold is the highest balance of the past `lookbackMonths`, the balance up to it earns `baseBands`, and only the part above it earns the bonus.',
     ),
+  interestPaid: z
+    .enum(INTEREST_PAID)
+    .nullable()
+    .describe('How often interest is credited, as the provider states it. Null: not stated.'),
+  rateForNewAccounts: z
+    .boolean()
+    .describe(
+      'The rate is for accounts opened now; an account already open may earn another rate.',
+    ),
   dirtApplies: z
     .boolean()
     .describe(
@@ -270,6 +284,22 @@ export const productViewSchema = z
     platform: platformSchema.nullable(),
     depositGuarantee: depositGuaranteeSchema.nullable(),
     unknowns: z.array(unknownFieldSchema),
+    eligibility: z
+      .object({
+        minAge: z.number().int().nullable(),
+        residentIn: z.string().nullable().describe('The country the holder must live in.'),
+        notForUsCitizens: z.boolean().nullable(),
+        individualsOnly: z.boolean().nullable(),
+        jointAccounts: z.boolean().nullable().describe('Whether joint accounts can be opened.'),
+        needsAccountWithProvider: z
+          .string()
+          .nullable()
+          .describe('Another account with the provider to hold first, in its own words.'),
+      })
+      .nullable()
+      .describe(
+        'Who can open it, as the provider’s own page states it; a field it does not state is null. Null when no provider page recording it was read.',
+      ),
     rateConfirmed: z
       .boolean()
       .describe(

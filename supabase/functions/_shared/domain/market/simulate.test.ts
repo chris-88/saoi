@@ -30,6 +30,8 @@ const flat = (aerPct: number, overrides: Partial<DepositTerms> = {}): DepositTer
   maxMonthlyEur: null,
   minLumpSumEur: null,
   maxLumpSumEur: null,
+  interestPaid: null,
+  rateForNewAccounts: false,
   dirtApplies: true,
   bonus: null,
   ...overrides,

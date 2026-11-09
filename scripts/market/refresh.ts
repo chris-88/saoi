@@ -196,7 +196,7 @@ async function harvestBank(provider: MarketProvider, checkedAt: string): Promise
   }
   const urls = [
     ...(provider.rateSheet === undefined ? [] : [provider.rateSheet.page]),
-    ...provider.sources.map((source) => source.url),
+    ...provider.sources.flatMap((source) => [source.url, ...(source.alsoRead ?? [])]),
   ]
   const refused = await robotsCheck(provider.origin, urls)
   if (refused !== null) return { name, source: 'bank', failure: refused, groups: [] }
@@ -209,22 +209,36 @@ async function harvestBank(provider: MarketProvider, checkedAt: string): Promise
     if (rateSheet === null) console.warn(`${name}: no rate sheet on ${provider.rateSheet.page}`)
   }
 
-  for (const source of provider.sources) {
+  // A page two products share (bunq's, MoCo's FAQ) is fetched once a run.
+  const fetched = new Map<string, Page>()
+  const fetchOnce = async (url: string): Promise<Page> => {
+    const seen = fetched.get(url)
+    if (seen !== undefined) return seen
     await pause(PAGE_PAUSE_MS)
-    let page: Page
-    try {
-      page = await get(source.url)
-    } catch (error) {
-      group.failures.push(`${source.productId}: fetch failed (${String(error)})`)
-      continue
-    }
-    if (page.status === 404 || page.status === 410) {
-      group.gone.push(source.productId)
-      continue
-    }
-    if (page.status !== 200) {
-      group.failures.push(`${source.productId}: ${source.url} answered ${String(page.status)}`)
-      continue
+    const page = await get(url)
+    fetched.set(url, page)
+    return page
+  }
+
+  sources: for (const source of provider.sources) {
+    const html: string[] = []
+    for (const url of [source.url, ...(source.alsoRead ?? [])]) {
+      let page: Page
+      try {
+        page = await fetchOnce(url)
+      } catch (error) {
+        group.failures.push(`${source.productId}: fetch failed on ${url} (${String(error)})`)
+        continue sources
+      }
+      if (url === source.url && (page.status === 404 || page.status === 410)) {
+        group.gone.push(source.productId)
+        continue sources
+      }
+      if (page.status !== 200) {
+        group.failures.push(`${source.productId}: ${url} answered ${String(page.status)}`)
+        continue sources
+      }
+      html.push(page.html)
     }
     try {
       group.products.push({
@@ -232,7 +246,7 @@ async function harvestBank(provider: MarketProvider, checkedAt: string): Promise
         source: 'bank',
         productId: source.productId,
         category: source.category,
-        ...source.parse(page.html),
+        ...source.parse(html.join('\n')),
         sourceUrl: source.url,
         checkedAt,
         effectiveFrom: null,

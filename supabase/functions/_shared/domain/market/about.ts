@@ -70,7 +70,9 @@ for a period, or only on part of the balance.
 ## What the data does not say
 
 Who can open a product (for example, whether an account with the same bank is needed first) is
-not in the comparison data, so every result says to check eligibility with the provider.
+not in CCPC's data. Where Saoi has read the provider's own page, the result states who can open
+it as that page does (age, residence, joint accounts); otherwise it says to check eligibility
+with the provider.
 `
 
 const EARNINGS = `# How Saoi earns

@@ -15,6 +15,7 @@ import {
   merge,
   mortgage,
   numberIn,
+  regularFixedMonths,
   regularSaving,
 } from '../scripts/market/ccpc.ts'
 import { providerFor } from '../scripts/market/ccpc-providers.ts'
@@ -180,7 +181,9 @@ describe('reading CCPC items', () => {
       rates: {
         kind: 'deposit',
         aerPct: 3,
-        basis: null,
+        // "a fixed regular savings rate for 12 months": fixed, with what follows unknown.
+        basis: 'fixed',
+        fixedMonths: 12,
         tiers: [
           { minEur: 0, maxEur: 30000, aerPct: 3 },
           { minEur: 30001, maxEur: 100000, aerPct: 0.5 },
@@ -192,7 +195,6 @@ describe('reading CCPC items', () => {
     expect(product.unknown).toEqual(
       expect.arrayContaining([
         'rates.thenAerPct',
-        'rates.basis',
         'conditions.minAge',
         'conditions.takesLumpSum',
         'rates.lumpSumAerPct',
@@ -202,6 +204,20 @@ describe('reading CCPC items', () => {
       'Get a fixed regular savings rate for 12 months',
     )
     expect(product.conditions.details?.['Withdrawal notice period:']).toBe('Instant access')
+  })
+
+  it('reads a regular saver named "(Fixed)" with a minimum savings period as fixed for it', () => {
+    const fields = {
+      'Minimum savings period (months):': '12 months',
+      'Introductory offers:': 'None',
+    }
+    expect(regularFixedMonths('Family Savings Account (Fixed)', 'None', fields)).toBe(12)
+    expect(regularFixedMonths('Online Regular Saver Account (Variable)', 'None', fields)).toBeNull()
+    expect(
+      regularFixedMonths('Family Savings Account (Fixed)', 'None', {
+        'Minimum savings period (months):': 'No minimum',
+      }),
+    ).toBeNull()
   })
 
   it('treats "No Max" as no limit rather than an unknown, and adds the scheme to a bare link', () => {
