@@ -390,8 +390,19 @@ export async function buildGeneration(
    * breath, with the sign-in card arriving underneath — asking somebody to type what signing
    * in is about to supply, in the wrong order.
    */
+  /*
+   * A plan brought from their own AI is worth keeping too: signing in is how it reaches the
+   * installed app and another device. Not on the turn that opens it, which is about the plan.
+   */
+  const openedPlan =
+    turn.trigger === 'return' &&
+    loaded.eventsSinceLastSeen.some((event) => event.type === 'plan_claimed')
+  const signInForPlan =
+    broughtPlans.length > 0 && loaded.authLevel !== 'authenticated' && !openedPlan
+
   const offeringSignIn =
-    !(await caseHasEvent(admin, turn.caseId, SIGN_IN_PROMPT_EVENT)) && worthSigningInFor(loaded)
+    !(await caseHasEvent(admin, turn.caseId, SIGN_IN_PROMPT_EVENT)) &&
+    (worthSigningInFor(loaded) || signInForPlan)
 
   /**
    * What the reply has to do when the offer is about to appear beneath it.
@@ -444,10 +455,6 @@ export async function buildGeneration(
    * They have just opened a plan made in their own AI. The card is already on screen; the turn
    * says what it is and what comes next, from the digest's own lines, and stops.
    */
-  const openedPlan =
-    turn.trigger === 'return' &&
-    loaded.eventsSinceLastSeen.some((event) => event.type === 'plan_claimed')
-
   if (openedPlan) {
     history.push({
       role: 'user',
@@ -480,6 +487,7 @@ export async function buildGeneration(
 
   return {
     primary,
+    signInForPlan,
     goals,
     goalContext,
     digest,

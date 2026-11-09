@@ -241,7 +241,7 @@ export function createTurnRunner(deps: TurnDeps): TurnRunner {
           after.authLevel !== 'authenticated' &&
           soundsLikeReturning(customerMessage)
 
-        if (after && (asking || worthSigningInFor(after))) {
+        if (after && (asking || worthSigningInFor(after) || generation.signInForPlan)) {
           const suppressed = !asking && (await caseHasEvent(admin, caseId, SIGN_IN_PROMPT_EVENT))
           if (!suppressed) {
             await writeEvent(admin, {
