@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { demoCombinations, combinationsSection } from './combinations.ts'
-import { demoKnowledgeBase } from './knowledge-base.ts'
+import { boiSnapshot } from '../../market/boi.snapshot.ts'
 import { SURFACEABLE_PRODUCTS } from './kb-prompt.ts'
 
 /**
@@ -41,39 +41,30 @@ describe('product combinations', () => {
     expect(combinationsSection()).toMatch(/let them decide/)
   })
 
-  it('quotes figures that match the catalogue', () => {
-    const find = (id: string) => demoKnowledgeBase.products.find((p) => p.id === id)
-    // The generated catalogue is `as const`, so each pricing object narrows to its own literal
-    // shape and only some of them have a `snapshot`. Read it through the index signature.
-    const snapshot = (id: string) => {
-      const pricing = find(id)?.pricing_and_rates as Record<string, unknown> | undefined
-      return (pricing?.['snapshot'] ?? {}) as Record<string, number | string>
+  it('quotes figures that match the market records', () => {
+    const market = (id: string) => {
+      const record = boiSnapshot.products.find((p) => p.productId === id)
+      expect(record, id).toBeDefined()
+      return record!
     }
-
-    const superSaver = snapshot('savings.supersaver')
-    const mortgageSaver = snapshot('savings.mortgagesaver')
+    const superSaver = market('savings.supersaver').rates
+    const mortgageSaver = market('savings.mortgagesaver')
+    const euro = (n: number | undefined) => `€${(n ?? 0).toLocaleString('en-IE')}`
     const text = combinationsSection()
 
     // Every number quoted in the deposit stack, checked against where it came from.
-    expect(superSaver['aer_fixed_first_12m_pct']).toBe(3)
-    expect(mortgageSaver['regular_aer_variable_pct']).toBe(2)
-    expect(mortgageSaver['other_balance_aer_pct']).toBe(0.5)
-    expect(mortgageSaver['regular_tier_cap_eur']).toBe(15000)
-    expect(mortgageSaver['ftb_bonus_before_dirt_eur']).toBe(2000)
-
-    expect(text).toContain('3% AER fixed')
-    expect(text).toContain('2% AER on monthly contributions')
-    expect(text).toContain('0.5%')
-    expect(text).toContain('€15,000 tier')
-    expect(text).toContain('€2,000 before DIRT')
+    expect(text).toContain(`${String(superSaver.aerPct)}% AER fixed`)
+    expect(text).toContain(`${String(mortgageSaver.rates.aerPct)}% AER on monthly contributions`)
+    expect(text).toContain(`${String(mortgageSaver.rates.aboveTierAerPct)}%`)
+    expect(text).toContain(`${euro(mortgageSaver.rates.tierCapEur)} tier`)
+    expect(text).toContain(`${euro(mortgageSaver.conditions.bonus?.amountEur)} before DIRT`)
   })
 
   it('carries the bonus conditions, which are what the arrangement turns on', () => {
-    const pricing = demoKnowledgeBase.products.find((p) => p.id === 'savings.mortgagesaver')
-      ?.pricing_and_rates as Record<string, unknown> | undefined
-    const conditions = pricing?.['bonus_conditions']
+    const bonus = boiSnapshot.products.find((p) => p.productId === 'savings.mortgagesaver')
+      ?.conditions.bonus
 
-    expect(Array.isArray(conditions)).toBe(true)
+    expect(bonus).toMatchObject({ minMonthlyEur: 200, minMonths: 6, withinMonths: 30 })
 
     const text = combinationsSection()
     expect(text).toContain('€200 a month for six consecutive months')

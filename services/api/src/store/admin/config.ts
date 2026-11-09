@@ -7,6 +7,8 @@ import { slidersFor, type PersonaSliders } from '@shared/llm/persona.ts'
 import { composeSystemPrompt } from '@shared/llm/prompt.ts'
 import { demoDomainConfig } from '@shared/tenants/demo/domain-config.ts'
 import { knowledgeBaseSection } from '@shared/tenants/demo/kb-prompt.ts'
+import { withMarketData } from '@shared/tenants/demo/market.ts'
+import { loadMarket } from '@shared/db/market.ts'
 import { ApiError } from '../../errors.ts'
 import type { Db } from '../client.ts'
 import type { AdminExternals } from './externals.ts'
@@ -109,7 +111,12 @@ export function supabaseAdminConfigStore(db: Db, externals: AdminExternals): Adm
         max_tokens: 400,
         system: composeSystemPrompt({
           domainConfig: demoDomainConfig,
-          productCatalogue: knowledgeBaseSection((await loadProductCatalogue(db)).products),
+          productCatalogue: knowledgeBaseSection(
+            withMarketData(
+              (await loadProductCatalogue(db)).products,
+              (await loadMarket(db)).products,
+            ),
+          ),
           sliders,
           digest: {
             customerName: null,

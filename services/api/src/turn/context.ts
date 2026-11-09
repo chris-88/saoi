@@ -13,6 +13,8 @@ import { toneBucket } from '@shared/llm/persona.ts'
 import { demoProducts, productInfo } from '@shared/tenants/demo/products.ts'
 import { knowledgeProduct } from '@shared/tenants/demo/kb-prompt.ts'
 import { loadMortgageRates, loadProductCatalogue } from '@shared/db/catalogue.ts'
+import { loadMarket } from '@shared/db/market.ts'
+import { withMarketData } from '@shared/tenants/demo/market.ts'
 import { loadCase, mustWrite, type Db, writeEvent } from '@shared/db/case-repository.ts'
 import { buildCaseDigest } from '@shared/db/digest.ts'
 import { needContextFor, needsFor, revivableNeeds } from '@shared/db/needs.ts'
@@ -36,12 +38,19 @@ export async function loadTurnContext(admin: Db, caseId: string) {
    * loaded and edited in the console, or the published files until there are any. Read with
    * the case, because every turn that gets past the gate needs both.
    */
-  const [loaded, kb, rateTable] = await Promise.all([
+  const [loaded, catalogue, rateTable, market] = await Promise.all([
     loadCase(admin, caseId),
     loadProductCatalogue(admin),
     loadMortgageRates(admin),
+    loadMarket(admin),
   ])
   if (!loaded) throw new ApiError('not_found', 'That case does not exist.')
+  /*
+   * Market data over the catalogue: every rate, limit and bonus condition for a product the
+   * refresh covers comes from `market_products` (or the committed snapshot), never from the
+   * catalogue's own pricing. The prompt, the cards and the savings engine all read it from here.
+   */
+  const kb = { ...catalogue, products: withMarketData(catalogue.products, market.products) }
   const savingsOptions = savingsOptionsFrom(kb.products)
 
   /*
