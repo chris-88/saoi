@@ -1,4 +1,6 @@
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi'
+import type { Context } from 'hono'
+import type { MarketPlan } from '@shared/contracts/market-plan.ts'
 import { bodyLimit } from 'hono/body-limit'
 import {
   ABOUT_TOPICS,
@@ -9,6 +11,8 @@ import {
   debtResponseSchema,
   firstHomeRequestSchema,
   firstHomeResponseSchema,
+  moneyCheckRequestSchema,
+  moneyCheckResponseSchema,
   mortgageRequestSchema,
   mortgageResponseSchema,
   productDetailSchema,
@@ -22,6 +26,7 @@ import {
 import { ABOUT } from '@shared/domain/market/about.ts'
 import { debts } from '@shared/domain/market/debt.ts'
 import { firstHome } from '@shared/domain/market/first-home.ts'
+import { moneyCheck } from '@shared/domain/market/money-check.ts'
 import { affordability, switchMortgage } from '@shared/domain/market/mortgage.ts'
 import { buildPlan } from '@shared/domain/market/plan.ts'
 import { productDetail } from '@shared/domain/market/product.ts'
@@ -279,6 +284,29 @@ const firstHomeRoute = createRoute({
   },
 })
 
+const moneyCheckRoute = createRoute({
+  method: 'post',
+  path: '/api/calc/money-check',
+  tags: ['calc'],
+  summary: 'Start here: a money check on whatever the customer has said so far',
+  description:
+    'Call this as soon as the customer talks about their own money in Ireland: money sitting in ' +
+    'a current account, saving for a house or anything else, a loan or credit card balance, a ' +
+    'mortgage or switching, Help to Buy, where to put savings, whether they are paying too much. ' +
+    'Takes whatever has been said so far, however partial, and returns in one result: what Saoi ' +
+    'finds (money found a year, with its sources), a plan across the Irish market when there is ' +
+    'money to place, the two or three questions that would sharpen it, the presentation to lead ' +
+    'with, and a link that holds the plan for 24 hours so it can be opened in the Saoi app (the ' +
+    'only thing stored). Call it again as the customer says more. ' +
+    INFORMATION,
+  security: [],
+  request: { body: jsonBody(moneyCheckRequestSchema.openapi('MoneyCheck')) },
+  responses: {
+    ...ok('The money check.', moneyCheckResponseSchema.openapi('MoneyCheckResult')),
+    ...publicErrors,
+  },
+})
+
 const buildPlanRoute = createRoute({
   method: 'post',
   path: '/api/calc/build-plan',
@@ -425,6 +453,57 @@ export function marketRoutes(options: MarketRouteOptions) {
     return entry.count <= draftBurst.max
   }
 
+  /**
+   * Holds a plan as a 24-hour draft behind a single-use link. A refusal or a failure never costs
+   * the customer the plan: it comes back without a link, and the presentation says so.
+   */
+  const holdDraft = async (
+    c: Context<AppEnv>,
+    plan: MarketPlan,
+    at: number,
+  ): Promise<{ url: string; expiresAt: string } | null> => {
+    const drafts = options.drafts
+    if (drafts === undefined || !draftAllowed(clientAddress(c))) return null
+    try {
+      if (at - lastSweep > SWEEP_EVERY_MS) {
+        lastSweep = at
+        await drafts.store.sweep()
+      }
+      const held = await drafts.store.savedSince(new Date(at - DAY_MS).toISOString())
+      if (held >= (drafts.dailyMax ?? DEFAULT_DAILY_MAX)) return null
+      const token = newPlanToken()
+      const expiresAt = new Date(at + PLAN_LINK_TTL_MS).toISOString()
+      await drafts.store.save({
+        plan,
+        client: 'draft',
+        tokenHash: hashPlanToken(token),
+        expiresAt,
+      })
+      return { url: `${linkBase(drafts.appBaseUrl)}/#/plan/${token}`, expiresAt }
+    } catch (error) {
+      c.get('log').warn('plan draft not held', {
+        requestId: c.get('requestId'),
+        error: error instanceof Error ? error.message : 'unknown',
+      })
+      return null
+    }
+  }
+
+  /** The link sentence goes just before the closing line ("the customer decides"). */
+  const withLink = (
+    presentation: readonly string[],
+    saveLink: { url: string } | null,
+  ): string[] => {
+    const closing = presentation.at(-1)
+    return [
+      ...presentation.slice(0, -1),
+      saveLink === null
+        ? 'A link to open this plan in the Saoi app could not be held just now; saoi_save_plan can save it.'
+        : `Save this plan to the Saoi app: ${saveLink.url} (held for 24 hours so it can be opened, then deleted unless opened).`,
+      ...(closing === undefined ? [] : [closing]),
+    ]
+  }
+
   routes.openapi(buildPlanRoute, async (c) => {
     const body = c.req.valid('json')
     const loaded = await market()
@@ -432,45 +511,34 @@ export function marketRoutes(options: MarketRouteOptions) {
     const result = await calculate(() =>
       buildPlan(loaded, body, dublinDate(at), new Date(at).toISOString()),
     )
+    const saveLink = await holdDraft(c, result.plan, at)
+    return c.json(
+      { ...result, presentation: withLink(result.presentation, saveLink), saveLink },
+      200,
+    )
+  })
 
-    // Hold the plan as a 24-hour draft behind a single-use link. A refusal or a failure here
-    // never costs the customer the plan: it comes back without a link, and says so.
-    let saveLink: { url: string; expiresAt: string } | null = null
-    const drafts = options.drafts
-    if (drafts !== undefined && draftAllowed(clientAddress(c))) {
-      try {
-        if (at - lastSweep > SWEEP_EVERY_MS) {
-          lastSweep = at
-          await drafts.store.sweep()
-        }
-        const held = await drafts.store.savedSince(new Date(at - DAY_MS).toISOString())
-        if (held < (drafts.dailyMax ?? DEFAULT_DAILY_MAX)) {
-          const token = newPlanToken()
-          const expiresAt = new Date(at + PLAN_LINK_TTL_MS).toISOString()
-          await drafts.store.save({
-            plan: result.plan,
-            client: 'draft',
-            tokenHash: hashPlanToken(token),
-            expiresAt,
-          })
-          saveLink = { url: `${linkBase(drafts.appBaseUrl)}/#/plan/${token}`, expiresAt }
-        }
-      } catch (error) {
-        c.get('log').warn('plan draft not held', {
-          requestId: c.get('requestId'),
-          error: error instanceof Error ? error.message : 'unknown',
-        })
-      }
-    }
-    const closing = result.presentation.at(-1)
-    const presentation = [
-      ...result.presentation.slice(0, -1),
-      saveLink === null
-        ? 'A link to open this plan in the Saoi app could not be held just now; saoi_save_plan can save it.'
-        : `Save this plan to the Saoi app: ${saveLink.url} (held for 24 hours so it can be opened, then deleted unless opened).`,
-      ...(closing === undefined ? [] : [closing]),
-    ]
-    return c.json({ ...result, presentation, saveLink }, 200)
+  routes.openapi(moneyCheckRoute, async (c) => {
+    const body = c.req.valid('json')
+    const loaded = await market()
+    const at = now()
+    const result = await calculate(() =>
+      moneyCheck(loaded, body, dublinDate(at), new Date(at).toISOString()),
+    )
+    if (result.plan === null) return c.json(result, 200)
+    const saveLink = await holdDraft(c, result.plan.plan, at)
+    return c.json(
+      {
+        ...result,
+        presentation: withLink(result.presentation, saveLink),
+        plan: {
+          ...result.plan,
+          presentation: withLink(result.plan.presentation, saveLink),
+          saveLink,
+        },
+      },
+      200,
+    )
   })
 
   return routes

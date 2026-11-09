@@ -283,6 +283,7 @@ The engine behind the Saoi MCP tools, in `_shared/domain/market/` (pure; contrac
 | `POST /api/calc/debt`                      | `saoi_debt`               | cost, payoff order, overpay versus save, refinance |
 | `POST /api/calc/build-plan`                | `saoi_build_plan`         | a `MarketPlan` for `POST /api/plans`               |
 | `POST /api/calc/first-home`                | `saoi_first_home`         | Help to Buy, CB limits with it, green rates        |
+| `POST /api/calc/money-check`               | `saoi_money_check`        | the entry: review, plan or questions, link         |
 
 - **Normalised** (`normalise.ts`): one view per product. CCPC's one-row-per-term fixed deposits
   fold into ladders; bank-direct rows (Bank of Ireland, bunq, MoCo) replace their CCPC twins by the pairing in
@@ -302,6 +303,11 @@ The engine behind the Saoi MCP tools, in `_shared/domain/market/` (pure; contrac
   both figures; `whatIf` gives an extra €100 a month, each debt cleared or kept, and the month a
   target is reached; a cleared debt's repayment is saved and the reasoning says so. Review and
   plan results carry `next`, the offer to save for the host to relay.
+- **Money check** (`money-check.ts`): the one-call entry (Chris, 2026-11-09: "connect it and
+  just talk"). Takes whatever the customer has said, however partial; returns the review, a plan
+  when there is money to place (for "the savings held, no date" when no goal was given, stated in
+  `planGoalAssumed`), up to three questions that would sharpen it, the presentation, and the
+  24-hour save link. The granular tools are for follow-ups.
 - **Money found** (`money-found.ts`): review and plan results lead with `moneyFound`, one euro a
   year in parts (idle cash against the best confirmed instant-access rate after DIRT, debt
   interest not paid less what the money would earn, a mortgage switch at a band reaching 90% LTV,

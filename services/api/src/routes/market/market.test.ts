@@ -5,6 +5,7 @@ import { createApp } from '../../app.ts'
 import { marketPlanSchema } from '@shared/contracts/market-plan.ts'
 import {
   buildPlanResponseSchema,
+  moneyCheckResponseSchema,
   productDetailSchema,
   searchResponseSchema,
 } from '@shared/contracts/market-tools.ts'
@@ -210,6 +211,25 @@ describe('public comparison routes', () => {
     )
     expect(second.saveLink).toBeNull()
     expect(limited.held).toHaveLength(1)
+  })
+
+  it('answer the money check in one call, with the save link when there is a plan', async () => {
+    const drafts = fakeDrafts()
+    const { app } = appWith({ drafts })
+    const empty = moneyCheckResponseSchema.parse(
+      await (await post(app, '/api/calc/money-check', {})).json(),
+    )
+    expect(empty.plan).toBeNull()
+    expect(empty.questions.length).toBeGreaterThan(0)
+    expect(drafts.held).toHaveLength(0)
+    const full = moneyCheckResponseSchema.parse(
+      await (await post(app, '/api/calc/money-check', { situation, goals })).json(),
+    )
+    expect(full.plan?.saveLink?.url).toMatch(/#\/plan\//)
+    expect(full.presentation.join('\n')).toContain(
+      `Save this plan to the Saoi app: ${full.plan?.saveLink?.url ?? ''}`,
+    )
+    expect(drafts.held).toHaveLength(1)
   })
 
   it('answer review, projection, mortgage and debt', async () => {
