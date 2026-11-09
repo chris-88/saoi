@@ -98,7 +98,7 @@ const publicErrors = {
 
 const INFORMATION =
   'Information, not advice: results are ranked by a stated objective, for the inputs given. ' +
-  'Unauthenticated and stateless: nothing sent is stored.'
+  'Unauthenticated. Nothing sent is stored, except that a plan is held for 24 hours behind a single-use link so it can be opened in the Saoi app, then deleted unless opened.'
 
 const jsonBody = <T extends z.ZodType>(schema: T) => ({
   required: true,
