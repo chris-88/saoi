@@ -275,8 +275,9 @@ The engine behind the Saoi MCP tools, in `_shared/domain/market/` (pure; contrac
 
 - **Normalised** (`normalise.ts`): one view per product. CCPC's one-row-per-term fixed deposits
   fold into ladders; Bank of Ireland's own rows replace their CCPC twins by the pairing in
-  `_shared/market/bank-ccpc-pairs.ts`; Raisin-platform products are flagged with the home
-  country's deposit guarantee; every view carries source, checked, last changed (from history),
+  `_shared/market/bank-ccpc-pairs.ts`; only providers that operate in Ireland are compared
+  (Raisin's platform banks are dropped here, their rows kept; Chris, 2026-11-09), each with its
+  home country's deposit guarantee; every view carries source, checked, last changed (from history),
   attribution, unknowns and eligibility checks.
 - **Rules** that hold everywhere: DIRT at 33% except DIRT-free products; interest credited
   yearly; an unknown is never zero and never assumed to hold, so a fixed term or an introductory

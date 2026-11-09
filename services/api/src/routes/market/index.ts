@@ -91,7 +91,7 @@ const searchRoute = createRoute({
     'changes it and the result states the basis. Top 5 by default (`limit` up to 25). Every ' +
     'product carries its source (`bank` or `ccpc`), when it was checked and last changed, the ' +
     'CCPC attribution where it applies, the fields the source does not give (never treated as ' +
-    'zero), a Raisin-platform flag with the home deposit guarantee, and eligibility to check. ' +
+    'zero), its deposit guarantee, and eligibility to check. Providers that operate in Ireland only. ' +
     INFORMATION,
   security: [],
   request: { body: jsonBody(searchRequestSchema.openapi('MarketSearch')) },
