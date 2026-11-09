@@ -82,17 +82,19 @@ saoi-api, services/api (Node, Hono; service role; holds ANTHROPIC_API_KEY, VAPID
                 consent, invite partner, upload complete; documents; snapshot,
                 history and change-feed reads
   session       anonymous start, case listing and switching, participant claiming
+  plans         POST /api/plans (public: the MCP saves a plan, gets a one-time link);
+                POST /api/plans/claim (the app opens it into a conversation)
   partner       join via invite, scoped DTO reads, partner task submission
   admin         simulate events, send notification, reset, persona/domain
                 config, case inspection, metrics
 
 Postgres
-  32 tables. Core: cases, participants, participant_sessions, customers
+  33 tables. Core: cases, participants, participant_sessions, customers
   (synthetic bank-held), facts, messages, events, consents, tokens.
   Applications: applications, application_requests, application_confirmations,
   documents, product_interests.
   Plans and discovery: plans, plan_milestones, plan_checkins, plan_watches,
-  need_decisions.
+  need_decisions, saved_plans (plans made in the customer's own AI).
   Forms: form_applications, form_answers.
   Config and ops: persona_config, domain_config, catalogue_overrides,
   product_catalogue, mortgage_rates, market_products,
@@ -250,6 +252,35 @@ line in the refresh output. Shapes in `_shared/market/schema.ts`: `rates` is a u
   `withMarketData`: `rateOf`, the savings engine and the deposit-stack combination take every
   figure from them. Other providers and every CCPC row stay out of turns until the comparison is
   designed. The console's Market data screen shows all of it.
+
+### Plans from the customer's own AI
+
+The MCP tools (`saoi-mcp`) build a plan in the customer's own assistant; `saoi_save_plan` sends
+it to `POST /api/plans` and hands the customer a link. The document is
+`_shared/contracts/market-plan.ts` (`MarketPlan`, version 1; a worked example in
+`market-plan.example.ts`): situation, goals, the products with provider, source, product id,
+amounts, projections and unknowns, the payoff order, the ranking basis, assumptions,
+`createdAt` and `dataCheckedAt`. Unknown keys are stripped, so the engine can add fields first.
+
+- **Stored** in `saved_plans`, not `plans`: it exists before any case and holds several goals.
+  Service-role only. The token is 128 bits, base64url, stored as its SHA-256, single use, seven
+  days (Invariant 8).
+- **Saving** is public: 64 KiB body cap, 20 a minute per address (`CF-Connecting-IP`; the MCP
+  calling from inside the stack shares one bucket), 1,000 a day overall.
+- **Claiming** (`#/plan/<token>` in saoi-web) puts it in the browser's current conversation when
+  that is empty, otherwise a new one (`source: 'plan'`, under the audience cap, refused before
+  the token is spent). It records the situation's figures that map cleanly onto the fact
+  catalogue (`factsFromPlan` in `_shared/db/saved-plans.ts`: take-home pay, rent, outgoings,
+  monthly saving, savings held, card balances, loan repayments, the leading goal, its target and
+  date; never gross income) as `customer_stated`, skipping keys the case holds, and writes
+  `plan_saved` and `plan_claimed`. The same browser opening its link again lands in the same
+  conversation; another browser gets 409, an expired link 410 `expired`, an unknown one 404.
+- **Opening**: `plan_claimed` is narratable, so the next `POST /api/sessions` says `hasUpdates`
+  and the app runs a `return` turn. That turn shows the `saved_plan` card before Saoirse speaks
+  (built from the stored plan, once per plan, like the account welcome), the digest carries "The
+  plan they brought" on every turn, and the return instruction asks for what it is and what is
+  next (its `Next:` line), no figures.
+- `npm run plan:sample` saves the worked example against the live API and prints a link.
 
 ### Open banking, simulated
 
