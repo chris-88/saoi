@@ -67,6 +67,28 @@ describe('money found', () => {
     expect(found.notCounted.some((item) => /CCPC’s one figure/.test(item.why))).toBe(true)
   })
 
+  it('puts money into one account once, though its page lists it as savings and deposit', () => {
+    for (const balance of [5_000, 25_000]) {
+      const result = buildPlan(
+        market,
+        buildPlanRequestSchema.parse({
+          situation: {
+            ...situation(0),
+            debts: [],
+            savings: [{ label: 'Current account', balance, access: 'current_account', aerPct: 0 }],
+          },
+          goals: [goal],
+        }),
+        AS_OF,
+        '2026-11-09T12:00:00.000Z',
+      )
+      const moco = result.plan.recommendation.products.filter((p) => p.provider === 'moco')
+      expect(moco.length, String(balance)).toBeLessThanOrEqual(1)
+      const idle = result.moneyFound.parts.filter((part) => /MoCo/.test(part.label))
+      expect(idle.length).toBeLessThanOrEqual(1)
+    }
+  })
+
   it('counts MoCo once its own pages confirm the rate', () => {
     const found = reviewOf(situation(0)).moneyFound
     const idle = found.parts.find((part) => part.kind === 'idle_cash')
