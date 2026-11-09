@@ -228,7 +228,8 @@ history (`market_products.source`):
   MoCo's EasySaver (`scripts/market/moco.ts`, the savings page plus its FAQ via `alsoRead`):
   2.1% variable for new accounts, and who can open it (`conditions.eligibility`: over 18,
   resident in Ireland, not a US citizen, individuals, no joint accounts), daily interest
-  (`conditions.interestPaid`), `conditions.rateForNewAccounts`. The view carries
+  (`conditions.interestPaid`), `conditions.rateForNewAccounts`, DIRT deducted by MoCo
+  (`conditions.dirtAtSource`, so no "a bank abroad may not take DIRT" check). The view carries
   `eligibility` and states it in `checks` instead of "check eligibility". EBS, AIB and PTSB
   refuse automated requests at their edge (Akamai 403, even on robots.txt) and State Savings
   serves a bot challenge (Radware), all on 2026-11-09: not read, and the client is not

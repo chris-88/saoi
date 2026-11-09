@@ -693,7 +693,12 @@ function checksFor(
   const checks: string[] = []
   const name = product.providerProductName
   if (platform) checks.push('Needs a Raisin account, opened online at raisin.ie.')
-  if (terms.kind === 'deposit' && terms.dirtApplies && !IRISH_PROVIDERS.has(product.provider)) {
+  if (
+    terms.kind === 'deposit' &&
+    terms.dirtApplies &&
+    !IRISH_PROVIDERS.has(product.provider) &&
+    product.conditions.dirtAtSource !== true
+  ) {
     checks.push(
       'Tax: a bank outside Ireland may not take DIRT at source; the interest is then declared to Revenue. The figures take DIRT off at 33% either way.',
     )

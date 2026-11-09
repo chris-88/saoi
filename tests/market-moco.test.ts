@@ -21,6 +21,7 @@ const FAQ = `<html><body>
 <p>A standing order facility can be arranged with the bank from which you wish to transfer money to MoCo.</p>
 <p>You need to be over 18 years old, resident in Ireland and not be a citizen of the United States. We can only facilitate the opening of a savings account by natural persons (as distinct from legal persons) at this time.</p>
 <p>We are unable to facilitate the opening of joint savings accounts.</p>
+<p>Yes, we are obliged to deduct deposit interest retention tax (DIRT) from interest earned on your savings.</p>
 </body></html>`
 
 describe('MoCo EasySaver', () => {
@@ -40,6 +41,7 @@ describe('MoCo EasySaver', () => {
       },
       interestPaid: 'daily',
       rateForNewAccounts: true,
+      dirtAtSource: true,
     })
     expect(() =>
       marketProductSchema.parse({
