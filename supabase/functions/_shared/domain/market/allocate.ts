@@ -82,6 +82,13 @@ function known(
     .netInterest
 }
 
+/** Views that are one account: the same provider page, or else the view itself. */
+function accountOf(product: ProductView): string {
+  return product.provenance.source === 'bank'
+    ? `${product.provider}|${product.provenance.sourceUrl}`
+    : product.id
+}
+
 export function allocate(products: readonly ProductView[], input: AllocateInput): Allocation {
   const slots: Slot[] = products.flatMap((product) =>
     product.terms.kind === 'deposit'
@@ -89,6 +96,16 @@ export function allocate(products: readonly ProductView[], input: AllocateInput)
       : [],
   )
   const used = () => slots.filter((slot) => slot.lump > 0 || slot.monthly > 0).length
+  // One account read from one provider page can be listed in both categories (MoCo's and
+  // bunq's savings accounts are savings and deposits): money goes into one of the two views,
+  // never split across them as if they were two accounts.
+  const inUse = (slot: Slot) =>
+    slots.some(
+      (other) =>
+        other !== slot &&
+        (other.lump > 0 || other.monthly > 0) &&
+        accountOf(other.product) === accountOf(slot.product),
+    )
   const byProvider = (provider: string) =>
     slots
       .filter((slot) => slot.product.provider === provider)
@@ -101,6 +118,7 @@ export function allocate(products: readonly ProductView[], input: AllocateInput)
       for (const slot of slots) {
         const fresh = slot.lump === 0 && slot.monthly === 0
         if (fresh && used() >= input.maxAccounts) continue
+        if (fresh && inUse(slot)) continue
         const current = kind === 'lump' ? slot.lump : slot.monthly
         const minimum =
           kind === 'lump' ? (slot.terms.minLumpSumEur ?? 0) : (slot.terms.minMonthlyEur ?? 0)
