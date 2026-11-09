@@ -20,7 +20,16 @@ export function withMarketData(
   products: readonly KnowledgeProduct[],
   market: readonly MarketProduct[],
 ): readonly KnowledgeProduct[] {
-  const byId = new Map(market.map((record) => [record.productId, record]))
+  /*
+   * The catalogue is Bank of Ireland's, so only its records lay over it. Other providers' rows
+   * sit in the same table for comparison and are not put in front of a customer until that is
+   * designed.
+   */
+  const byId = new Map(
+    market
+      .filter((record) => record.provider === 'boi')
+      .map((record) => [record.productId, record]),
+  )
 
   return products.map((product) => {
     if (!BOI_MARKET_PRODUCT_IDS.has(product.id)) return product

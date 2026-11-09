@@ -1,4 +1,4 @@
-import { boiSnapshot } from '../market/boi.snapshot.ts'
+import { snapshotProducts } from '../market/snapshots.ts'
 import { type MarketProduct, marketProductSchema } from '../market/schema.ts'
 import type { Db } from './case-repository.ts'
 
@@ -78,7 +78,7 @@ export async function loadMarket(client: Db): Promise<LoadedMarket> {
   const rows = (result.data ?? []) as MarketRow[]
 
   if (result.error !== null || rows.length === 0) {
-    return { products: boiSnapshot.products, loaded: false }
+    return { products: snapshotProducts, loaded: false }
   }
   return { products: productsFromRows(rows), loaded: true }
 }
