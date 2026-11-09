@@ -227,9 +227,13 @@ as new members.
   table is empty and the record in git.
 - **Refreshed** by `npm run market:refresh` (dry run and diff), `-- --snapshot` (rewrite the
   snapshot), `-- --db` (write the table; needs `SUPABASE_URL=http://127.0.0.1:8002` and the
-  service role key from `pass show infra/saoi/SERVICE_ROLE_KEY`). It reads robots.txt first (PDFs
-  are disallowed, so the HTML product pages are the source), and any page it cannot parse stops
-  the run with nothing written.
+  service role key from `pass show infra/saoi/SERVICE_ROLE_KEY`); `-- --provider boi` runs one.
+  Each provider reads robots.txt first (Bank of Ireland disallows PDFs, so its HTML product pages
+  are the source). All or nothing per provider: a page it cannot parse means nothing is written
+  for that provider, the others still are, and the exit code is 1.
+- **Providers** are a descriptor each (`scripts/market/provider.ts`: origin, sources with a parser
+  per page, snapshot) listed in `scripts/market/providers.ts`, and a generated snapshot listed in
+  `_shared/market/snapshots.ts`. Only `boi` records are laid over the catalogue.
 - **Read** at the start of a turn (`loadMarket`) and laid over the catalogue by `withMarketData`:
   `rateOf`, the savings engine's options and the deposit-stack combination take every figure from
   the record. A covered product with no current record shows no rate.
