@@ -324,18 +324,27 @@ The engine behind the Saoi MCP tools, in `_shared/domain/market/` (pure; contrac
 
 ### Plans from the customer's own AI
 
-The MCP tools (`saoi-mcp`) build a plan in the customer's own assistant; `saoi_save_plan` sends
-it to `POST /api/plans` and hands the customer a link. The document is
+The MCP tools (`saoi-mcp`) build a plan in the customer's own assistant. `POST /api/calc/build-plan`
+holds every plan it builds as a 24-hour draft in `saved_plans` (client `draft`) and returns
+`saveLink` ("Save this plan to the Saoi app: <link>"; Chris, 2026-11-09, after the second Claude
+test); `saoi_save_plan` (`POST /api/plans`) still saves one for hosts that call it. The document is
 `_shared/contracts/market-plan.ts` (`MarketPlan`, version 1; a worked example in
 `market-plan.example.ts`): situation, goals, the products with provider, source, product id,
 amounts, projections and unknowns, the payoff order, the ranking basis, assumptions,
 `createdAt` and `dataCheckedAt`. Unknown keys are stripped, so the engine can add fields first.
 
 - **Stored** in `saved_plans`, not `plans`: it exists before any case and holds several goals.
-  Service-role only. The token is 128 bits, base64url, stored as its SHA-256, single use, seven
-  days (Invariant 8).
-- **Saving** is public: 64 KiB body cap, 20 a minute per address (`CF-Connecting-IP`; the MCP
-  calling from inside the stack shares one bucket), 1,000 a day overall.
+  Service-role only. The token is 128 bits, base64url, stored as its SHA-256, single use, 24
+  hours (Invariant 8). Unopened plans are deleted by `sweep_saved_plans()`: hourly from saoi-api,
+  and before each draft at most every ten minutes.
+- **Saving** is public: 64 KiB body cap, 20 a minute per address (`CF-Connecting-IP`, then
+  `X-Forwarded-For`, which saoi-mcp forwards), 5,000 a day overall, drafts and saves together.
+  Drafts: 30 a minute per address; past a limit, or if the write fails, the plan comes back with
+  `saveLink: null` and says so.
+- **Presentation**: review, plan and first-home results lead with `presentation`, the sentences
+  a host reads first: money found, one net figure per scenario (savings less what is still owed,
+  never a gross pot alone), the split, the liquidity call, Help to Buy for a home, the save link,
+  and that the customer decides. No imperatives.
 - **Claiming** (`#/plan/<token>` in saoi-web) puts it in the browser's current conversation when
   that is empty, otherwise a new one (`source: 'plan'`, under the audience cap, refused before
   the token is spent). It records the situation's figures that map cleanly onto the fact

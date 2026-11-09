@@ -32,6 +32,8 @@ export type PlanStore = {
     tokenHash: string
     expiresAt: string
   }): Promise<{ id: string }>
+  /** Deletes every unclaimed plan past its expiry or older than 24 hours. How many went. */
+  sweep(): Promise<number>
   /** Plans saved since then, for the daily ceiling on a public route. */
   savedSince(sinceIso: string): Promise<number>
   findByTokenHash(tokenHash: string): Promise<StoredPlan | null>
@@ -90,6 +92,12 @@ export function supabasePlanStore(db: Db): PlanStore {
         throw new Error(`Could not save the plan: ${result.error?.message ?? 'no row'}`)
       }
       return { id: result.data.id }
+    },
+
+    async sweep() {
+      const result = await db.rpc('sweep_saved_plans')
+      if (result.error) throw new Error(`Could not sweep plans: ${result.error.message}`)
+      return result.data
     },
 
     async savedSince(sinceIso) {

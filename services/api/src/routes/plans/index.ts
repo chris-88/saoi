@@ -31,8 +31,11 @@ import { authenticatedErrors, errorResponse, security } from '../common.ts'
  * visitor's anonymous session: the plan lands in a conversation and the token is spent.
  */
 
-/** Seven days: long enough to open on the phone at the weekend, short enough to stay a handoff. */
-export const PLAN_LINK_TTL_MS = 7 * 24 * 60 * 60 * 1000
+/**
+ * 24 hours (Chris, 2026-11-09): a plan is held only so the customer can open it, then deleted
+ * unless opened (`sweep_saved_plans`). Drafts from `saoi_build_plan` and saves alike.
+ */
+export const PLAN_LINK_TTL_MS = 24 * 60 * 60 * 1000
 const DAY_MS = 24 * 60 * 60 * 1000
 
 export type PlanRouteOptions = {
@@ -46,7 +49,8 @@ export type PlanRouteOptions = {
   readonly now?: () => number
 }
 
-const DEFAULT_DAILY_MAX = 1_000
+/** Shared with the drafts `saoi_build_plan` holds: both count against it. */
+export const DEFAULT_DAILY_MAX = 5_000
 const DEFAULT_BURST = { max: 20, windowMs: 60_000 }
 
 export const hashPlanToken = (token: string): string =>
@@ -55,7 +59,7 @@ export const hashPlanToken = (token: string): string =>
 /** 128 random bits, base64url: 22 characters, nothing about the plan in it (Invariant 8). */
 export const newPlanToken = (): string => randomBytes(16).toString('base64url')
 
-function linkBase(appBaseUrl: string): string {
+export function linkBase(appBaseUrl: string): string {
   return (appBaseUrl.trim() === '' ? 'https://app.saoi.ie' : appBaseUrl.trim()).replace(/\/+$/, '')
 }
 
@@ -72,8 +76,9 @@ const saveRoute = createRoute({
   summary: 'Save a plan made in the customer’s own AI, behind a one-time link',
   description:
     'Public: no sign-in. Called by the Saoi MCP server (`saoi_save_plan`) with the plan ' +
-    '`saoi_build_plan` returned (`MarketPlan`, version 1). Stores it and returns a claim link ' +
-    'into app.saoi.ie that works once, for seven days. The body is capped at 64 KiB; saves are ' +
+    '`saoi_build_plan` returned (`MarketPlan`, version 1). Holds it and returns a claim link ' +
+    'into app.saoi.ie that works once, for 24 hours; unopened, it is then deleted. ' +
+    '`saoi_build_plan` already returns such a link with every plan. The body is capped at 64 KiB; saves are ' +
     'rate-limited per address and capped per day.',
   security: [],
   request: {
@@ -134,8 +139,8 @@ const USED =
   'This plan has already been opened. Each link works once, so it is in the conversation of ' +
   'whoever opened it first. Ask your assistant to save the plan again for a fresh link.'
 const EXPIRED =
-  'This link has expired: they last seven days. Ask your assistant to save the plan again ' +
-  'for a fresh link.'
+  'This link has expired: a plan is held for 24 hours, then deleted. Ask your assistant to ' +
+  'build the plan again for a fresh link.'
 
 export function planRoutes(options: PlanRouteOptions) {
   const { store } = options

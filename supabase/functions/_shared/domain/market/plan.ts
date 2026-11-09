@@ -13,7 +13,7 @@ import { allocatable, allocate, type AllocationLine } from './allocate.ts'
 import { debtMonthlyRate, payoffOrder, repaymentOf } from './debt.ts'
 import { displayName, euro, interestToClear } from './figures.ts'
 import { HELP_TO_BUY } from '../../market/first-home-rules.ts'
-import { firstHome } from './first-home.ts'
+import { firstHome, helpToBuyFor } from './first-home.ts'
 import { affordability } from './mortgage.ts'
 import { moneyFoundForPlan } from './money-found.ts'
 import { project } from './projection.ts'
@@ -126,7 +126,7 @@ const PACE_HORIZON = 120
 
 /** What the host relays after a plan: the offer to save it, and what the app adds. */
 export const PLAN_NEXT = [
-  'Nothing has been stored. If the customer wants to keep this plan, offer saoi_save_plan: it saves the plan into the Saoi app (app.saoi.ie) behind a one-time link, valid for seven days.',
+  'The plan is held for 24 hours behind the single-use save link so the customer can open it in the Saoi app (app.saoi.ie), then deleted unless opened; nothing else is stored. Offer the link.',
   'In the app the plan opens as a card, and Saoirse, Saoi’s assistant, knows it and can talk it through; signing in with an email address keeps it across devices, including the installed app. Alerts when a chosen product’s rate changes and reminders as the goal date nears are coming, not built yet.',
   'To change an assumption (the buffer, keeping the money accessible, the monthly amount, the date), call saoi_build_plan again with the new inputs; the figures come from that call.',
 ].join(' ')
@@ -354,8 +354,8 @@ export function buildPlan(
       }
       whatIfLines.push(
         passes
-          ? `Keeping every euro in instant access instead: ${euro(instant.netPosition)} at ${whenLabel}, ${euro(gainEur)} less (keepAccessible: true).`
-          : `Locking it anyway: ${euro(locked.netPosition)} at ${whenLabel}, ${euro(gainEur)} more, with the money tied up (minLockGainEur: 0 and minLockGainPctPerYear: 0).`,
+          ? `Keeping every euro in instant access instead: ${euro(instant.netPosition)} net at ${whenLabel} (savings less what is still owed), ${euro(gainEur)} less (keepAccessible: true).`
+          : `Locking it anyway: ${euro(locked.netPosition)} net at ${whenLabel} (savings less what is still owed), ${euro(gainEur)} more, with the money tied up (minLockGainEur: 0 and minLockGainPctPerYear: 0).`,
       )
     }
   }
@@ -380,15 +380,21 @@ export function buildPlan(
       `The figures run to month ${String(current.knownThrough)}: a rate after that is not known for every account.`,
     )
   }
+  // Savings less what is still owed: the one figure a scenario is read by (never a gross pot).
+  const owedAtHorizon = round2(Math.max(0, current.savingsAtHorizon - chosen.netPosition))
+  const netLine = (): string =>
+    owedAtHorizon > 0
+      ? `${euro(chosen.netPosition)} net at ${whenLabel} (${euro(current.savingsAtHorizon)} saved less ${euro(owedAtHorizon)} still owed)`
+      : `${euro(chosen.netPosition)} net at ${whenLabel}, with nothing owed on the debts given`
   if (main?.targetAmount !== undefined) {
     reasoning.push(
       current.reachedOn === null
-        ? `${main.label}: ${euro(main.targetAmount)} is not reached within the ${String(current.knownThrough)} months the figures cover; ${euro(current.savingsAtHorizon)} is projected.`
-        : `${main.label}: ${euro(main.targetAmount)} is reached in ${monthName(current.reachedOn)}.`,
+        ? `${main.label}: ${euro(main.targetAmount)} is not reached within the ${String(current.knownThrough)} months the figures cover; ${netLine()}.`
+        : `${main.label}: ${euro(main.targetAmount)} is reached in ${monthName(current.reachedOn)}; ${netLine()}.`,
     )
   } else if (main !== null) {
     reasoning.push(
-      `${main.label}: ${euro(current.savingsAtHorizon)} projected at ${whenLabel}, after DIRT${bufferHeld > 0 ? `, with the ${euro(bufferHeld)} buffer kept apart` : ''}.`,
+      `${main.label}: ${netLine()}, after DIRT${bufferHeld > 0 ? `, with the ${euro(bufferHeld)} buffer kept apart` : ''}.`,
     )
   }
 
@@ -412,7 +418,7 @@ export function buildPlan(
     const debt = situation.debts.find((candidate) => candidate.id === scenario.debtId)
     const label = debt?.label ?? scenario.debtId
     whatIfLines.push(
-      `${label}: cleared from the lump sum, ${euro(scenario.cleared.netPosition)} net (savings less debt) at ${whenLabel}; kept, ${euro(scenario.kept.netPosition)} with ${euro(scenario.kept.debtAtHorizon)} still owed. The difference is ${euro(round2(Math.abs(scenario.cleared.netPosition - scenario.kept.netPosition)))}.`,
+      `${label}: cleared from the lump sum, ${euro(scenario.cleared.netPosition)} net (savings less debt) at ${whenLabel}; kept, ${euro(scenario.kept.netPosition)} net (with ${euro(scenario.kept.debtAtHorizon)} still owed then). The difference is ${euro(round2(Math.abs(scenario.cleared.netPosition - scenario.kept.netPosition)))}.`,
     )
   }
   let goalReachedAtCurrentPace: string | null = current.reachedOn
@@ -446,14 +452,17 @@ export function buildPlan(
       deposit,
       limit: 1,
     })
-    const note = `A ${euro(deposit)} deposit and ${euro(situation.income.annualGross)} gross income support a price up to ${euro(result.maxPrice)} under the Central Bank limits (the ${result.bindingLimit} limit binds)${situation.firstTimeBuyer === undefined ? ', as a first-time buyer' : ''}.`
+    const note = `A ${euro(deposit)} deposit${owedAtHorizon > 0 ? ` (with ${euro(owedAtHorizon)} still owed on debts)` : ''} and ${euro(situation.income.annualGross)} gross income support a price up to ${euro(result.maxPrice)} under the Central Bank limits (the ${result.bindingLimit} limit binds)${situation.firstTimeBuyer === undefined ? ', as a first-time buyer' : ''}.`
     let helpToBuy: NonNullable<BuildPlanResponse['affordability']>['helpToBuy'] = null
-    if (situation.firstTimeBuyer !== false) {
+    if (situation.firstTimeBuyer !== false && request.propertyKind !== 'second_hand') {
       const home = firstHome(market, {
         annualGrossIncome: situation.income.annualGross,
         deposit,
-        propertyKind: 'new_build',
+        propertyKind: request.propertyKind ?? 'new_build',
         firstTimeBuyer: true,
+        ...(request.taxPaidLastFourYearsEur === undefined
+          ? {}
+          : { taxPaidLastFourYearsEur: request.taxPaidLastFourYearsEur }),
         limit: 1,
       })
       const withHtb = home.lending.maxPriceWithHelpToBuy
@@ -461,7 +470,7 @@ export function buildPlan(
       const htbNote =
         withHtb === null
           ? `Help to Buy would not raise the price the limits allow here.`
-          : `For a new build or self-build, Help to Buy (up to ${euro(htbAt)} at that price: 10% of it, at most ${euro(HELP_TO_BUY.capEur)}, and no more than the Income Tax and DIRT paid over the last four years, not given) counted towards the deposit lifts that to ${euro(withHtb)}.`
+          : `For a new build or self-build, Help to Buy (up to ${euro(htbAt)} at that price: 10% of it, at most ${euro(HELP_TO_BUY.capEur)}, and no more than the Income Tax and DIRT paid over the last four years${request.taxPaidLastFourYearsEur === undefined ? ', not given' : ''}) counted towards the deposit lifts that to ${euro(withHtb)}.`
       helpToBuy = {
         upToEur: htbAt,
         maxPriceWithHelpToBuy: withHtb,
@@ -569,7 +578,61 @@ export function buildPlan(
     ),
   })
 
+  // ---- Help to Buy, whenever the goal is a home and the buyer a first-time buyer ---------------
+  let helpToBuy: BuildPlanResponse['helpToBuy'] = null
+  if (main?.kind === 'house_deposit' && situation.firstTimeBuyer !== false) {
+    const price = request.homePrice ?? afford?.helpToBuy?.maxPriceWithHelpToBuy ?? null
+    const htb = helpToBuyFor({
+      price,
+      propertyKind: request.propertyKind,
+      firstTimeBuyer: true,
+      taxPaid: request.taxPaidLastFourYearsEur,
+    })
+    const where =
+      price === null
+        ? ''
+        : ` on ${euro(price)}${request.homePrice === undefined ? ' (the most the limits allow with it)' : ''}`
+    const note =
+      htb.status === 'not_available'
+        ? `Help to Buy: not available here. ${htb.reasons.join(' ')}`
+        : htb.status === 'available'
+          ? `Help to Buy: ${euro(htb.amountEur ?? 0)}${where}, counted towards the deposit (Revenue).`
+          : `Help to Buy: depends, up to ${euro(htb.upToEur)}${where} for a new build or self-build. ${htb.reasons.slice(1).join(' ')} (Revenue, cap ${euro(HELP_TO_BUY.capEur)} from ${HELP_TO_BUY.capFrom}, to ${HELP_TO_BUY.endsOn}.)`
+    helpToBuy = {
+      status: htb.status,
+      amountEur: htb.amountEur,
+      upToEur: htb.upToEur,
+      note: note.trim(),
+      sourceUrl: HELP_TO_BUY.sources[1]?.url ?? '',
+      checkedOn: HELP_TO_BUY.sources[1]?.checkedOn ?? '',
+    }
+  }
+
+  // ---- Present to the customer ------------------------------------------------------------------
+  const presentation = planPresentation({
+    moneyFound,
+    when: whenLabel,
+    netLine: netLine(),
+    mainLabel: main?.label ?? null,
+    reachedOn: current.reachedOn,
+    targetAmount: main?.targetAmount,
+    scenarios: chosen.scenarios.map((scenario) => ({
+      label: situation.debts.find((debt) => debt.id === scenario.debtId)?.label ?? scenario.debtId,
+      cleared: scenario.cleared.netPosition,
+      kept: scenario.kept.netPosition,
+      keptOwed: scenario.kept.debtAtHorizon,
+    })),
+    liquidity,
+    lines: allLines,
+    buffer: bufferHeld,
+    extraMonthly,
+    helpToBuy,
+  })
+
   return {
+    presentation,
+    saveLink: null,
+    helpToBuy,
     moneyFound,
     plan,
     horizonMonths: horizon,
@@ -958,4 +1021,68 @@ function planSituation(situation: Situation): MarketPlan['situation'] {
     })),
     debts: situation.debts.map((debt) => ({ ...debt })),
   }
+}
+
+/**
+ * What the host reads first: the headline sentences, in order, as options with their figures.
+ * One net figure per scenario (savings less what is still owed), never a gross pot alone.
+ * No instructions: the customer decides.
+ */
+function planPresentation(input: {
+  moneyFound: BuildPlanResponse['moneyFound']
+  when: string
+  netLine: string
+  mainLabel: string | null
+  reachedOn: string | null
+  targetAmount: number | undefined
+  scenarios: readonly { label: string; cleared: number; kept: number; keptOwed: number }[]
+  liquidity: BuildPlanResponse['liquidity']
+  lines: readonly AllocationLine[]
+  buffer: number
+  extraMonthly: BuildPlanResponse['whatIf']['extraMonthly']
+  helpToBuy: BuildPlanResponse['helpToBuy']
+}): string[] {
+  const out: string[] = [input.moneyFound.headline]
+  for (const scenario of input.scenarios) {
+    const better = scenario.cleared >= scenario.kept ? 'cleared' : 'kept'
+    out.push(
+      `${scenario.label}, two options, each net at ${input.when} (savings less what is still owed): cleared from savings now, ${euro(scenario.cleared)}; kept, ${euro(scenario.kept)} (${euro(scenario.keptOwed)} still owed then). ${better === 'cleared' ? 'Clearing it' : 'Keeping it'} leaves ${euro(round2(Math.abs(scenario.cleared - scenario.kept)))} more.`,
+    )
+  }
+  if (input.mainLabel !== null) {
+    out.push(
+      `${input.mainLabel} with this plan: ${input.netLine}${input.targetAmount === undefined ? '' : input.reachedOn === null ? `; ${euro(input.targetAmount)} is not reached within the figures` : `; ${euro(input.targetAmount)} is reached in ${monthName(input.reachedOn)}`}.`,
+    )
+  }
+  const placed = input.lines
+    .map((line) => {
+      const parts = [
+        line.lumpSum > 0 ? euro(line.lumpSum) : null,
+        line.monthly > 0 ? `${euro(line.monthly)} a month` : null,
+      ].filter((part): part is string => part !== null)
+      return `${parts.join(' and ')} in ${displayName(line.product)}${line.termMonths === null ? '' : ` (${String(line.termMonths)}-month term)`}`
+    })
+    .join('; ')
+  if (placed !== '') {
+    out.push(
+      `The split this plan uses: ${placed}${input.buffer > 0 ? `, the first ${euro(input.buffer)} as an emergency buffer kept apart` : ''}.`,
+    )
+  }
+  if (input.liquidity.decision === 'instant_access' && input.liquidity.gainEur !== null) {
+    out.push(
+      `Everything stays in instant access: a fixed term would add only ${euro(input.liquidity.gainEur)} by ${input.when}.`,
+    )
+  } else if (input.liquidity.decision === 'locked' && input.liquidity.gainEur !== null) {
+    out.push(
+      `A fixed term adds ${euro(input.liquidity.gainEur)} by ${input.when} over instant access, with the money tied up until it ends.`,
+    )
+  }
+  if (input.extraMonthly !== null) {
+    out.push(
+      `Each extra ${euro(input.extraMonthly.extra)} a month adds about ${euro(input.extraMonthly.addsAtHorizon)} by ${input.when}.`,
+    )
+  }
+  if (input.helpToBuy !== null) out.push(input.helpToBuy.note)
+  out.push('These are options with their figures, for the inputs given; the customer decides.')
+  return out
 }

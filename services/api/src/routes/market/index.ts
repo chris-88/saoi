@@ -33,6 +33,14 @@ import type { AppEnv } from '../../context.ts'
 import { ApiError, errorBody } from '../../errors.ts'
 import { clientAddress, rateLimit } from '../../middleware/rateLimit.ts'
 import type { MarketStore } from '../../store/market.ts'
+import type { PlanStore } from '../../store/plans.ts'
+import {
+  DEFAULT_DAILY_MAX,
+  hashPlanToken,
+  linkBase,
+  newPlanToken,
+  PLAN_LINK_TTL_MS,
+} from '../plans/index.ts'
 import { errorResponse } from '../common.ts'
 
 /**
@@ -51,7 +59,23 @@ export type MarketRouteOptions = {
   readonly burst?: { readonly max: number; readonly windowMs: number }
   /** For tests: the clock the date of the figures is read from. */
   readonly now?: () => number
+  /**
+   * Where `build-plan` holds each plan as a 24-hour draft behind a single-use link. Without it,
+   * plans carry no link (`saveLink: null`).
+   */
+  readonly drafts?: {
+    readonly store: PlanStore
+    readonly appBaseUrl: string
+    /** Plans held a day across everybody (drafts and saves together). */
+    readonly dailyMax?: number
+    /** Drafts per address per window; past it, the plan comes back without a link. */
+    readonly burst?: { readonly max: number; readonly windowMs: number }
+  }
 }
+
+const DEFAULT_DRAFT_BURST = { max: 30, windowMs: 60_000 }
+const SWEEP_EVERY_MS = 10 * 60 * 1000
+const DAY_MS = 24 * 60 * 60 * 1000
 
 /** Bodies are small: a situation, some goals. Anything bigger is not a person's finances. */
 export const MARKET_MAX_BODY_BYTES = 32 * 1024
@@ -383,14 +407,70 @@ export function marketRoutes(options: MarketRouteOptions) {
     return c.json(await calculate(() => firstHome(loaded, body)), 200)
   })
 
+  // Drafts: a fixed window per address, held in this process like the other limits.
+  const draftWindows = new Map<string, { resetAt: number; count: number }>()
+  const draftBurst = options.drafts?.burst ?? DEFAULT_DRAFT_BURST
+  let lastSweep = 0
+  const draftAllowed = (key: string): boolean => {
+    const at = now()
+    if (draftWindows.size > 10_000) {
+      for (const [k, entry] of draftWindows) if (entry.resetAt <= at) draftWindows.delete(k)
+    }
+    let entry = draftWindows.get(key)
+    if (entry === undefined || entry.resetAt <= at) {
+      entry = { resetAt: at + draftBurst.windowMs, count: 0 }
+      draftWindows.set(key, entry)
+    }
+    entry.count += 1
+    return entry.count <= draftBurst.max
+  }
+
   routes.openapi(buildPlanRoute, async (c) => {
     const body = c.req.valid('json')
     const loaded = await market()
     const at = now()
-    return c.json(
-      await calculate(() => buildPlan(loaded, body, dublinDate(at), new Date(at).toISOString())),
-      200,
+    const result = await calculate(() =>
+      buildPlan(loaded, body, dublinDate(at), new Date(at).toISOString()),
     )
+
+    // Hold the plan as a 24-hour draft behind a single-use link. A refusal or a failure here
+    // never costs the customer the plan: it comes back without a link, and says so.
+    let saveLink: { url: string; expiresAt: string } | null = null
+    const drafts = options.drafts
+    if (drafts !== undefined && draftAllowed(clientAddress(c))) {
+      try {
+        if (at - lastSweep > SWEEP_EVERY_MS) {
+          lastSweep = at
+          await drafts.store.sweep()
+        }
+        const held = await drafts.store.savedSince(new Date(at - DAY_MS).toISOString())
+        if (held < (drafts.dailyMax ?? DEFAULT_DAILY_MAX)) {
+          const token = newPlanToken()
+          const expiresAt = new Date(at + PLAN_LINK_TTL_MS).toISOString()
+          await drafts.store.save({
+            plan: result.plan,
+            client: 'draft',
+            tokenHash: hashPlanToken(token),
+            expiresAt,
+          })
+          saveLink = { url: `${linkBase(drafts.appBaseUrl)}/#/plan/${token}`, expiresAt }
+        }
+      } catch (error) {
+        c.get('log').warn('plan draft not held', {
+          requestId: c.get('requestId'),
+          error: error instanceof Error ? error.message : 'unknown',
+        })
+      }
+    }
+    const closing = result.presentation.at(-1)
+    const presentation = [
+      ...result.presentation.slice(0, -1),
+      saveLink === null
+        ? 'A link to open this plan in the Saoi app could not be held just now; saoi_save_plan can save it.'
+        : `Save this plan to the Saoi app: ${saveLink.url} (held for 24 hours so it can be opened, then deleted unless opened).`,
+      ...(closing === undefined ? [] : [closing]),
+    ]
+    return c.json({ ...result, presentation, saveLink }, 200)
   })
 
   return routes

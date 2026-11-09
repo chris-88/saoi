@@ -12,13 +12,45 @@ import { MARKET_FIXTURE } from '@shared/domain/market/fixture.ts'
 import { createTokenVerifier } from '../../middleware/auth.ts'
 import { cachedMarketStore } from '../../store/market.ts'
 import { SECRET, fakePartners, fakeSessions, fakeStore, fakeUploads } from '../../testing.ts'
+import type { PlanStore } from '../../store/plans.ts'
+import { hashPlanToken, PLAN_LINK_TTL_MS } from '../plans/index.ts'
 import { MARKET_MAX_BODY_BYTES, dublinDate } from './index.ts'
 
 const verifyToken = createTokenVerifier({ secret: SECRET, jwksUrl: 'http://127.0.0.1:1/jwks' })
 const NOW = Date.parse('2026-11-09T12:00:00Z')
 
+type Held = { tokenHash: string; expiresAt: string; client: string | null }
+
+/** An in-memory draft store: what build-plan holds, and how often it swept. */
+function fakeDrafts(init: { heldToday?: number; failing?: boolean } = {}) {
+  const held: Held[] = []
+  const sweeps = { count: 0 }
+  const store: PlanStore = {
+    save: ({ tokenHash, expiresAt, client }) => {
+      if (init.failing === true) return Promise.reject(new Error('database down'))
+      held.push({ tokenHash, expiresAt, client })
+      return Promise.resolve({ id: '00000000-0000-4000-8000-000000000001' })
+    },
+    sweep: () => {
+      sweeps.count += 1
+      return Promise.resolve(0)
+    },
+    savedSince: () => Promise.resolve(init.heldToday ?? 0),
+    findByTokenHash: () => Promise.resolve(null),
+    caseHasPlan: () => Promise.resolve(false),
+    markClaimed: () => Promise.resolve(false),
+    recordClaim: () => Promise.resolve({ facts: [] }),
+  }
+  return { store, held, sweeps }
+}
+
 function appWith(
-  options: { burst?: { max: number; windowMs: number }; loads?: { count: number } } = {},
+  options: {
+    burst?: { max: number; windowMs: number }
+    loads?: { count: number }
+    drafts?: ReturnType<typeof fakeDrafts>
+    draftBurst?: { max: number; windowMs: number }
+  } = {},
 ) {
   const loads = options.loads ?? { count: 0 }
   const app = createApp({
@@ -39,6 +71,15 @@ function appWith(
       ),
       now: () => NOW,
       ...(options.burst === undefined ? {} : { burst: options.burst }),
+      ...(options.drafts === undefined
+        ? {}
+        : {
+            drafts: {
+              store: options.drafts.store,
+              appBaseUrl: 'https://app.saoi.ie',
+              ...(options.draftBurst === undefined ? {} : { burst: options.draftBurst }),
+            },
+          }),
     },
   })
   return { app, loads }
@@ -130,6 +171,45 @@ describe('public comparison routes', () => {
     const body = buildPlanResponseSchema.parse(await response.json())
     expect(() => marketPlanSchema.parse(body.plan)).not.toThrow()
     expect(body.plan.createdAt).toBe(new Date(NOW).toISOString())
+  })
+
+  it('hold each plan as a 24-hour draft behind a single-use link, hashed at rest', async () => {
+    const drafts = fakeDrafts()
+    const { app } = appWith({ drafts })
+    const body = buildPlanResponseSchema.parse(
+      await (await post(app, '/api/calc/build-plan', { situation, goals })).json(),
+    )
+    expect(body.saveLink?.url).toMatch(/^https:\/\/app\.saoi\.ie\/#\/plan\/[A-Za-z0-9_-]{22}$/)
+    expect(body.saveLink?.expiresAt).toBe(new Date(NOW + PLAN_LINK_TTL_MS).toISOString())
+    const token = body.saveLink?.url.split('/').at(-1) ?? ''
+    expect(drafts.held).toEqual([
+      { tokenHash: hashPlanToken(token), expiresAt: body.saveLink?.expiresAt, client: 'draft' },
+    ])
+    expect(JSON.stringify(drafts.held)).not.toContain(token)
+    expect(drafts.sweeps.count).toBe(1)
+    expect(body.presentation.join('\n')).toContain(
+      `Save this plan to the Saoi app: ${body.saveLink?.url ?? ''}`,
+    )
+    expect(body.presentation.at(-1)).toMatch(/the customer decides/)
+  })
+
+  it('return the plan without a link when the draft cannot be held', async () => {
+    for (const drafts of [fakeDrafts({ heldToday: 10_000 }), fakeDrafts({ failing: true })]) {
+      const { app } = appWith({ drafts })
+      const response = await post(app, '/api/calc/build-plan', { situation, goals })
+      expect(response.status).toBe(200)
+      const body = buildPlanResponseSchema.parse(await response.json())
+      expect(body.saveLink).toBeNull()
+      expect(body.presentation.join(' ')).toMatch(/could not be held just now; saoi_save_plan/)
+    }
+    const limited = fakeDrafts()
+    const { app } = appWith({ drafts: limited, draftBurst: { max: 1, windowMs: 60_000 } })
+    await post(app, '/api/calc/build-plan', { situation, goals })
+    const second = buildPlanResponseSchema.parse(
+      await (await post(app, '/api/calc/build-plan', { situation, goals })).json(),
+    )
+    expect(second.saveLink).toBeNull()
+    expect(limited.held).toHaveLength(1)
   })
 
   it('answer review, projection, mortgage and debt', async () => {

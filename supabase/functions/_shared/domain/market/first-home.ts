@@ -18,7 +18,7 @@ import type { Market } from './types.ts'
  */
 
 export const FIRST_HOME_NEXT =
-  'Nothing has been stored. Help to Buy and the limits above are information for the customer to weigh. With a target price and date, saoi_build_plan works out the saving towards the deposit; a plan can then be saved into the Saoi app with saoi_save_plan.'
+  'Nothing is stored from this. Help to Buy and the limits above are information for the customer to weigh. With a target and a date, saoi_build_plan works out the saving towards the deposit and returns a link that holds the plan for 24 hours so it can be opened in the Saoi app.'
 
 type HelpToBuy = FirstHomeResponse['helpToBuy']
 
@@ -199,7 +199,31 @@ export function firstHome(market: Market, request: FirstHomeRequest): FirstHomeR
     `Rules as recorded on ${HELP_TO_BUY.sources[0]?.checkedOn ?? ''} from Revenue and the Central Bank; each is listed with its page.`,
   ]
 
+  const htbLine =
+    helpToBuy.status === 'not_available'
+      ? `Help to Buy: not available. ${helpToBuy.reasons.join(' ')}`
+      : helpToBuy.status === 'available'
+        ? `Help to Buy: ${euro(helpToBuy.amountEur ?? 0)} (Revenue). ${helpToBuy.reasons.join(' ')}`
+        : `Help to Buy: depends, up to ${euro(helpToBuy.upToEur)}. ${helpToBuy.reasons.join(' ')}`
+  const presentation = [
+    `${htbLine} Cap ${euro(HELP_TO_BUY.capEur)} for applications from ${HELP_TO_BUY.capFrom}; homes bought or built by ${HELP_TO_BUY.endsOn} (Revenue, checked ${HELP_TO_BUY.sources[1]?.checkedOn ?? ''}).`,
+    `Central Bank limits: borrowing up to ${String(measures.loanToIncome)} times income (${euro(round2(maxLoanByIncome))}) and 90% of the price. The highest price they allow is ${euro(round2(withoutHtb))}${withHtb === null ? '' : `, or ${euro(withHtb)} for a new build with Help to Buy towards the deposit`}.`,
+    ...(forPrice === null
+      ? []
+      : [
+          `At ${euro(forPrice.price)}: a ${euro(forPrice.depositNeeded)} deposit is needed${forPrice.helpToBuy > 0 ? `, ${euro(forPrice.helpToBuy)} of it from Help to Buy` : ''}${forPrice.depositShortfall > 0 ? `, ${euro(forPrice.depositShortfall)} short` : ''}; the loan of ${euro(forPrice.loanNeeded)} is ${forPrice.withinIncomeLimit ? 'within the income limit' : `${euro(forPrice.aboveIncomeLimitBy)} above the income limit, which lenders can exceed for up to ${String(measures.allowancePct)}% of their lending (their decision)`}.`,
+        ]),
+    ...(green !== undefined && standard !== undefined
+      ? [
+          `Green rates are the lenders’ own: the lowest at this loan-to-value is ${green.product.providerName} ${green.product.name} at ${String(green.rate)}%${green.terms.ber === null ? '' : ` (BER ${green.terms.ber})`}, against ${String(standard.rate)}% standard.`,
+        ]
+      : []),
+    'The First Home shared equity scheme could not be confirmed from a primary page, so it is not included.',
+    'These are the published rules and the figures for the inputs given; the customer decides.',
+  ]
+
   return {
+    presentation,
     helpToBuy,
     lending: {
       loanToIncome: measures.loanToIncome,

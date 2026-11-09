@@ -33,6 +33,8 @@ const turnModels =
           timeoutMs: env.TURN_TIMEOUT_MS,
         })
 
+const planStore = supabasePlanStore(db)
+
 const app = createApp({
   version: env.APP_VERSION,
   log,
@@ -47,8 +49,11 @@ const app = createApp({
   sessions: supabaseSessionStore(db),
   partners: supabasePartnerStore(db),
   uploads: supabaseUploadStore(db),
-  plans: { store: supabasePlanStore(db), appBaseUrl: env.APP_BASE_URL },
-  market: { store: supabaseMarketStore(db) },
+  plans: { store: planStore, appBaseUrl: env.APP_BASE_URL },
+  market: {
+    store: supabaseMarketStore(db),
+    drafts: { store: planStore, appBaseUrl: env.APP_BASE_URL },
+  },
   admin: createAdminStores(db, {
     ...(env.ANTHROPIC_API_KEY === undefined ? {} : { anthropicApiKey: env.ANTHROPIC_API_KEY }),
     saoiModel: env.SAOI_MODEL,
@@ -79,6 +84,24 @@ const app = createApp({
 const server = serve({ fetch: app.fetch, port: env.PORT }, (info) => {
   log.info('listening', { version: env.APP_VERSION, port: info.port })
 })
+
+/**
+ * Plans are held 24 hours unless opened (Chris, 2026-11-09). The build-plan route also sweeps
+ * before it writes; this hourly pass covers quiet hours.
+ */
+const sweepPlans = (): void => {
+  planStore
+    .sweep()
+    .then((removed) => {
+      if (removed > 0) log.info('plans swept', { removed })
+    })
+    .catch((error: unknown) => {
+      log.warn('plan sweep failed', { error: error instanceof Error ? error.message : 'unknown' })
+    })
+}
+sweepPlans()
+const sweepTimer = setInterval(sweepPlans, 60 * 60 * 1000)
+sweepTimer.unref()
 
 // Docker sends SIGTERM; open streams would otherwise hold the stop until the kill timeout.
 for (const signal of ['SIGTERM', 'SIGINT'] as const) {
