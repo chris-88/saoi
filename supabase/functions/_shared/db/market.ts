@@ -1,5 +1,6 @@
 import { snapshotProducts } from '../market/snapshots.ts'
 import { type MarketProduct, marketProductSchema } from '../market/schema.ts'
+import type { MarketRecord } from '../domain/market/types.ts'
 import type { Db } from './case-repository.ts'
 
 /**
@@ -66,30 +67,59 @@ const iso = (value: string): string => new Date(value).toISOString()
 
 export function productsFromRows(rows: readonly MarketRow[]): readonly MarketProduct[] {
   return rows.flatMap((row) => {
-    const parsed = marketProductSchema.safeParse({
-      provider: row.provider,
-      source: row.source,
-      productId: row.product_id,
-      category: row.category,
-      providerProductName: row.provider_product_name,
-      rates: row.rates,
-      conditions: row.conditions,
-      sourceUrl: row.source_url,
-      ...(row.provider_url === null ? {} : { providerUrl: row.provider_url }),
-      ...(row.source_product_id === null ? {} : { sourceProductId: row.source_product_id }),
-      ...(row.source_updated_at === null ? {} : { sourceUpdatedAt: iso(row.source_updated_at) }),
-      ...(row.attribution === null ? {} : { attribution: row.attribution }),
-      ...(row.unknown.length === 0 ? {} : { unknown: [...row.unknown] }),
-      checkedAt: iso(row.checked_at),
-      effectiveFrom: row.effective_from,
-    })
-    if (!parsed.success) {
-      console.error(
-        `market_products row ${row.provider}/${row.source}/${row.product_id} does not match its schema; skipped`,
-      )
-      return []
-    }
-    return [parsed.data]
+    const product = productFromRow(row)
+    return product === null ? [] : [product]
+  })
+}
+
+/** One row as a validated record, or null (logged) when it no longer matches its schema. */
+export function productFromRow(row: MarketRow): MarketProduct | null {
+  const parsed = marketProductSchema.safeParse({
+    provider: row.provider,
+    source: row.source,
+    productId: row.product_id,
+    category: row.category,
+    providerProductName: row.provider_product_name,
+    rates: row.rates,
+    conditions: row.conditions,
+    sourceUrl: row.source_url,
+    ...(row.provider_url === null ? {} : { providerUrl: row.provider_url }),
+    ...(row.source_product_id === null ? {} : { sourceProductId: row.source_product_id }),
+    ...(row.source_updated_at === null ? {} : { sourceUpdatedAt: iso(row.source_updated_at) }),
+    ...(row.attribution === null ? {} : { attribution: row.attribution }),
+    ...(row.unknown.length === 0 ? {} : { unknown: [...row.unknown] }),
+    checkedAt: iso(row.checked_at),
+    effectiveFrom: row.effective_from,
+  })
+  if (!parsed.success) {
+    console.error(
+      `market_products row ${row.provider}/${row.source}/${row.product_id} does not match its schema; skipped`,
+    )
+    return null
+  }
+  return parsed.data
+}
+
+/** A row with its place in the history: when this version began and ended. */
+export type MarketHistoryRow = MarketRow & {
+  readonly first_seen_at: string
+  readonly superseded_at: string | null
+}
+
+export const MARKET_HISTORY_COLUMNS = `${MARKET_COLUMNS}, first_seen_at, superseded_at`
+
+/** Every version of every row, as the comparison engine takes them (`domain/market`). */
+export function recordsFromRows(rows: readonly MarketHistoryRow[]): readonly MarketRecord[] {
+  return rows.flatMap((row) => {
+    const product = productFromRow(row)
+    if (product === null) return []
+    return [
+      {
+        product,
+        firstSeenAt: iso(row.first_seen_at),
+        supersededAt: row.superseded_at === null ? null : iso(row.superseded_at),
+      },
+    ]
   })
 }
 
