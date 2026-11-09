@@ -57,4 +57,35 @@ describe('the money check, one call on whatever was said', () => {
     expect(result.presentation.at(-1)).toMatch(/the customer decides/)
     expect(() => moneyCheckResponseSchema.parse(result)).not.toThrow()
   })
+
+  it('never shows a negative gain, and names the month rather than a month number', () => {
+    const result = check({
+      situation: {
+        income: { annualGross: 62_000 },
+        monthlySaving: 800,
+        savings: [{ label: 'Savings', balance: 35_000 }],
+        firstTimeBuyer: true,
+      },
+      goals: [
+        {
+          id: 'home',
+          kind: 'house_deposit',
+          label: 'First home',
+          targetAmount: 38_000,
+          targetDate: '2027-06',
+        },
+      ],
+      homePrice: 380_000,
+      propertyKind: 'new_build',
+    })
+    const all = [
+      ...result.presentation,
+      ...(result.plan?.whatIf.lines ?? []),
+      ...(result.plan?.reasoning ?? []),
+    ].join(' ')
+    expect(all).not.toMatch(/€-/)
+    const open = check({ situation: { savings: [{ label: 'Current account', balance: 20_000 }] } })
+    expect(open.presentation.join(' ')).not.toMatch(/month 12/)
+    expect(open.presentation.join(' ')).not.toMatch(/nothing owed on the debts given/)
+  })
 })

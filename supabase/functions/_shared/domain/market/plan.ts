@@ -19,7 +19,7 @@ import { moneyFoundForPlan } from './money-found.ts'
 import { project } from './projection.ts'
 import { monthlyOutgoings } from './review.ts'
 import { guaranteeFlag, SAVINGS_ASSUMPTIONS, UNCONFIRMED_RATE } from './search.ts'
-import { monthsUntil, round2, simulateDeposit } from './simulate.ts'
+import { addMonths, monthsUntil, round2, simulateDeposit } from './simulate.ts'
 import type { AsOf, Market } from './types.ts'
 
 /**
@@ -151,7 +151,7 @@ export function buildPlan(
     main?.targetDate === undefined ? NO_DATE_HORIZON : monthsUntil(asOf, main.targetDate)
   const whenLabel =
     main?.targetDate === undefined
-      ? `month ${String(horizon)}`
+      ? monthName(addMonths(asOf, horizon))
       : monthName(main.targetDate.slice(0, 7))
 
   // ---- The money to place -------------------------------------------------------------------
@@ -344,7 +344,9 @@ export function buildPlan(
         decision: passes ? 'locked' : 'instant_access',
         why: passes
           ? `Locking ${lockedNames} leaves ${euro(gainEur)} more (${gainPct.toFixed(2)}% a year on the money locked): ${both}. That clears the ${euro(thresholdEur)} and ${String(thresholdPct)}% a year a lock has to earn, so the term is used; the money cannot be reached before it ends.`
-          : `Locking ${lockedNames} would leave only ${euro(gainEur)} more (${gainPct.toFixed(2)}% a year on the money locked): ${both}. A lock has to earn at least ${euro(thresholdEur)} and ${String(thresholdPct)}% a year, so the money stays in instant access and can be reached at any time.`,
+          : gainEur <= 0
+            ? `Locking ${lockedNames} would leave no more than instant access (${both}), so the money stays in instant access and can be reached at any time.`
+            : `Locking ${lockedNames} would leave only ${euro(gainEur)} more (${gainPct.toFixed(2)}% a year on the money locked): ${both}. A lock has to earn at least ${euro(thresholdEur)} and ${String(thresholdPct)}% a year, so the money stays in instant access and can be reached at any time.`,
         lockedNetPosition: locked.netPosition,
         instantNetPosition: instant.netPosition,
         gainEur,
@@ -352,11 +354,12 @@ export function buildPlan(
         thresholdEur,
         thresholdPctPerYear: thresholdPct,
       }
-      whatIfLines.push(
-        passes
-          ? `Keeping every euro in instant access instead: ${euro(instant.netPosition)} net at ${whenLabel} (savings less what is still owed), ${euro(gainEur)} less (keepAccessible: true).`
-          : `Locking it anyway: ${euro(locked.netPosition)} net at ${whenLabel} (savings less what is still owed), ${euro(gainEur)} more, with the money tied up (minLockGainEur: 0 and minLockGainPctPerYear: 0).`,
-      )
+      if (gainEur > 0)
+        whatIfLines.push(
+          passes
+            ? `Keeping every euro in instant access instead: ${euro(instant.netPosition)} net at ${whenLabel} (savings less what is still owed), ${euro(gainEur)} less (keepAccessible: true).`
+            : `Locking it anyway: ${euro(locked.netPosition)} net at ${whenLabel} (savings less what is still owed), ${euro(gainEur)} more, with the money tied up (minLockGainEur: 0 and minLockGainPctPerYear: 0).`,
+        )
     }
   }
   reasoning.push(...chosen.reasoning)
@@ -385,7 +388,9 @@ export function buildPlan(
   const netLine = (): string =>
     owedAtHorizon > 0
       ? `${euro(chosen.netPosition)} net at ${whenLabel} (${euro(current.savingsAtHorizon)} saved less ${euro(owedAtHorizon)} still owed)`
-      : `${euro(chosen.netPosition)} net at ${whenLabel}, with nothing owed on the debts given`
+      : situation.debts.length === 0
+        ? `${euro(chosen.netPosition)} at ${whenLabel}`
+        : `${euro(chosen.netPosition)} net at ${whenLabel}, with nothing owed on the debts given`
   if (main?.targetAmount !== undefined) {
     reasoning.push(
       current.reachedOn === null
@@ -1051,7 +1056,7 @@ function planPresentation(input: {
   }
   if (input.mainLabel !== null) {
     out.push(
-      `${input.mainLabel} with this plan: ${input.netLine}${input.targetAmount === undefined ? '' : input.reachedOn === null ? `; ${euro(input.targetAmount)} is not reached within the figures` : `; ${euro(input.targetAmount)} is reached in ${monthName(input.reachedOn)}`}.`,
+      `${input.mainLabel}: ${input.netLine}${input.targetAmount === undefined ? '' : input.reachedOn === null ? `; ${euro(input.targetAmount)} is not reached within the figures` : `; ${euro(input.targetAmount)} is reached in ${monthName(input.reachedOn)}`}.`,
     )
   }
   const placed = input.lines
@@ -1070,7 +1075,9 @@ function planPresentation(input: {
   }
   if (input.liquidity.decision === 'instant_access' && input.liquidity.gainEur !== null) {
     out.push(
-      `Everything stays in instant access: a fixed term would add only ${euro(input.liquidity.gainEur)} by ${input.when}.`,
+      input.liquidity.gainEur <= 0
+        ? `Everything stays in instant access: no fixed term pays more by ${input.when}.`
+        : `Everything stays in instant access: a fixed term would add only ${euro(input.liquidity.gainEur)} by ${input.when}.`,
     )
   } else if (input.liquidity.decision === 'locked' && input.liquidity.gainEur !== null) {
     out.push(

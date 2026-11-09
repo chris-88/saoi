@@ -23,7 +23,7 @@ import type { AsOf, Market } from './types.ts'
 const DEFAULT_GOAL: Goal = {
   id: 'savings',
   kind: 'grow_savings',
-  label: 'The savings held, no date set',
+  label: 'The savings held (no date set)',
   priority: 1,
 }
 
