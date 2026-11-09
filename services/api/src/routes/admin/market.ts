@@ -9,7 +9,7 @@ const marketProductsRoute = createRoute({
   method: 'get',
   path: '/api/admin/market-products',
   tags: ['admin'],
-  summary: 'Market data read from provider websites',
+  summary: 'Market data read from provider websites and the CCPC comparison tables',
   description:
     'The current version of every provider product, or every version with `history=true`. Ordered by provider and product, newest version first.',
   security,
@@ -29,6 +29,10 @@ const marketProductsRoute = createRoute({
         .regex(/^[a-z0-9_]+$/)
         .optional()
         .openapi({ description: 'Only this provider.', example: 'boi' }),
+      source: z.enum(['bank', 'ccpc']).optional().openapi({
+        description: 'Only rows read from this source: the provider site, or CCPC.',
+        example: 'ccpc',
+      }),
       productId: z
         .string()
         .regex(/^[a-z_]+(\.[a-z0-9_]+)+$/)
@@ -53,8 +57,11 @@ const marketProductsRoute = createRoute({
 })
 
 export const marketRoutes = new OpenAPIHono<AppEnv>().openapi(marketProductsRoute, async (c) => {
-  const { history, provider, productId } = c.req.valid('query')
+  const { history, provider, source, productId } = c.req.valid('query')
   // A product filter is a request for its history: a single current row would hide what changed.
   const all = history || productId !== undefined
-  return c.json(await c.get('admin').market.list({ history: all, provider, productId }), 200)
+  return c.json(
+    await c.get('admin').market.list({ history: all, provider, source, productId }),
+    200,
+  )
 })

@@ -1,4 +1,4 @@
-import type { MarketProduct } from '../../market/schema.ts'
+import type { DepositMarketProduct } from '../../market/schema.ts'
 import type { KnowledgeProduct } from './kb-types.ts'
 import { marketOf } from './market.ts'
 
@@ -38,7 +38,7 @@ function euro(value: unknown): string | null {
  * came from; the note gains whatever else the page states (SuperSaver's reversion rate and its
  * €30,000 tier), because the catch belongs beside the headline.
  */
-function marketRate(market: MarketProduct): Rate {
+function marketRate(market: DepositMarketProduct): Rate {
   const rates = market.rates
   const tier =
     rates.tierCapEur === undefined || rates.aboveTierAerPct === undefined
@@ -71,7 +71,8 @@ function marketRate(market: MarketProduct): Rate {
 
   // A lump sum paid at a different rate means the headline is for monthly saving only.
   const monthlyOnly = rates.lumpSumAerPct === undefined ? '' : ' on monthly savings'
-  return { headline: `${String(headline)}% AER ${rates.basis}${monthlyOnly}`, note: tier }
+  const basis = rates.basis === null ? '' : ` ${rates.basis}`
+  return { headline: `${String(headline)}% AER${basis}${monthlyOnly}`, note: tier }
 }
 
 export function rateOf(product: KnowledgeProduct): Rate | null {

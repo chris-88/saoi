@@ -1,59 +1,94 @@
 import { z } from 'zod'
 
 /**
- * Market data: what a provider publishes about a product Saoi models, read off the provider's
- * public website on a date.
+ * Market data: what a provider publishes about a product, read from a public source on a date.
  *
- * One record per provider product. `rates` is a union on `kind` so a mortgage or a loan can
- * join later as its own member without touching the deposit shape; this slice has only
- * deposits, because savings and deposits are release slice 1. A record states what the page
- * says and nothing else: a field the page does not state is left out, never guessed.
+ * One record per provider product per source. A record is read either from the provider's own
+ * website (`source: 'bank'`, deep: the conditions Saoi's engine reasons on) or from the
+ * Competition and Consumer Protection Commission's comparison tables (`source: 'ccpc'`, broad:
+ * every provider CCPC lists, in every category it compares). The two sit side by side with
+ * their own history, so a CCPC row and a bank-direct row for the same product can be compared.
  *
- * Stored as versioned rows in `market_products` (a changed rate is a new row, the old one is
- * superseded) and as the committed snapshot `boi.snapshot.ts`, which `scripts/market/refresh.ts`
- * writes and which is the fallback when the table is empty.
+ * A record states what its source says and nothing else. A field the source leaves out is
+ * absent; a field Saoi would need and the source does not give is named in `unknown`, so no
+ * consumer can read its absence as zero. Prose the source gives (introductory offers, bonuses,
+ * extra information) is kept verbatim in `conditions.prose`, and every field CCPC states is kept
+ * verbatim in `conditions.details`.
+ *
+ * Stored as versioned rows in `market_products` (a changed record is a new row, the old one is
+ * superseded). Bank-direct Bank of Ireland data is also committed as `boi.snapshot.ts`, which is
+ * the fallback when the table is empty.
  */
 
-export const PROVIDERS = ['boi'] as const
-export type Provider = (typeof PROVIDERS)[number]
+/** Provider ids are the bank's, whichever source the row came from: `boi`, `aib`, `ptsb`. */
+export const providerIdSchema = z.string().regex(/^[a-z0-9_]{2,40}$/)
+export type Provider = z.infer<typeof providerIdSchema>
 
-/** Savings: regular saving by direct debit. Deposit: money placed, on demand, notice or term. */
-export const MARKET_CATEGORIES = ['savings', 'deposit', 'mortgage', 'loan'] as const
+export const MARKET_SOURCES = ['bank', 'ccpc'] as const
+export type MarketSource = (typeof MARKET_SOURCES)[number]
+
+/** What has to travel with every row read from CCPC (its re-use terms). */
+export const CCPC_ATTRIBUTION =
+  'Source: Competition and Consumer Protection Commission, www.ccpc.ie'
+
+/**
+ * Savings: regular saving by direct debit. Deposit: money placed, on demand, notice or term.
+ * The rest are borrowing and day-to-day banking, read from CCPC only so far.
+ */
+export const MARKET_CATEGORIES = [
+  'savings',
+  'deposit',
+  'mortgage',
+  'loan',
+  'credit_card',
+  'current_account',
+] as const
 export type MarketCategory = (typeof MARKET_CATEGORIES)[number]
 
-/** A percentage as published, e.g. 2.48 for 2.48% AER. */
-const pct = z.number().positive().max(20)
-const eur = z.number().int().nonnegative().max(10_000_000)
+/** A percentage as published, e.g. 2.48 for 2.48% AER. Zero is a real rate (no interest). */
+const savingPct = z.number().nonnegative().max(20)
+const lendingPct = z.number().nonnegative().max(80)
+const eur = z.number().nonnegative().max(100_000_000)
 
 export const depositRatesSchema = z
   .object({
     kind: z.literal('deposit'),
     /** The rate on money held. Null where the product is a term ladder instead. */
-    aerPct: pct.nullable(),
-    basis: z.enum(['fixed', 'variable']),
+    aerPct: savingPct.nullable(),
+    /** Null where the source does not say; then `rates.basis` is in `unknown`. */
+    basis: z.enum(['fixed', 'variable']).nullable(),
     /** How long a fixed headline lasts before it reverts. */
     fixedMonths: z.number().int().positive().max(120).optional(),
-    /** What it reverts to, where the page says. */
-    thenAerPct: pct.optional(),
+    /** What it reverts to, where the source says. */
+    thenAerPct: savingPct.optional(),
     /** Where the headline only applies up to a balance, and what is paid above it. */
     tierCapEur: eur.optional(),
-    aboveTierAerPct: pct.optional(),
+    aboveTierAerPct: savingPct.optional(),
     /** Where a lump sum earns something other than the headline. */
-    lumpSumAerPct: pct.optional(),
+    lumpSumAerPct: savingPct.optional(),
+    /** Every balance band as the source lists it, lowest first; `maxEur` null is open-ended. */
+    tiers: z
+      .array(z.object({ minEur: eur, maxEur: eur.nullable(), aerPct: savingPct }).strict())
+      .min(1)
+      .optional(),
     /** A fixed-term ladder, longest last. */
     terms: z
       .array(
         z
           .object({
             months: z.number().int().positive().max(120),
-            aerPct: pct,
+            aerPct: savingPct,
             /** The gross return over the whole term, where the page states it. */
-            termReturnPct: pct.optional(),
+            termReturnPct: savingPct.optional(),
           })
           .strict(),
       )
       .min(1)
       .optional(),
+    /** One product, one term: a single fixed-term deposit as CCPC lists it. */
+    termMonths: z.number().int().positive().max(600).optional(),
+    /** Days of notice to withdraw. Zero is instant access. */
+    noticeDays: z.number().int().nonnegative().max(1000).optional(),
   })
   .strict()
   .refine((rates) => rates.aerPct !== null || rates.terms !== undefined, {
@@ -63,7 +98,72 @@ export const depositRatesSchema = z
     message: 'a tier needs both its cap and the rate above it',
   })
 
-export const marketRatesSchema = z.discriminatedUnion('kind', [depositRatesSchema])
+export const MORTGAGE_CUSTOMER_TYPES = ['first_time_buyer', 'mover', 'switcher'] as const
+
+export const mortgageRatesSchema = z
+  .object({
+    kind: z.literal('mortgage'),
+    /** Null for a type CCPC lists that is neither; then `rates.rateType` is in `unknown`. */
+    rateType: z.enum(['fixed', 'variable']).nullable(),
+    /** The fixed period, in years. Null on a variable rate. */
+    fixedYears: z.number().int().positive().max(40).nullable(),
+    initialRatePct: lendingPct,
+    /** What the rate is expected to become after the fixed period, where the source says. */
+    followOnRatePct: lendingPct.nullable(),
+    /** CCPC's "rate for full term". Not stated to be the APRC, so the APRC is in `unknown`. */
+    fullTermRatePct: lendingPct.nullable(),
+    ltvMinPct: z.number().nonnegative().max(100).nullable(),
+    ltvMaxPct: z.number().nonnegative().max(100).nullable(),
+    /** The BER band the rate is for (`A`, `B3`, `Exempt`), or null when it is for any. */
+    ber: z.string().trim().min(1).max(20).nullable(),
+    cashback: z.boolean().nullable(),
+    /** Which of CCPC's mortgage lists the product appears in. */
+    customerTypes: z.array(z.enum(MORTGAGE_CUSTOMER_TYPES)).min(1),
+  })
+  .strict()
+
+export const loanRatesSchema = z
+  .object({
+    kind: z.literal('loan'),
+    /** CCPC labels the figure "Interest rate (APR)". */
+    aprPct: lendingPct,
+    rateType: z.enum(['fixed', 'variable']).nullable(),
+    maxAmountEur: eur.nullable(),
+    maxTermMonths: z.number().int().positive().max(600).nullable(),
+    /** CCPC's purpose flags, as it names them: `Personal loans`, `Car loans`, ... */
+    purposes: z.array(z.string().trim().min(1).max(60)),
+  })
+  .strict()
+
+export const creditCardRatesSchema = z
+  .object({
+    kind: z.literal('credit_card'),
+    aprPct: lendingPct.nullable(),
+    purchaseRatePct: lendingPct.nullable(),
+    cashRatePct: lendingPct.nullable(),
+    /** Months of the introductory balance-transfer rate, where stated. */
+    balanceTransferIntroMonths: z.number().int().nonnegative().max(120).nullable(),
+    balanceTransferIntroPct: lendingPct.nullable(),
+  })
+  .strict()
+
+export const currentAccountRatesSchema = z
+  .object({
+    kind: z.literal('current_account'),
+    /** The account maintenance fee per quarter, where CCPC states it as a number. */
+    quarterlyFeeEur: eur.nullable(),
+    creditInterestPct: savingPct.nullable(),
+    overdraft: z.boolean().nullable(),
+  })
+  .strict()
+
+export const marketRatesSchema = z.discriminatedUnion('kind', [
+  depositRatesSchema,
+  mortgageRatesSchema,
+  loanRatesSchema,
+  creditCardRatesSchema,
+  currentAccountRatesSchema,
+])
 
 export const savingsBonusSchema = z
   .object({
@@ -81,40 +181,63 @@ export const savingsBonusSchema = z
   })
   .strict()
 
+const verbatim = z.record(z.string().max(200), z.string().max(20_000))
+
 export const marketConditionsSchema = z
   .object({
-    takesMonthly: z.boolean(),
-    takesLumpSum: z.boolean(),
+    /** Whether it takes monthly saving and lump sums. Absent where the source does not say. */
+    takesMonthly: z.boolean().optional(),
+    takesLumpSum: z.boolean().optional(),
     minMonthlyEur: eur.optional(),
     maxMonthlyEur: eur.optional(),
     minLumpSumEur: eur.optional(),
     maxLumpSumEur: eur.optional(),
     minAge: z.number().int().positive().max(100).optional(),
     bonus: savingsBonusSchema.optional(),
+    /** The source's own prose, verbatim: introductory offers, bonuses, extra information. */
+    prose: verbatim.optional(),
+    /** Every field the source states, by its own label, verbatim. */
+    details: verbatim.optional(),
   })
   .strict()
 
 export const marketProductSchema = z
   .object({
-    provider: z.enum(PROVIDERS),
-    /** The catalogue id Saoi models the product as, e.g. `savings.supersaver`. */
+    /** The bank's id, whichever source the row came from. */
+    provider: providerIdSchema,
+    source: z.enum(MARKET_SOURCES),
+    /**
+     * Saoi's id for the product. Bank-direct rows use the catalogue id they model
+     * (`savings.supersaver`); CCPC rows use `<category>.c<CCPC id>`.
+     */
     productId: z.string().regex(/^[a-z_]+(\.[a-z0-9_]+)+$/),
     category: z.enum(MARKET_CATEGORIES),
-    /** The provider's own name for it, as the page heads it. */
-    providerProductName: z.string().trim().min(1).max(120),
+    /** The provider's own name for it, as the source heads it. */
+    providerProductName: z.string().trim().min(1).max(200),
     rates: marketRatesSchema,
     conditions: marketConditionsSchema,
+    /** Where the row was read: the bank's page, or the CCPC comparison tool. */
     sourceUrl: z.url(),
-    /** When the page was last read and found to say this. */
+    /** The provider's page for the product, where the source links one. */
+    providerUrl: z.url().nullable().optional(),
+    /** The source's own id for the product (CCPC's), where it has one. */
+    sourceProductId: z.string().max(40).nullable().optional(),
+    /** When the source says it last edited the record. CCPC states it for cards and accounts. */
+    sourceUpdatedAt: z.iso.datetime({ offset: true, local: true }).nullable().optional(),
+    /** Required attribution for the source's re-use terms, where there is one. */
+    attribution: z.string().max(200).nullable().optional(),
+    /** Fields Saoi needs that the source does not give, as paths: `rates.thenAerPct`. */
+    unknown: z.array(z.string().max(80)).optional(),
+    /** When the row was read and found to say this. */
     checkedAt: z.iso.datetime({ offset: true }),
-    /** The date the rate took effect, where the page says. None of the current pages do. */
+    /** The date the rate took effect, where the source says. None do so far. */
     effectiveFrom: z.iso.date().nullable(),
   })
   .strict()
 
 export const marketSnapshotSchema = z
   .object({
-    provider: z.enum(PROVIDERS),
+    provider: providerIdSchema,
     checkedAt: z.iso.datetime({ offset: true }),
     /** The provider's rate sheet, named on its rates page; its date moves when rates do. */
     rateSheet: z.object({ url: z.url(), asOf: z.iso.date().nullable() }).strict().nullable(),
@@ -123,7 +246,26 @@ export const marketSnapshotSchema = z
   .strict()
 
 export type DepositRates = z.infer<typeof depositRatesSchema>
+export type MortgageRates = z.infer<typeof mortgageRatesSchema>
+export type LoanRates = z.infer<typeof loanRatesSchema>
+export type CreditCardRates = z.infer<typeof creditCardRatesSchema>
+export type CurrentAccountRates = z.infer<typeof currentAccountRatesSchema>
 export type MarketRates = z.infer<typeof marketRatesSchema>
 export type MarketConditions = z.infer<typeof marketConditionsSchema>
 export type MarketProduct = z.infer<typeof marketProductSchema>
 export type MarketSnapshot = z.infer<typeof marketSnapshotSchema>
+
+/** A savings or deposit record: the only kind the catalogue overlay and the engine read. */
+export type DepositMarketProduct = MarketProduct & { readonly rates: DepositRates }
+
+export function isDepositRecord(product: MarketProduct): product is DepositMarketProduct {
+  return product.rates.kind === 'deposit'
+}
+
+/** The deposit rates of a record, or a thrown error: for tests and generated data only. */
+export function depositRatesOf(product: MarketProduct): DepositRates {
+  if (product.rates.kind !== 'deposit') {
+    throw new Error(`${product.productId} is a ${product.rates.kind}, not a deposit`)
+  }
+  return product.rates
+}

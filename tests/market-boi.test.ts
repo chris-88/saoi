@@ -181,6 +181,7 @@ describe('the Bank of Ireland parsers', () => {
     ] as const) {
       const record = {
         provider: 'boi',
+        source: 'bank',
         productId,
         category: 'savings',
         ...parser(html),
@@ -255,7 +256,8 @@ describe('robots.txt', () => {
 
 describe('the diff', () => {
   const base = {
-    provider: 'boi' as const,
+    provider: 'boi',
+    source: 'bank' as const,
     productId: 'savings.advantage_fixed',
     category: 'deposit' as const,
     providerProductName: 'Advantage Fixed Term Deposit Account',

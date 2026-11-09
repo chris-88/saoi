@@ -16,6 +16,7 @@ import { savingsOptionsFrom } from './savings-options.ts'
 
 const record = (overrides: Partial<MarketProduct>): MarketProduct => ({
   provider: 'boi',
+  source: 'bank',
   productId: 'savings.advantage_fixed',
   category: 'deposit',
   providerProductName: 'Advantage Fixed Term Deposit Account',
@@ -62,12 +63,11 @@ describe('laying market data over the catalogue', () => {
     expect(rateOf(superSaver)).toBeNull()
   })
 
-  it('lays only Bank of Ireland records over the catalogue', () => {
-    const other = record({ provider: 'boi', productId: 'savings.advantage_fixed' })
-    const elsewhere = { ...other, provider: 'aib' } as unknown as MarketProduct
-    const over = withMarketData(demoKnowledgeBase.products, [elsewhere])
-
-    expect(marketOf(product(over, 'savings.advantage_fixed') as (typeof over)[number])).toBeNull()
+  it('lays only Bank of Ireland records read from its own site over the catalogue', () => {
+    for (const elsewhere of [record({ provider: 'aib' }), record({ source: 'ccpc' })]) {
+      const over = withMarketData(demoKnowledgeBase.products, [elsewhere])
+      expect(marketOf(product(over, 'savings.advantage_fixed') as (typeof over)[number])).toBeNull()
+    }
   })
 
   it('leaves products the market does not cover as they were', () => {
