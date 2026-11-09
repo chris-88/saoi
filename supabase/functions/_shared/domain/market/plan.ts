@@ -3,6 +3,7 @@ import {
   DEFAULT_MIN_LOCK_GAIN_PCT_PER_YEAR,
   type BuildPlanRequest,
   type BuildPlanResponse,
+  type PlanAlternative,
   type Debt,
   type Goal,
   type ProductView,
@@ -135,14 +136,133 @@ const PACE_HORIZON = 120
 export const PLAN_NEXT = [
   'The plan is held for 24 hours behind the single-use save link so the customer can open it in the Saoi app (app.saoi.ie), then deleted unless opened; nothing else is stored. Offer the link.',
   'In the app the plan opens as a card, and Saoirse, Saoi’s assistant, knows it and can talk it through; signing in with an email address keeps it across devices, including the installed app. Alerts when a chosen product’s rate changes and reminders as the goal date nears are coming, not built yet.',
-  'To change an assumption (the buffer, keeping the money accessible, the monthly amount, the date), call saoi_build_plan again with the new inputs; the figures come from that call.',
+  'To compare options (another buffer, a debt kept or cleared, another monthly amount or date), pass them as `alternatives` in one saoi_build_plan call; call it again only when the customer changes their situation in a later message.',
 ].join(' ')
 
 const lowerFirst = (text: string): string => `${text.charAt(0).toLowerCase()}${text.slice(1)}`
 
+/**
+ * The plan, and each named alternative worked out in the same call (Chris, 2026-11-09, after
+ * test 5: hosts called build_plan once per scenario and every call drew its own card). An
+ * alternative is the same request with a few inputs changed; it comes back as a position and
+ * one comparison line, not a second plan.
+ */
 export function buildPlan(
   market: Market,
   request: BuildPlanRequest,
+  asOf: AsOf,
+  createdAt: string,
+): BuildPlanResponse {
+  const { alternatives: asked = [], ...base } = request
+  const main = buildMain(market, base, asOf, createdAt)
+  if (asked.length === 0) return main
+  const alternatives = asked.map((alternative) =>
+    workOutAlternative(market, base, alternative, main, asOf, createdAt),
+  )
+  const closing = main.presentation.at(-1)
+  return {
+    ...main,
+    alternatives,
+    presentation: [
+      ...main.presentation.slice(0, -1),
+      ...alternatives.map((alternative) => alternative.line),
+      ...(closing === undefined ? [] : [closing]),
+    ],
+  }
+}
+
+function workOutAlternative(
+  market: Market,
+  base: Omit<BuildPlanRequest, 'alternatives'>,
+  alternative: PlanAlternative,
+  main: BuildPlanResponse,
+  asOf: AsOf,
+  createdAt: string,
+): BuildPlanResponse['alternatives'][number] {
+  const changes: string[] = []
+  const plans = new Map((alternative.debtPlans ?? []).map((item) => [item.debtId, item.plan]))
+  const debts = base.situation.debts.map((debt) => {
+    const plan = plans.get(debt.id)
+    if (plan === undefined) return debt
+    changes.push(
+      `the ${lowerFirst(debt.label)} ${plan === 'keep' ? 'kept' : plan === 'clear' ? 'cleared from savings' : 'compared both ways'}`,
+    )
+    return { ...debt, plan }
+  })
+  const mainGoal = [...base.goals]
+    .sort((a, b) => (a.priority ?? 99) - (b.priority ?? 99))
+    .find((goal) => SAVING_GOALS.has(goal.kind))
+  const goals = base.goals.map((goal) =>
+    goal !== mainGoal
+      ? goal
+      : {
+          ...goal,
+          ...(alternative.targetDate === undefined ? {} : { targetDate: alternative.targetDate }),
+          ...(alternative.targetAmount === undefined
+            ? {}
+            : { targetAmount: alternative.targetAmount }),
+        },
+  )
+  if (alternative.emergencyBufferEur !== undefined) {
+    changes.push(`a ${euro(alternative.emergencyBufferEur)} emergency buffer`)
+  }
+  if (alternative.keepAccessible !== undefined) {
+    changes.push(
+      alternative.keepAccessible ? 'everything in instant access' : 'fixed terms allowed',
+    )
+  }
+  if (alternative.monthlySaving !== undefined) {
+    changes.push(`${euro(alternative.monthlySaving)} a month`)
+  }
+  if (alternative.targetDate !== undefined) {
+    changes.push(`the goal by ${monthName(alternative.targetDate.slice(0, 7))}`)
+  }
+  if (alternative.targetAmount !== undefined) {
+    changes.push(`a ${euro(alternative.targetAmount)} target`)
+  }
+  if (alternative.homePrice !== undefined) changes.push(`a ${euro(alternative.homePrice)} home`)
+  const result = buildMain(
+    market,
+    {
+      ...base,
+      situation: {
+        ...base.situation,
+        debts,
+        ...(alternative.monthlySaving === undefined
+          ? {}
+          : { monthlySaving: alternative.monthlySaving }),
+      },
+      goals,
+      ...(alternative.emergencyBufferEur === undefined
+        ? {}
+        : { emergencyBufferEur: alternative.emergencyBufferEur }),
+      ...(alternative.keepAccessible === undefined
+        ? {}
+        : { keepAccessible: alternative.keepAccessible }),
+      ...(alternative.homePrice === undefined ? {} : { homePrice: alternative.homePrice }),
+    },
+    asOf,
+    createdAt,
+  )
+  const position = result.position
+  const differenceEur = round2(position.total - main.position.total)
+  const sameDate = position.at === main.position.at
+  const owed = position.owed > 0 ? `, less ${euro(position.owed)} still owed` : ''
+  const line = `${alternative.name} (${changes.length === 0 ? 'as given' : changes.join(', ')}): ${euro(position.total)} at ${monthName(position.at)}, everything held${owed}${sameDate ? `; ${differenceEur >= 0 ? `${euro(differenceEur)} more` : `${euro(-differenceEur)} less`} than the plan above` : ''}.`
+  return {
+    name: alternative.name,
+    changes,
+    position,
+    differenceEur,
+    goalReachedOn: result.goalReachedOn,
+    moneyFoundAnnualEur: result.moneyFound.annualEur,
+    line,
+  }
+}
+
+function buildMain(
+  market: Market,
+  request: Omit<BuildPlanRequest, 'alternatives'>,
   asOf: AsOf,
   createdAt: string,
 ): BuildPlanResponse {
@@ -227,7 +347,7 @@ export function buildPlan(
       `An emergency buffer of ${String(bufferMonths)} months of outgoings was asked for, but outgoings were not given, so none is set aside.`,
     )
     whatIfLines.push(
-      'With monthly outgoings (rent and the rest), or a buffer in euro, the buffer is sized and held in instant access: call saoi_build_plan again with them.',
+      'With monthly outgoings (rent and the rest), or a buffer in euro, the buffer is sized and held in instant access: give them in a later call, or a buffer as an alternative.',
     )
   } else if (bufferTarget !== null && bufferTarget !== undefined && bufferTarget > 0) {
     if (emergency === null && ordered.length < 8) {
@@ -417,8 +537,8 @@ export function buildPlan(
       if (gainEur > 0)
         whatIfLines.push(
           passes
-            ? `What if every euro stayed in instant access (keepAccessible: true): ${euro(instant.netPosition)} at ${whenLabel} (everything held less what is still owed), ${euro(gainEur)} less than this plan.`
-            : `What if the lump sum were locked in a fixed term anyway (minLockGainEur: 0 and minLockGainPctPerYear: 0): ${euro(locked.netPosition)} at ${whenLabel} (everything held less what is still owed), ${euro(gainEur)} more than this plan, with the money tied up.`,
+            ? `What if every euro stayed in instant access (an alternative with keepAccessible: true): ${euro(instant.netPosition)} at ${whenLabel} (everything held less what is still owed), ${euro(gainEur)} less than this plan.`
+            : `What if the lump sum were locked in a fixed term anyway (minLockGainEur: 0 and minLockGainPctPerYear: 0, in a later call): ${euro(locked.netPosition)} at ${whenLabel} (everything held less what is still owed), ${euro(gainEur)} more than this plan, with the money tied up.`,
         )
     }
   }
@@ -489,8 +609,8 @@ export function buildPlan(
     const other = scenario.chosen === 'cleared' ? scenario.kept : scenario.cleared
     whatIfLines.push(
       scenario.chosen === 'cleared'
-        ? `What if the ${label} were kept instead of cleared (call again with its plan: "keep"): ${euro(other.netPosition)} at ${whenLabel}, everything held less the ${euro(other.debtAtHorizon)} still owed then, against ${euro(scenario.cleared.netPosition)} in this plan.`
-        : `What if the ${label} were ${other.debtAtHorizon > 0 ? 'part paid' : 'cleared'} from the lump sum instead (call again with its plan: "clear"): ${euro(other.netPosition)} at ${whenLabel} (everything held less what is still owed), against ${euro(scenario.kept.netPosition)} in this plan.`,
+        ? `What if the ${label} were kept instead of cleared (an alternative with its plan: "keep"): ${euro(other.netPosition)} at ${whenLabel}, everything held less the ${euro(other.debtAtHorizon)} still owed then, against ${euro(scenario.cleared.netPosition)} in this plan.`
+        : `What if the ${label} were ${other.debtAtHorizon > 0 ? 'part paid' : 'cleared'} from the lump sum instead (an alternative with its plan: "clear"): ${euro(other.netPosition)} at ${whenLabel} (everything held less what is still owed), against ${euro(scenario.kept.netPosition)} in this plan.`,
     )
   }
   let goalReachedAtCurrentPace: string | null = current.reachedOn
@@ -509,7 +629,7 @@ export function buildPlan(
     )
   } else if (main !== null) {
     whatIfLines.push(
-      'With a target amount for the goal, the month it is reached is worked out: call saoi_build_plan again with targetAmount.',
+      'With a target amount for the goal, the month it is reached is worked out: an alternative with targetAmount, or the amount in a later call.',
     )
   }
 
@@ -719,6 +839,7 @@ export function buildPlan(
   })
 
   return {
+    alternatives: [],
     assumedRepayments,
     presentation,
     questions,

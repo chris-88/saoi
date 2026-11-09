@@ -142,7 +142,7 @@ describe('keeping a debt is modelled by keeping it', () => {
     )
     expect(result.position.line).toMatch(/less €[\d,]+ still owed on the car loan\.$/)
     expect(result.whatIf.lines.join(' ')).toMatch(
-      /What if the car loan were cleared from the lump sum instead \(call again with its plan: "clear"\)/,
+      /What if the car loan were cleared from the lump sum instead \(an alternative with its plan: "clear"\)/,
     )
     // The choice is an input, not part of the plan document.
     expect(JSON.stringify(result.plan.situation.debts)).not.toMatch(/"plan"/)
