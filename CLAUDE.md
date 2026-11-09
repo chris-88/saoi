@@ -215,28 +215,41 @@ The knowledge base the prompt is built from (`kb-prompt.ts`) and the mortgage ra
 
 ### Market data
 
-What a provider publishes today about the products Saoi models: rates, limits and bonus
-conditions, each with its `source_url`, `checked_at` and (where the page says) `effective_from`.
-Bank of Ireland's six savings and deposit products only, so far (`_shared/market/boi-sources.ts`).
-Shapes in `_shared/market/schema.ts`; `rates` is a union on `kind`, so mortgages and loans join
-as new members.
+What providers publish about their products, from two sources, side by side with their own
+history (`market_products.source`):
 
-- **Stored** as versioned rows in `market_products`: a changed rate supersedes the current row
-  and inserts a new one, an unchanged one moves `checked_at`. `market_record_refresh` does a whole
-  run in one transaction. `_shared/market/boi.snapshot.ts` (generated) is the fallback when the
-  table is empty and the record in git.
-- **Refreshed** by `npm run market:refresh` (dry run and diff), `-- --snapshot` (rewrite the
-  snapshot), `-- --db` (write the table; needs `SUPABASE_URL=http://127.0.0.1:8002` and the
-  service role key from `pass show infra/saoi/SERVICE_ROLE_KEY`); `-- --provider boi` runs one.
-  Each provider reads robots.txt first (Bank of Ireland disallows PDFs, so its HTML product pages
-  are the source). All or nothing per provider: a page it cannot parse means nothing is written
-  for that provider, the others still are, and the exit code is 1.
-- **Providers** are a descriptor each (`scripts/market/provider.ts`: origin, sources with a parser
-  per page, snapshot) listed in `scripts/market/providers.ts`, and a generated snapshot listed in
-  `_shared/market/snapshots.ts`. Only `boi` records are laid over the catalogue.
-- **Read** at the start of a turn (`loadMarket`) and laid over the catalogue by `withMarketData`:
-  `rateOf`, the savings engine's options and the deposit-stack combination take every figure from
-  the record. A covered product with no current record shows no rate.
+- `bank`: the provider's own website, deep: the rates, limits and bonus conditions the savings
+  engine reasons on. Bank of Ireland's six savings and deposit products only
+  (`_shared/market/boi-sources.ts`, parsers in `scripts/market/boi.ts`).
+- `ccpc`: the Competition and Consumer Protection Commission's comparison tables, broad: every
+  provider CCPC lists, in savings, deposits, mortgages, loans, credit cards and current accounts
+  (`scripts/market/ccpc.ts`, read from the JSON API behind ccpc.ie at compare.ccpc.ie). Rows
+  carry CCPC's attribution, CCPC's product id, CCPC's prose and every field it states verbatim
+  (`conditions.prose`, `conditions.details`), and name what CCPC leaves out in `unknown`. CCPC's
+  terms ask for written approval before commercial use of comparison data; the prototype uses it
+  attributed, approval to be sought once there is revenue (decision 2026-11-09).
+
+`provider` is always the bank (`boi`, `aib`, `ptsb`); CCPC's names map in
+`scripts/market/ccpc-providers.ts`, and an unknown name gets a generated id and a `NEW PROVIDER`
+line in the refresh output. Shapes in `_shared/market/schema.ts`: `rates` is a union on `kind`
+(`deposit`, `mortgage`, `loan`, `credit_card`, `current_account`).
+
+- **Stored** as versioned rows: a changed record supersedes the current row and inserts a new
+  one, an unchanged one moves `checked_at`. `market_record_refresh(provider, source, ...)` writes
+  one provider from one source in one transaction. `_shared/market/boi.snapshot.ts` (generated)
+  is the bank-direct fallback when the table is empty; CCPC has no snapshot.
+- **Refreshed** by `npm run market:refresh` (dry run and diff), `-- --snapshot`, `-- --db` (needs
+  `SUPABASE_URL=http://127.0.0.1:8002` and the service role key from
+  `pass show infra/saoi/SERVICE_ROLE_KEY`), `-- --provider boi`, `-- --source ccpc`. Weekly by the
+  `market-refresh` timer in `~/dotfiles`. robots.txt first on every host (a 4xx is "no
+  restrictions" under RFC 9309). All or nothing per provider and source; a failed CCPC request
+  writes nothing from CCPC; exit 1 if anything failed. It ends with CCPC row counts and a
+  cross-check of Bank of Ireland's own pages against CCPC (`scripts/market/crosscheck.ts`);
+  differences are warnings.
+- **Read** on a turn: only Bank of Ireland's own rows (`loadMarket`), laid over the catalogue by
+  `withMarketData`: `rateOf`, the savings engine and the deposit-stack combination take every
+  figure from them. Other providers and every CCPC row stay out of turns until the comparison is
+  designed. The console's Market data screen shows all of it.
 
 ### Open banking, simulated
 
