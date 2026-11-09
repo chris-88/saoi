@@ -89,6 +89,25 @@ export const depositRatesSchema = z
     termMonths: z.number().int().positive().max(600).optional(),
     /** Days of notice to withdraw. Zero is instant access. */
     noticeDays: z.number().int().nonnegative().max(1000).optional(),
+    /**
+     * A bonus rate that moves with a threshold (bunq): every euro earns `bonusAerPct` from the
+     * first deposit until the first reset; at each reset (the first day of each month in
+     * `resetMonths`) the threshold becomes the highest balance of the past `lookbackMonths`,
+     * the balance up to it earns `baseTiers`, and only the part above it earns the bonus.
+     * `aerPct` is then the bonus, the "up to" headline.
+     */
+    thresholdBonus: z
+      .object({
+        bonusAerPct: savingPct,
+        resetMonths: z.array(z.number().int().min(1).max(12)).min(1).max(12),
+        lookbackMonths: z.number().int().positive().max(24),
+        /** Bands of the part up to the threshold, lowest first; `maxEur` null is open-ended. */
+        baseTiers: z
+          .array(z.object({ minEur: eur, maxEur: eur.nullable(), aerPct: savingPct }).strict())
+          .min(1),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .refine((rates) => rates.aerPct !== null || rates.terms !== undefined, {

@@ -134,7 +134,11 @@ export async function loadMarket(client: Db): Promise<LoadedMarket> {
   const rows = (result.data ?? []) as MarketRow[]
 
   if (result.error !== null || rows.length === 0) {
-    return { products: snapshotProducts, loaded: false }
+    // Turns read Bank of Ireland's own rows only, whichever providers have a snapshot.
+    return {
+      products: snapshotProducts.filter((product) => product.provider === 'boi'),
+      loaded: false,
+    }
   }
   return { products: productsFromRows(rows), loaded: true }
 }
