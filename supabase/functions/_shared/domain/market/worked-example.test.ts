@@ -333,7 +333,10 @@ describe('build_plan: what the first Claude test showed (2026-11-09)', () => {
     expect(result.whatIf.extraMonthly?.addsAtHorizon).toBeLessThan(2_600)
     expect(result.whatIf.lines.join(' ')).toMatch(/Car loan: cleared from the lump sum/)
     expect(result.next).toMatch(/saoi_save_plan/)
-    expect(result.next).toMatch(/rate changes/)
+    expect(result.next).toMatch(/Saoirse/)
+    // Only what exists is promised; what is not built yet says so.
+    expect(result.next).toMatch(/coming, not built yet/)
+    expect(result.next).not.toMatch(/partner/)
   })
 
   it('holds a €6,000 buffer apart and keeps everything accessible when asked', () => {

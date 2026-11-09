@@ -124,7 +124,7 @@ const PACE_HORIZON = 120
 /** What the host relays after a plan: the offer to save it, and what the app adds. */
 export const PLAN_NEXT = [
   'Nothing has been stored. If the customer wants to keep this plan, offer saoi_save_plan: it saves the plan into the Saoi app (app.saoi.ie) behind a one-time link, valid for seven days.',
-  'In the app the plan carries on: alerts when a chosen product’s rate changes, reminders as the goal date nears, and a partner can join the plan.',
+  'In the app the plan opens as a card, and Saoirse, Saoi’s assistant, knows it and can talk it through; signing in with an email address keeps it across devices, including the installed app. Alerts when a chosen product’s rate changes and reminders as the goal date nears are coming, not built yet.',
   'To change an assumption (the buffer, keeping the money accessible, the monthly amount, the date), call saoi_build_plan again with the new inputs; the figures come from that call.',
 ].join(' ')
 

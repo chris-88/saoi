@@ -232,7 +232,7 @@ export function review(market: Market, request: ReviewRequest, asOf: AsOf): Revi
 export const REVIEW_NEXT = [
   'Nothing has been stored. These findings are figures for the customer to weigh; they decide what matters.',
   'Once they have chosen goals (with an amount and a date where they have one), saoi_build_plan turns this into a plan with products, figures and the month each goal is reached.',
-  'A plan can then be saved into the Saoi app with saoi_save_plan, where it carries on: alerts when a chosen product’s rate changes, reminders as the goal date nears, and a partner can join the plan.',
+  'A plan can then be saved into the Saoi app with saoi_save_plan: it opens there as a card that Saoirse, Saoi’s assistant, knows and can talk through, and signing in keeps it across devices.',
 ].join(' ')
 
 function byPriority(a: Goal, b: Goal): number {
