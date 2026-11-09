@@ -2,7 +2,14 @@ import type {
   DepositRates,
   MarketConditions,
 } from '../../supabase/functions/_shared/market/schema.ts'
+import {
+  BOI_ORIGIN,
+  BOI_RATE_SHEET_PAGE,
+  BOI_SOURCES,
+} from '../../supabase/functions/_shared/market/boi-sources.ts'
+import { boiSnapshot } from '../../supabase/functions/_shared/market/boi.snapshot.ts'
 import { decodeEntities, htmlToLines, linksOf } from './html.ts'
+import type { MarketProvider } from './provider.ts'
 
 /**
  * Parsers for the Bank of Ireland product pages listed in `BOI_SOURCES`.
@@ -357,15 +364,6 @@ export const advantageFixed: Parser = (html) => {
   }
 }
 
-export const BOI_PARSERS: Readonly<Record<string, Parser>> = {
-  'savings.supersaver': supersaver,
-  'savings.goalsaver': goalsaver,
-  'savings.mortgagesaver': mortgagesaver,
-  'savings.instant_access': instantAccess,
-  'savings.notice_31_day': notice31,
-  'savings.advantage_fixed': advantageFixed,
-}
-
 const MONTHS = [
   'january',
   'february',
@@ -394,4 +392,25 @@ export function rateSheetOf(html: string): { url: string; asOf: string | null } 
   if (date === null || month < 0) return { url, asOf: null }
   const day = (date[1] ?? '').padStart(2, '0')
   return { url, asOf: `${date[3] ?? ''}-${String(month + 1).padStart(2, '0')}-${day}` }
+}
+
+const PARSERS: Readonly<Record<string, Parser>> = {
+  'savings.supersaver': supersaver,
+  'savings.goalsaver': goalsaver,
+  'savings.mortgagesaver': mortgagesaver,
+  'savings.instant_access': instantAccess,
+  'savings.notice_31_day': notice31,
+  'savings.advantage_fixed': advantageFixed,
+}
+
+export const boiProvider: MarketProvider = {
+  provider: 'boi',
+  origin: BOI_ORIGIN,
+  sources: BOI_SOURCES.map((source) => {
+    const parse = PARSERS[source.productId]
+    if (parse === undefined) throw new Error(`no Bank of Ireland parser for ${source.productId}`)
+    return { ...source, parse }
+  }),
+  rateSheet: { page: BOI_RATE_SHEET_PAGE, read: rateSheetOf },
+  snapshot: boiSnapshot,
 }

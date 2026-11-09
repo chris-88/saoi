@@ -13,6 +13,7 @@ import {
 import { describeDiff, diffMarket } from '../scripts/market/diff.ts'
 import { htmlToLines } from '../scripts/market/html.ts'
 import { robotsAllows } from '../scripts/market/robots.ts'
+import { runProviders } from '../scripts/market/run.ts'
 
 /**
  * The parsers against the pages' own sentences, trimmed from what personalbanking.bankofireland.com
@@ -296,5 +297,23 @@ describe('the diff', () => {
     expect(diff.added.map((product) => product.productId)).toEqual(['savings.goalsaver'])
     expect(diff.disappeared).toEqual(['savings.advantage_fixed'])
     expect(describeDiff(diff)).toContain('GONE     savings.advantage_fixed')
+  })
+})
+
+describe('running several providers', () => {
+  it('keeps going past a provider that fails or throws, and names each one that did', async () => {
+    const ran: string[] = []
+    const failed = await runProviders(
+      [{ provider: 'boi' }, { provider: 'aib' }, { provider: 'ptsb' }],
+      (p) => {
+        ran.push(p.provider)
+        if (p.provider === 'boi') throw new Error('robots.txt answered 403')
+        return Promise.resolve(p.provider !== 'aib')
+      },
+      () => undefined,
+    )
+
+    expect(ran).toEqual(['boi', 'aib', 'ptsb'])
+    expect(failed).toEqual(['boi', 'aib'])
   })
 })
