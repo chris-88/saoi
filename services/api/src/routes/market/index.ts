@@ -233,14 +233,20 @@ const buildPlanRoute = createRoute({
   tags: ['calc'],
   summary: 'The fastest combination of products for the customer’s goals, as a plan',
   description:
-    'Given a situation and chosen goals: an emergency fund (if a goal) in the best instant ' +
-    'access; each debt costing more than savings earn worked out cleared and kept, with both ' +
-    'figures; the rest split across the market (regular savers to their monthly caps, the lump ' +
-    'sum to the longest fixed term or notice account that ends by the goal’s date, at most ' +
-    '€100,000 per provider); projected to the date the main goal is reached; for a house ' +
-    'deposit, what it supports under the Central Bank limits. Returns `plan` (a `MarketPlan`, ' +
-    'the body `POST /api/plans` takes: send it unchanged to save it behind a one-time link) ' +
-    'with the reasoning and every figure. ' +
+    'Given a situation and chosen goals: an emergency buffer (`emergencyBufferEur`, ' +
+    '`emergencyBufferMonths` of outgoings, or an emergency_fund goal) in the best instant ' +
+    'access, kept apart; each debt costing more than savings earn worked out cleared and kept, ' +
+    'with both figures, and a cleared debt’s repayment saved; the rest split across the market ' +
+    '(regular savers to their monthly caps, the lump sum to a fixed term or notice account that ' +
+    'ends by the goal’s date only where it beats instant access by `minLockGainEur` and ' +
+    '`minLockGainPctPerYear`, otherwise instant access; `keepAccessible` or ' +
+    '`goalDateCertain: false` keep everything in instant access; at most €100,000 per ' +
+    'provider); projected to the date the main goal is reached; what-ifs (an extra €100 a ' +
+    'month, each debt cleared or kept, the month a target is reached at this pace); for a ' +
+    'house deposit, what it supports under the Central Bank limits. To change an assumption, ' +
+    'call again with the new inputs rather than adjusting the figures. Returns `plan` (a ' +
+    '`MarketPlan`, the body `POST /api/plans` takes: send it unchanged to save it behind a ' +
+    'one-time link), the reasoning, every figure, and `next` for the host to relay. ' +
     INFORMATION,
   security: [],
   request: { body: jsonBody(buildPlanRequestSchema.openapi('BuildPlan')) },

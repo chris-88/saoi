@@ -226,3 +226,64 @@ describe('normaliseMarket', () => {
     }
   })
 })
+
+describe('deposit guarantees, from primary pages', () => {
+  it('records MoCo under the Austrian scheme, with its source and date', () => {
+    const moco = view('moco:deposit.c8548')
+    expect(moco.depositGuarantee).toMatchObject({
+      country: 'Austria',
+      coverEur: 100_000,
+      basis: 'recorded_by_saoi',
+      checkedOn: '2026-11-09',
+    })
+    expect(moco.depositGuarantee?.sourceUrl).toMatch(/^https:\/\/www\.moco\.ie\//)
+    expect(moco.depositGuarantee?.note).toMatch(/BAWAG/)
+    expect(moco.unknowns.map((u) => u.field)).not.toContain('depositGuarantee')
+  })
+
+  it('records every Irish deposit-taker it compares, each with a source', () => {
+    for (const id of ['aib:savings.c396', 'boi:savings.supersaver', 'state_savings:deposit.c120']) {
+      const guarantee = view(id).depositGuarantee
+      expect(guarantee?.basis).toBe('recorded_by_saoi')
+      expect(guarantee?.sourceUrl).toMatch(/^https:\/\//)
+    }
+    expect(view('state_savings:deposit.c120').depositGuarantee?.coverEur).toBeNull()
+  })
+
+  it('leaves an unrecorded provider unknown, and names it', () => {
+    const records: MarketRecord[] = MARKET_FIXTURE.filter(
+      (record) => record.product.provider === 'moco',
+    ).map((record) => ({ ...record, product: { ...record.product, provider: 'newbank' } }))
+    const unknown = normaliseMarket(records).products[0]
+    expect(unknown?.depositGuarantee?.basis).toBe('unknown')
+    expect(unknown?.depositGuarantee?.scheme).toBeNull()
+    expect(unknown?.unknowns.map((u) => u.field)).toContain('depositGuarantee')
+  })
+})
+
+describe('mortgage cashback in CCPC prose', () => {
+  it('reads "1 percent at drawdown" when the cashback field states no yes or no', () => {
+    const base = MARKET_FIXTURE.find((record) => record.product.category === 'mortgage')
+    if (base === undefined) throw new Error('no mortgage in the fixture')
+    const rates = base.product.rates
+    if (rates.kind !== 'mortgage') throw new Error('not a mortgage')
+    const avant: MarketRecord = {
+      ...base,
+      product: {
+        ...base.product,
+        provider: 'avant_money',
+        productId: 'mortgage.c9999',
+        rates: { ...rates, cashback: null },
+        conditions: {
+          details: { Cashback: '1%', 'Cashback description': '1 percent at drawdown' },
+        },
+      },
+    }
+    const terms = normaliseMarket([avant]).products[0]?.terms
+    expect(terms?.kind === 'mortgage' && terms.cashback).toEqual({
+      offered: true,
+      pct: 1,
+      stated: '1 percent at drawdown',
+    })
+  })
+})

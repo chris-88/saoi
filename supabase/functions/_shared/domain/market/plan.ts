@@ -1,10 +1,12 @@
-import type {
-  BuildPlanRequest,
-  BuildPlanResponse,
-  Debt,
-  Goal,
-  ProductView,
-  Situation,
+import {
+  DEFAULT_MIN_LOCK_GAIN_EUR,
+  DEFAULT_MIN_LOCK_GAIN_PCT_PER_YEAR,
+  type BuildPlanRequest,
+  type BuildPlanResponse,
+  type Debt,
+  type Goal,
+  type ProductView,
+  type Situation,
 } from '../../contracts/market-tools.ts'
 import type { MarketPlan, PlanProduct } from '../../contracts/market-plan.ts'
 import { allocatable, allocate, type AllocationLine } from './allocate.ts'
@@ -13,7 +15,7 @@ import { displayName, euro, interestToClear } from './figures.ts'
 import { affordability } from './mortgage.ts'
 import { project } from './projection.ts'
 import { monthlyOutgoings } from './review.ts'
-import { SAVINGS_ASSUMPTIONS, UNCONFIRMED_RATE } from './search.ts'
+import { guaranteeFlag, SAVINGS_ASSUMPTIONS, UNCONFIRMED_RATE } from './search.ts'
 import { monthsUntil, round2, simulateDeposit } from './simulate.ts'
 import type { AsOf, Market } from './types.ts'
 
@@ -23,14 +25,20 @@ import type { AsOf, Market } from './types.ts'
  * `POST /api/plans`.
  *
  * In order:
- * 1. An emergency fund, where it is a goal, goes first into the best instant-access account.
+ * 1. An emergency buffer (an amount, months of outgoings, or an `emergency_fund` goal) goes
+ *    first into the best instant-access account, kept apart from the goal.
  * 2. Each debt that costs more than the savings would earn is worked out both ways, cleared from
  *    the lump sum (its repayment then saved) and kept, and the one that leaves more at the
  *    horizon is taken; both sets of figures are returned.
  * 3. What is left is split across the market by `allocate`: regular savers to their monthly
  *    caps, the lump sum to the longest term that ends by the goal's date (or instant and notice
  *    access when there is no date), within the deposit guarantee per provider.
- * 4. It is projected month by month, and the month the main goal is reached is stated.
+ * 4. Steps 2 and 3 run twice, with terms allowed and with everything in instant access. A term
+ *    is used only when it leaves at least `minLockGainEur` and `minLockGainPctPerYear` more;
+ *    otherwise, or when the customer keeps the money accessible or the date is not certain,
+ *    the money stays in instant access. The reason is returned with both figures.
+ * 5. It is projected month by month, the month the main goal is reached is stated, and the
+ *    what-ifs (an extra €100 a month, clearing or keeping each debt, the pace) are worked out.
  *
  * Information, not advice: every step says what it measured, for the inputs given.
  */
@@ -91,6 +99,35 @@ type Placed = {
   readonly netInterest: number
 }
 
+type Placer = (lumpSum: number, perMonth: number) => Placed
+
+/** One way through the debts and the split, with terms allowed or not. */
+type Run = {
+  readonly lockAllowed: boolean
+  readonly current: Placed
+  readonly steps: MarketPlan['debts']
+  readonly scenarios: BuildPlanResponse['debtScenarios']
+  readonly reasoning: readonly string[]
+  readonly assumptions: readonly string[]
+  readonly lump: number
+  readonly monthly: number
+  /** Savings less what is still owed, at the horizon, on the debts this plan worked out. */
+  readonly netPosition: number
+}
+
+const LOCKING: ReadonlySet<string> = new Set(['fixed_term', 'notice'])
+const isLocked = (line: AllocationLine): boolean =>
+  line.product.terms.kind === 'deposit' && LOCKING.has(line.product.terms.access)
+const EXTRA_MONTHLY = 100
+const PACE_HORIZON = 120
+
+/** What the host relays after a plan: the offer to save it, and what the app adds. */
+export const PLAN_NEXT = [
+  'Nothing has been stored. If the customer wants to keep this plan, offer saoi_save_plan: it saves the plan into the Saoi app (app.saoi.ie) behind a one-time link, valid for seven days.',
+  'In the app the plan carries on: alerts when a chosen product’s rate changes, reminders as the goal date nears, and a partner can join the plan.',
+  'To change an assumption (the buffer, keeping the money accessible, the monthly amount, the date), call saoi_build_plan again with the new inputs; the figures come from that call.',
+].join(' ')
+
 export function buildPlan(
   market: Market,
   request: BuildPlanRequest,
@@ -101,24 +138,23 @@ export function buildPlan(
   const maxAccounts = request.maxAccounts ?? DEFAULT_MAX_ACCOUNTS
   const reasoning: string[] = []
   const assumptions: string[] = [...SAVINGS_ASSUMPTIONS]
+  const whatIfLines: string[] = []
 
-  const ordered = [...goals].sort((a, b) => (a.priority ?? 99) - (b.priority ?? 99))
+  const ordered: Goal[] = [...goals].sort((a, b) => (a.priority ?? 99) - (b.priority ?? 99))
   const main = ordered.find((goal) => SAVING_GOALS.has(goal.kind)) ?? null
-  const emergency = ordered.find((goal) => goal.kind === 'emergency_fund') ?? null
+  let emergency = ordered.find((goal) => goal.kind === 'emergency_fund') ?? null
   const dated = main?.targetDate !== undefined
   const horizon =
     main?.targetDate === undefined ? NO_DATE_HORIZON : monthsUntil(asOf, main.targetDate)
-  const lockAllowed = dated
-  if (!dated) {
-    assumptions.push(
-      `No date for the main goal: nothing is locked in a fixed term or notice account, and the figures run ${String(NO_DATE_HORIZON)} months.`,
-    )
-  }
+  const whenLabel =
+    main?.targetDate === undefined
+      ? `month ${String(horizon)}`
+      : monthName(main.targetDate.slice(0, 7))
 
   // ---- The money to place -------------------------------------------------------------------
   const available = situation.savings.filter((item) => item.access !== 'fixed_term')
   let lump = available.reduce((sum, item) => sum + item.balance, 0)
-  let monthly = situation.monthlySaving ?? 0
+  const monthly = situation.monthlySaving ?? 0
   if (situation.savings.some((item) => item.access === 'fixed_term')) {
     assumptions.push('Savings already in a fixed term are left where they are.')
   }
@@ -127,233 +163,205 @@ export function buildPlan(
     `${euro(lump)} held and ${euro(monthly)} a month to place, over ${String(horizon)} months.`,
   )
 
-  // ---- 1. Emergency fund ----------------------------------------------------------------------
-  const productsOut: PlanProduct[] = []
+  // ---- 1. Emergency buffer --------------------------------------------------------------------
+  const outgoings = monthlyOutgoings(situation)
+  const bufferMonths =
+    request.emergencyBufferMonths ??
+    request.emergencyFundMonths ??
+    (emergency === null ? null : DEFAULT_EMERGENCY_MONTHS)
+  const bufferFromMonths =
+    bufferMonths === null || outgoings === null ? null : round2(outgoings * bufferMonths)
+  const bufferTarget =
+    request.emergencyBufferEur ??
+    (request.emergencyBufferMonths === undefined ? emergency?.targetAmount : undefined) ??
+    bufferFromMonths
   let emergencyLines: readonly AllocationLine[] = []
-  if (emergency !== null) {
-    const outgoings = monthlyOutgoings(situation)
-    const target =
-      emergency.targetAmount ??
-      (outgoings === null
-        ? null
-        : outgoings * (request.emergencyFundMonths ?? DEFAULT_EMERGENCY_MONTHS))
-    if (target === null) {
-      reasoning.push(
-        'An emergency fund is a goal, but neither its size nor monthly outgoings were given, so none is set aside.',
-      )
-    } else {
-      const take = Math.min(target, lump)
-      const pool = allocatable(market.products, {
-        horizonMonths: horizon,
-        lockAllowed: false,
-      })
-      const fund = allocate(pool, {
+  let bufferHeld = 0
+  if (bufferTarget === null && bufferMonths !== null) {
+    reasoning.push(
+      `An emergency buffer of ${String(bufferMonths)} months of outgoings was asked for, but outgoings were not given, so none is set aside.`,
+    )
+    whatIfLines.push(
+      'With monthly outgoings (rent and the rest), or a buffer in euro, the buffer is sized and held in instant access: call saoi_build_plan again with them.',
+    )
+  } else if (bufferTarget !== null && bufferTarget !== undefined && bufferTarget > 0) {
+    if (emergency === null && ordered.length < 8) {
+      const taken = new Set(ordered.map((goal) => goal.id))
+      let id = 'emergency-buffer'
+      for (let n = 2; taken.has(id); n += 1) id = `emergency-buffer-${String(n)}`
+      const maxPriority = Math.max(0, ...ordered.map((goal) => goal.priority ?? 0))
+      emergency = {
+        id,
+        kind: 'emergency_fund',
+        label: 'Emergency buffer',
+        targetAmount: bufferTarget,
+        priority: Math.min(20, maxPriority + 1),
+      }
+      ordered.push(emergency)
+    }
+    const take = Math.min(bufferTarget, lump)
+    const fund = allocate(
+      allocatable(market.products, { horizonMonths: horizon, lockAllowed: false }),
+      {
         lumpSum: take,
         monthly: 0,
         horizonMonths: horizon,
         lockAllowed: false,
         maxAccounts: 1,
         asOf,
-      })
-      emergencyLines = fund.lines
-      const placed = take - fund.unplaced.lumpSum
-      lump -= placed
-      const line = fund.lines[0]
-      reasoning.push(
-        line === undefined
-          ? `No instant-access account takes ${euro(take)}, so the emergency fund is not placed.`
-          : `${euro(placed)} set aside first for the emergency fund in ${displayName(line.product)}: the highest interest after DIRT with instant access.${take < target ? ` That is ${euro(round2(target - take))} short of ${euro(target)}.` : ''}`,
-      )
-    }
-  }
-
-  // ---- 2. Debts -------------------------------------------------------------------------------
-  const pool = allocatable(market.products, {
-    horizonMonths: horizon,
-    lockAllowed,
-  })
-  const accountsLeft = Math.max(1, maxAccounts - emergencyLines.length)
-  const place = (lumpSum: number, perMonth: number): Placed => {
-    const allocation = allocate(pool, {
-      lumpSum,
-      monthly: perMonth,
-      horizonMonths: horizon,
-      lockAllowed,
-      maxAccounts: accountsLeft,
-      asOf,
-    })
-    if (allocation.lines.length === 0) {
-      return {
-        lines: [],
-        unplaced: allocation.unplaced,
-        savingsAtHorizon: 0,
-        knownThrough: horizon,
-        reachedOn: null,
-        netInterest: 0,
-      }
-    }
-    const projection = project(
-      market,
-      {
-        horizonMonths: horizon,
-        lines: allocation.lines.map((line) => ({
-          productId: line.product.id,
-          lumpSum: line.lumpSum,
-          monthly: line.monthly,
-          ...(line.termMonths === null ? {} : { termMonths: line.termMonths }),
-        })),
-        ...(main?.targetAmount === undefined ? {} : { targetAmount: main.targetAmount }),
       },
-      asOf,
     )
-    return {
-      lines: allocation.lines,
-      unplaced: allocation.unplaced,
-      savingsAtHorizon: projection.totals.balance,
-      knownThrough: projection.totals.knownThroughMonth,
-      reachedOn: projection.goal?.reachedOn ?? null,
-      netInterest: projection.totals.netInterest,
-    }
+    emergencyLines = fund.lines
+    bufferHeld = round2(take - fund.unplaced.lumpSum)
+    lump -= bufferHeld
+    const line = fund.lines[0]
+    const sized =
+      request.emergencyBufferEur !== undefined
+        ? 'as asked'
+        : bufferFromMonths !== null && bufferTarget === bufferFromMonths
+          ? `${String(bufferMonths)} months of ${euro(outgoings ?? 0)} outgoings`
+          : 'the goal’s target'
+    reasoning.push(
+      line === undefined
+        ? `No instant-access account takes ${euro(take)}, so the emergency buffer is not placed.`
+        : `${euro(bufferHeld)} held first as an emergency buffer (${sized}) in ${displayName(line.product)}: the highest interest after DIRT with instant access. It is kept apart from the goal.${take < bufferTarget ? ` That is ${euro(round2(bufferTarget - take))} short of ${euro(bufferTarget)}.` : ''}`,
+    )
+  } else if (request.emergencyBufferEur === 0) {
+    reasoning.push('No emergency buffer is held, as asked.')
   }
 
-  const steps: MarketPlan['debts'] = []
-  const scenarios: BuildPlanResponse['debtScenarios'] = []
-  const order = payoffOrder(situation.debts)
-  let current = place(lump, monthly)
-  // What the savings in this plan earn after DIRT, at best: the rate a debt is set against.
-  const bestNetPct = Math.max(
-    0,
-    ...current.lines.map((line) =>
-      line.product.terms.kind === 'deposit'
-        ? simulateDeposit(line.product.terms, {
+  // ---- 2. Debts and the split, with terms allowed and without --------------------------------
+  const accountsLeft = Math.max(1, maxAccounts - emergencyLines.length)
+  const placer = (lockAllowed: boolean, months: number, target?: number): Placer => {
+    const pool = allocatable(market.products, { horizonMonths: months, lockAllowed })
+    return (lumpSum, perMonth) => {
+      const allocation = allocate(pool, {
+        lumpSum,
+        monthly: perMonth,
+        horizonMonths: months,
+        lockAllowed,
+        maxAccounts: accountsLeft,
+        asOf,
+      })
+      if (allocation.lines.length === 0) {
+        return {
+          lines: [],
+          unplaced: allocation.unplaced,
+          savingsAtHorizon: 0,
+          knownThrough: months,
+          reachedOn: null,
+          netInterest: 0,
+        }
+      }
+      const projection = project(
+        market,
+        {
+          horizonMonths: months,
+          lines: allocation.lines.map((line) => ({
+            productId: line.product.id,
             lumpSum: line.lumpSum,
             monthly: line.monthly,
-            horizonMonths: horizon,
-            termMonths: line.termMonths ?? undefined,
-          }).figures.netRatePct
-        : 0,
-    ),
-  )
-
-  for (const { debtId } of order) {
-    const debt = situation.debts.find((candidate) => candidate.id === debtId)
-    if (debt === undefined) continue
-    if (debt.kind === 'mortgage') {
-      steps.push({
-        debtId,
-        action: 'keep_paying',
-        why: 'A mortgage: compare it with switcher rates using the mortgage switch calculation.',
-      })
-      continue
-    }
-    if (debt.ratePct === undefined) {
-      steps.push({
-        debtId,
-        action: 'keep_paying',
-        why: 'No rate given, so its cost cannot be set against savings.',
-      })
-      continue
-    }
-    const baseline = debtAfter(debt, horizon)
-    const r = debtMonthlyRate(debt)
-    const payment = repaymentOf(debt)
-    if (baseline === null || r === null || payment === null) {
-      steps.push({
-        debtId,
-        action: 'keep_paying',
-        why: 'No repayment or months remaining given, so its cost cannot be worked out.',
-      })
-      continue
-    }
-    const costIfKept = interestToClear(debt.balance, r, payment) ?? undefined
-    if (debt.ratePct <= bestNetPct || lump <= 0) {
-      steps.push({
-        debtId,
-        action: 'keep_paying',
-        why: clip(
-          lump <= 0
-            ? `${String(debt.ratePct)}%, and no lump sum is left to put against it.`
-            : `${String(debt.ratePct)}% costs less than the savings in this plan earn after DIRT (about ${bestNetPct.toFixed(2)}%).`,
-          300,
-        ),
-        ...(costIfKept === undefined ? {} : { costIfKept }),
-      })
-      continue
-    }
-
-    const amount = round2(Math.min(debt.balance, lump))
-    const clears = amount >= debt.balance - 0.005
-    const reduced: Debt = {
-      ...debt,
-      balance: round2(debt.balance - amount),
-      monthlyRepayment: payment,
-    }
-    const after = clears ? { balance: 0, interest: 0 } : debtAfter(reduced, horizon)
-    // Cleared: its repayment is saved from the next month on. Overpaid: it clears sooner and the
-    // repayment keeps going to it, which is what `debtAfter` models.
-    const alternative = place(lump - amount, monthly + (clears ? payment : 0))
-    const keptPosition = round2(current.savingsAtHorizon - baseline.balance)
-    const clearedPosition = round2(alternative.savingsAtHorizon - (after?.balance ?? 0))
-    const chosen = clearedPosition > keptPosition ? 'cleared' : 'kept'
-    scenarios.push({
-      debtId,
-      amount,
-      kept: {
-        savingsAtHorizon: current.savingsAtHorizon,
-        debtAtHorizon: baseline.balance,
-        netPosition: keptPosition,
-        goalReachedOn: current.reachedOn,
-      },
-      cleared: {
-        savingsAtHorizon: alternative.savingsAtHorizon,
-        debtAtHorizon: after?.balance ?? 0,
-        netPosition: clearedPosition,
-        goalReachedOn: alternative.reachedOn,
-      },
-      chosen,
-    })
-    const costWithStep = clears ? 0 : (interestToClear(reduced.balance, r, payment) ?? undefined)
-    const difference = round2(Math.abs(clearedPosition - keptPosition))
-    const tradeOff = goalTradeOff(
-      main?.targetAmount,
-      current.reachedOn,
-      alternative.reachedOn,
-      chosen,
-      baseline.balance,
-    )
-    if (chosen === 'cleared') {
-      steps.push({
-        debtId,
-        action: clears ? 'pay_off_first' : 'overpay',
-        why: clip(
-          `At ${String(debt.ratePct)}% it costs more than the savings earn. ${clears ? 'Clearing' : `Paying ${euro(amount)} off`} from the lump sum${clears ? ` and saving its ${euro(round2(payment))} a month` : ''} leaves ${euro(difference)} more at month ${String(horizon)} than keeping it.${tradeOff}`,
-          300,
-        ),
-        ...(costIfKept === undefined ? {} : { costIfKept }),
-        ...(costWithStep === undefined ? {} : { costWithStep }),
-      })
-      reasoning.push(
-        `${debt.label}: ${clears ? 'cleared' : `${euro(amount)} paid off`} from the lump sum. Net position (savings less debt) at month ${String(horizon)}: ${euro(clearedPosition)}, against ${euro(keptPosition)} if kept.${tradeOff}`,
+            ...(line.termMonths === null ? {} : { termMonths: line.termMonths }),
+          })),
+          ...(target === undefined ? {} : { targetAmount: target }),
+        },
+        asOf,
       )
-      lump -= amount
-      if (clears) monthly += payment
-      current = alternative
+      return {
+        lines: allocation.lines,
+        unplaced: allocation.unplaced,
+        savingsAtHorizon: projection.totals.balance,
+        knownThrough: projection.totals.knownThroughMonth,
+        reachedOn: projection.goal?.reachedOn ?? null,
+        netInterest: projection.totals.netInterest,
+      }
+    }
+  }
+  const run = (lockAllowed: boolean): Run =>
+    solveDebts(situation, placer(lockAllowed, horizon, main?.targetAmount), {
+      lockAllowed,
+      lump,
+      monthly,
+      horizon,
+      targetAmount: main?.targetAmount,
+    })
+
+  const thresholdEur = request.minLockGainEur ?? DEFAULT_MIN_LOCK_GAIN_EUR
+  const thresholdPct = request.minLockGainPctPerYear ?? DEFAULT_MIN_LOCK_GAIN_PCT_PER_YEAR
+  const instant = run(false)
+  let chosen = instant
+  let liquidity: BuildPlanResponse['liquidity']
+  const forcedWhy = !dated
+    ? `No date for the main goal: nothing is locked in a fixed term or notice account, and the figures run ${String(NO_DATE_HORIZON)} months.`
+    : request.keepAccessible === true
+      ? 'Kept in instant access, as asked: nothing is locked in a fixed term or notice account.'
+      : request.goalDateCertain === false
+        ? 'The goal may come sooner than its date, so nothing is locked in a fixed term or notice account: the money stays in instant access.'
+        : null
+  if (forcedWhy !== null) {
+    liquidity = {
+      decision: 'instant_access',
+      why: forcedWhy,
+      lockedNetPosition: null,
+      instantNetPosition: instant.netPosition,
+      gainEur: null,
+      gainPctPerYear: null,
+      thresholdEur,
+      thresholdPctPerYear: thresholdPct,
+    }
+  } else {
+    const locked = run(true)
+    const lockedLines = locked.current.lines.filter(isLocked)
+    const lockedSum = lockedLines.reduce((sum, line) => sum + line.lumpSum, 0)
+    if (lockedLines.length === 0 || lockedSum <= 0) {
+      liquidity = {
+        decision: 'not_compared',
+        why: 'No fixed term or notice account adds anything over instant access for this money, so none is used.',
+        lockedNetPosition: locked.netPosition,
+        instantNetPosition: instant.netPosition,
+        gainEur: null,
+        gainPctPerYear: null,
+        thresholdEur,
+        thresholdPctPerYear: thresholdPct,
+      }
+      chosen = locked.netPosition > instant.netPosition ? locked : instant
     } else {
-      steps.push({
-        debtId,
-        action: 'keep_paying',
-        why: clip(
-          `Keeping it and saving the lump sum leaves ${euro(difference)} more at month ${String(horizon)} than ${clears ? 'clearing' : 'overpaying'} it, for the inputs given.${tradeOff}`,
-          300,
-        ),
-        ...(costIfKept === undefined ? {} : { costIfKept }),
-        ...(costWithStep === undefined ? {} : { costWithStep }),
-      })
-      reasoning.push(
-        `${debt.label}: kept. Net position (savings less debt) at month ${String(horizon)}: ${euro(keptPosition)}, against ${euro(clearedPosition)} if ${clears ? 'cleared' : 'overpaid'}.${tradeOff}`,
+      const gainEur = round2(locked.netPosition - instant.netPosition)
+      const gainPct = round2((gainEur / lockedSum / (horizon / 12)) * 100)
+      const lockedNames = lockedLines
+        .map(
+          (line) =>
+            `${euro(line.lumpSum)} in ${displayName(line.product)}${line.termMonths === null ? '' : ` for ${String(line.termMonths)} months`}`,
+        )
+        .join(' and ')
+      const both = `${euro(locked.netPosition)} against ${euro(instant.netPosition)} in instant access (savings less debt at ${whenLabel})`
+      const passes = gainEur >= thresholdEur && gainPct >= thresholdPct
+      chosen = passes ? locked : instant
+      liquidity = {
+        decision: passes ? 'locked' : 'instant_access',
+        why: passes
+          ? `Locking ${lockedNames} leaves ${euro(gainEur)} more (${gainPct.toFixed(2)}% a year on the money locked): ${both}. That clears the ${euro(thresholdEur)} and ${String(thresholdPct)}% a year a lock has to earn, so the term is used; the money cannot be reached before it ends.`
+          : `Locking ${lockedNames} would leave only ${euro(gainEur)} more (${gainPct.toFixed(2)}% a year on the money locked): ${both}. A lock has to earn at least ${euro(thresholdEur)} and ${String(thresholdPct)}% a year, so the money stays in instant access and can be reached at any time.`,
+        lockedNetPosition: locked.netPosition,
+        instantNetPosition: instant.netPosition,
+        gainEur,
+        gainPctPerYear: gainPct,
+        thresholdEur,
+        thresholdPctPerYear: thresholdPct,
+      }
+      whatIfLines.push(
+        passes
+          ? `Keeping every euro in instant access instead: ${euro(instant.netPosition)} at ${whenLabel}, ${euro(gainEur)} less (keepAccessible: true).`
+          : `Locking it anyway: ${euro(locked.netPosition)} at ${whenLabel}, ${euro(gainEur)} more, with the money tied up (minLockGainEur: 0 and minLockGainPctPerYear: 0).`,
       )
     }
   }
+  reasoning.push(...chosen.reasoning)
+  reasoning.push(liquidity.why)
+  assumptions.push(...chosen.assumptions)
+  assumptions.push(clip(liquidity.why, 300))
+  const current = chosen.current
+  lump = chosen.lump
 
   // ---- 3. The split ---------------------------------------------------------------------------
   for (const line of current.lines) {
@@ -375,9 +383,56 @@ export function buildPlan(
         ? `${main.label}: ${euro(main.targetAmount)} is not reached within the ${String(current.knownThrough)} months the figures cover; ${euro(current.savingsAtHorizon)} is projected.`
         : `${main.label}: ${euro(main.targetAmount)} is reached in ${monthName(current.reachedOn)}.`,
     )
+  } else if (main !== null) {
+    reasoning.push(
+      `${main.label}: ${euro(current.savingsAtHorizon)} projected at ${whenLabel}, after DIRT${bufferHeld > 0 ? `, with the ${euro(bufferHeld)} buffer kept apart` : ''}.`,
+    )
   }
 
-  // ---- 4. What a house deposit supports --------------------------------------------------------
+  // ---- 4. What if -----------------------------------------------------------------------------
+  const pace = placer(chosen.lockAllowed, horizon, main?.targetAmount)
+  const more = pace(chosen.lump, chosen.monthly + EXTRA_MONTHLY)
+  const extraMonthly =
+    current.lines.length === 0
+      ? null
+      : {
+          extra: EXTRA_MONTHLY,
+          addsAtHorizon: round2(more.savingsAtHorizon - current.savingsAtHorizon),
+          goalReachedOn: more.reachedOn,
+        }
+  if (extraMonthly !== null) {
+    whatIfLines.push(
+      `Each extra ${euro(EXTRA_MONTHLY)} a month adds about ${euro(extraMonthly.addsAtHorizon)} by ${whenLabel}, after DIRT${extraMonthly.goalReachedOn !== null && extraMonthly.goalReachedOn !== current.reachedOn && main?.targetAmount !== undefined ? `, and reaches ${euro(main.targetAmount)} in ${monthName(extraMonthly.goalReachedOn)}` : ''}.`,
+    )
+  }
+  for (const scenario of chosen.scenarios) {
+    const debt = situation.debts.find((candidate) => candidate.id === scenario.debtId)
+    const label = debt?.label ?? scenario.debtId
+    whatIfLines.push(
+      `${label}: cleared from the lump sum, ${euro(scenario.cleared.netPosition)} net (savings less debt) at ${whenLabel}; kept, ${euro(scenario.kept.netPosition)} with ${euro(scenario.kept.debtAtHorizon)} still owed. The difference is ${euro(round2(Math.abs(scenario.cleared.netPosition - scenario.kept.netPosition)))}.`,
+    )
+  }
+  let goalReachedAtCurrentPace: string | null = current.reachedOn
+  if (main?.targetAmount !== undefined && goalReachedAtCurrentPace === null) {
+    goalReachedAtCurrentPace = placer(
+      false,
+      Math.max(PACE_HORIZON, horizon),
+      main.targetAmount,
+    )(chosen.lump, chosen.monthly).reachedOn
+  }
+  if (main?.targetAmount !== undefined) {
+    whatIfLines.push(
+      goalReachedAtCurrentPace === null
+        ? `At this pace ${euro(main.targetAmount)} is not reached within the months the figures cover.`
+        : `At this pace ${euro(main.targetAmount)} is reached in ${monthName(goalReachedAtCurrentPace)}.`,
+    )
+  } else if (main !== null) {
+    whatIfLines.push(
+      'With a target amount for the goal, the month it is reached is worked out: call saoi_build_plan again with targetAmount.',
+    )
+  }
+
+  // ---- 5. What a house deposit supports --------------------------------------------------------
   let afford: BuildPlanResponse['affordability'] = null
   if (main?.kind === 'house_deposit' && situation.income?.annualGross !== undefined) {
     const deposit = current.savingsAtHorizon
@@ -419,7 +474,6 @@ export function buildPlan(
       reachedOn: emergencyLines.includes(line) ? null : current.reachedOn,
     }),
   )
-  productsOut.push(...products)
   const monthlyTotal = round2(allLines.reduce((sum, line) => sum + line.monthly, 0))
   const lumpTotal = round2(allLines.reduce((sum, line) => sum + line.lumpSum, 0))
   const interestTotal = round2(
@@ -437,20 +491,20 @@ export function buildPlan(
     situation: planSituation(situation),
     goals: ordered.map((goal) => ({ ...goal })),
     recommendation: {
-      products: productsOut.slice(0, 12),
+      products: products.slice(0, 12),
       totals: { monthly: monthlyTotal, lumpSum: lumpTotal, netInterest: interestTotal },
     },
-    debts: steps,
+    debts: [...chosen.steps],
     ranking: {
       objective: 'highest_net_return',
       basis: clip(
-        `The split that earns the most interest after DIRT that can be known over ${String(horizon)} months on ${euro(lumpTotal)} placed and ${euro(monthlyTotal)} a month, for the inputs given; debts set against savings by net position at month ${String(horizon)}.`,
+        `The split that earns the most interest after DIRT that can be known over ${String(horizon)} months on ${euro(lumpTotal)} placed and ${euro(monthlyTotal)} a month, for the inputs given; a fixed term or notice account only where it beats instant access by ${euro(thresholdEur)} and ${String(thresholdPct)}% a year; debts set against savings by net position at month ${String(horizon)}.`,
         400,
       ),
     },
     assumptions: assumptions.slice(0, 20).map((text) => clip(text, 300)),
     createdAt,
-    dataCheckedAt: [...productsOut.map((product) => product.checkedAt)].sort()[0] ?? createdAt,
+    dataCheckedAt: [...products.map((product) => product.checkedAt)].sort()[0] ?? createdAt,
   }
 
   return {
@@ -459,9 +513,197 @@ export function buildPlan(
     knownThroughMonth: current.knownThrough,
     goalReachedOn: current.reachedOn,
     reasoning,
-    debtScenarios: scenarios,
+    debtScenarios: [...chosen.scenarios],
     affordability: afford,
     unplaced: current.unplaced,
+    liquidity,
+    whatIf: { extraMonthly, goalReachedAtCurrentPace, lines: whatIfLines },
+    next: PLAN_NEXT,
+  }
+}
+
+/**
+ * Each debt that costs more than the savings would earn, worked out both ways: cleared (or
+ * overpaid) from the lump sum, its repayment then saved, and kept. The one that leaves more at
+ * the horizon is taken.
+ */
+function solveDebts(
+  situation: Situation,
+  place: Placer,
+  input: {
+    lockAllowed: boolean
+    lump: number
+    monthly: number
+    horizon: number
+    targetAmount: number | undefined
+  },
+): Run {
+  const { horizon } = input
+  let { lump, monthly } = input
+  const reasoning: string[] = []
+  const assumptions: string[] = []
+  const steps: MarketPlan['debts'] = []
+  const scenarios: BuildPlanResponse['debtScenarios'] = []
+  let owedAtHorizon = 0
+  let current = place(lump, monthly)
+  // What the savings in this plan earn after DIRT, at best: the rate a debt is set against.
+  const bestNetPct = Math.max(
+    0,
+    ...current.lines.map((line) =>
+      line.product.terms.kind === 'deposit'
+        ? simulateDeposit(line.product.terms, {
+            lumpSum: line.lumpSum,
+            monthly: line.monthly,
+            horizonMonths: horizon,
+            termMonths: line.termMonths ?? undefined,
+          }).figures.netRatePct
+        : 0,
+    ),
+  )
+
+  for (const { debtId } of payoffOrder(situation.debts)) {
+    const debt = situation.debts.find((candidate) => candidate.id === debtId)
+    if (debt === undefined) continue
+    if (debt.kind === 'mortgage') {
+      steps.push({
+        debtId,
+        action: 'keep_paying',
+        why: 'A mortgage: compare it with switcher rates using the mortgage switch calculation.',
+      })
+      continue
+    }
+    if (debt.ratePct === undefined) {
+      steps.push({
+        debtId,
+        action: 'keep_paying',
+        why: 'No rate given, so its cost cannot be set against savings.',
+      })
+      continue
+    }
+    const baseline = debtAfter(debt, horizon)
+    const r = debtMonthlyRate(debt)
+    const payment = repaymentOf(debt)
+    if (baseline === null || r === null || payment === null) {
+      steps.push({
+        debtId,
+        action: 'keep_paying',
+        why: 'No repayment or months remaining given, so its cost cannot be worked out.',
+      })
+      continue
+    }
+    const costIfKept = interestToClear(debt.balance, r, payment) ?? undefined
+    if (debt.ratePct <= bestNetPct || lump <= 0) {
+      owedAtHorizon += baseline.balance
+      steps.push({
+        debtId,
+        action: 'keep_paying',
+        why: clip(
+          lump <= 0
+            ? `${String(debt.ratePct)}%, and no lump sum is left to put against it.`
+            : `${String(debt.ratePct)}% costs less than the savings in this plan earn after DIRT (about ${bestNetPct.toFixed(2)}%).`,
+          300,
+        ),
+        ...(costIfKept === undefined ? {} : { costIfKept }),
+      })
+      continue
+    }
+
+    const amount = round2(Math.min(debt.balance, lump))
+    const clears = amount >= debt.balance - 0.005
+    const reduced: Debt = {
+      ...debt,
+      balance: round2(debt.balance - amount),
+      monthlyRepayment: payment,
+    }
+    const after = clears ? { balance: 0, interest: 0 } : debtAfter(reduced, horizon)
+    // Cleared: its repayment is saved from the next month on. Overpaid: it clears sooner and the
+    // repayment keeps going to it, which is what `debtAfter` models.
+    const alternative = place(lump - amount, monthly + (clears ? payment : 0))
+    const keptPosition = round2(current.savingsAtHorizon - owedAtHorizon - baseline.balance)
+    const clearedPosition = round2(
+      alternative.savingsAtHorizon - owedAtHorizon - (after?.balance ?? 0),
+    )
+    const pick = clearedPosition > keptPosition ? 'cleared' : 'kept'
+    scenarios.push({
+      debtId,
+      amount,
+      kept: {
+        savingsAtHorizon: current.savingsAtHorizon,
+        debtAtHorizon: baseline.balance,
+        netPosition: keptPosition,
+        goalReachedOn: current.reachedOn,
+      },
+      cleared: {
+        savingsAtHorizon: alternative.savingsAtHorizon,
+        debtAtHorizon: after?.balance ?? 0,
+        netPosition: clearedPosition,
+        goalReachedOn: alternative.reachedOn,
+      },
+      chosen: pick,
+    })
+    const costWithStep = clears ? 0 : (interestToClear(reduced.balance, r, payment) ?? undefined)
+    const difference = round2(Math.abs(clearedPosition - keptPosition))
+    const tradeOff = goalTradeOff(
+      input.targetAmount,
+      current.reachedOn,
+      alternative.reachedOn,
+      pick,
+      baseline.balance,
+    )
+    if (pick === 'cleared') {
+      steps.push({
+        debtId,
+        action: clears ? 'pay_off_first' : 'overpay',
+        why: clip(
+          `At ${String(debt.ratePct)}% it costs more than the savings earn. ${clears ? 'Clearing' : `Paying ${euro(amount)} off`} from the lump sum${clears ? ` and saving its ${euro(round2(payment))} a month` : ''} leaves ${euro(difference)} more at month ${String(horizon)} than keeping it.${tradeOff}`,
+          300,
+        ),
+        ...(costIfKept === undefined ? {} : { costIfKept }),
+        ...(costWithStep === undefined ? {} : { costWithStep }),
+      })
+      reasoning.push(
+        `${debt.label}: ${clears ? 'cleared' : `${euro(amount)} paid off`} from the lump sum. Net position (savings less debt) at month ${String(horizon)}: ${euro(clearedPosition)}, against ${euro(keptPosition)} if kept.${tradeOff}`,
+      )
+      lump -= amount
+      if (clears) {
+        const freed = round2(payment)
+        const total = round2(monthly + freed)
+        const freedLine = `The ${euro(freed)} a month the ${debt.label} took is saved instead from the next month: with the ${euro(monthly)} a month already saved, ${euro(total)} a month goes into the accounts below.`
+        reasoning.push(freedLine)
+        assumptions.push(freedLine)
+        monthly = total
+      } else {
+        owedAtHorizon += after?.balance ?? 0
+      }
+      current = alternative
+    } else {
+      owedAtHorizon += baseline.balance
+      steps.push({
+        debtId,
+        action: 'keep_paying',
+        why: clip(
+          `Keeping it and saving the lump sum leaves ${euro(difference)} more at month ${String(horizon)} than ${clears ? 'clearing' : 'overpaying'} it, for the inputs given.${tradeOff}`,
+          300,
+        ),
+        ...(costIfKept === undefined ? {} : { costIfKept }),
+        ...(costWithStep === undefined ? {} : { costWithStep }),
+      })
+      reasoning.push(
+        `${debt.label}: kept. Net position (savings less debt) at month ${String(horizon)}: ${euro(keptPosition)}, against ${euro(clearedPosition)} if ${clears ? 'cleared' : 'overpaid'}.${tradeOff}`,
+      )
+    }
+  }
+
+  return {
+    lockAllowed: input.lockAllowed,
+    current,
+    steps,
+    scenarios,
+    reasoning,
+    assumptions,
+    lump,
+    monthly,
+    netPosition: round2(current.savingsAtHorizon - owedAtHorizon),
   }
 }
 
@@ -541,13 +783,10 @@ function planProduct(
     asOf,
   )
   const figures = projection.lines[0]?.figures
+  const guarantee = guaranteeFlag(product)
   const checks = [
     ...(product.rateConfirmed ? [] : [UNCONFIRMED_RATE]),
-    ...(product.depositGuarantee !== null &&
-    product.depositGuarantee.country !== 'Ireland' &&
-    product.depositGuarantee.scheme !== null
-      ? [`Covered by the ${product.depositGuarantee.scheme}, not the Irish scheme.`]
-      : []),
+    ...(guarantee === null ? [] : [guarantee]),
     ...product.checks,
   ]
   const unknowns = [
@@ -593,6 +832,29 @@ function planProduct(
       .filter((text, index, all) => all.indexOf(text) === index)
       .slice(0, 10)
       .map((text) => clip(text, 200)),
+    ...(product.depositGuarantee === null
+      ? {}
+      : {
+          depositGuarantee: {
+            scheme:
+              product.depositGuarantee.scheme === null
+                ? null
+                : clip(product.depositGuarantee.scheme, 160),
+            country: product.depositGuarantee.country,
+            coverEur: product.depositGuarantee.coverEur,
+            note:
+              product.depositGuarantee.note === null
+                ? null
+                : clip(product.depositGuarantee.note, 300),
+            sourceUrl:
+              product.depositGuarantee.sourceUrl !== null &&
+              product.depositGuarantee.sourceUrl.startsWith('https://') &&
+              product.depositGuarantee.sourceUrl.length <= 500
+                ? product.depositGuarantee.sourceUrl
+                : null,
+            checkedOn: product.depositGuarantee.checkedOn,
+          },
+        }),
     checkedAt: product.provenance.checkedAt,
     ...(product.provenance.attribution === null
       ? {}

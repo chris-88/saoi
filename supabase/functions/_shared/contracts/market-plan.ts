@@ -183,6 +183,24 @@ export const planProductSchema = z.object({
   unknowns: z.array(text(120)).max(20).default([]),
   /** Eligibility the data cannot confirm: "Needs a current account with the bank". */
   checks: z.array(text(200)).max(10).default([]),
+  /**
+   * For a deposit: the scheme that protects it and its limit, with the page that says so.
+   * `scheme` null: not recorded, so the customer confirms it with the provider.
+   */
+  depositGuarantee: z
+    .object({
+      scheme: text(160).nullable(),
+      country: text(60).nullable(),
+      coverEur: eur.nullable(),
+      note: text(300).nullable().optional(),
+      sourceUrl: z
+        .url({ protocol: /^https$/ })
+        .max(500)
+        .nullable()
+        .optional(),
+      checkedOn: monthOrDay.nullable().optional(),
+    })
+    .optional(),
   /** When this product's figures were last checked against the source. */
   checkedAt: isoDateTime,
   /** What has to travel with the figures under the source's re-use terms (CCPC). */

@@ -80,6 +80,8 @@ describe('worked example: review_situation', () => {
       expect.arrayContaining(['pay_off_debt', 'grow_savings']),
     )
     expect(() => reviewResponseSchema.parse(result)).not.toThrow()
+    expect(result.next).toMatch(/saoi_build_plan/)
+    expect(result.next).toMatch(/saoi_save_plan/)
     noAdvice(result)
   })
 })
@@ -260,5 +262,140 @@ describe('worked example: build_plan', () => {
     expect(fund?.amount).toBeCloseTo(7_650, 0)
     expect(open.plan.assumptions.join(' ')).toMatch(/nothing is locked/)
     expect(() => marketPlanSchema.parse(open.plan)).not.toThrow()
+  })
+})
+
+describe('build_plan: what the first Claude test showed (2026-11-09)', () => {
+  // As the customer put it: no income, outgoings, repayment or target given.
+  const asked: Situation = {
+    monthlySaving: 800,
+    savings: [{ label: 'Current account', balance: 25_000, access: 'current_account' }],
+    debts: [
+      {
+        id: 'car',
+        label: 'Car loan',
+        kind: 'car_finance',
+        balance: 9_000,
+        ratePct: 9,
+        monthsRemaining: 36,
+      },
+    ],
+  }
+  const goal = {
+    id: 'deposit',
+    kind: 'house_deposit' as const,
+    label: 'House deposit',
+    targetDate: '2028-11',
+    priority: 1,
+  }
+  const plan = (extra: Record<string, unknown> = {}) =>
+    buildPlan(
+      market,
+      buildPlanRequestSchema.parse({ situation: asked, goals: [goal], ...extra }),
+      AS_OF,
+      CREATED,
+    )
+  const locks = (result: ReturnType<typeof plan>) =>
+    result.plan.recommendation.products.filter((p) => /\(\d+ months\)/.test(p.productName))
+
+  it('keeps the money in instant access when a term earns less than the thresholds, with both figures', () => {
+    const result = plan()
+    expect(result.liquidity.decision).toBe('instant_access')
+    expect(result.liquidity.gainEur).toBeGreaterThan(0)
+    expect(result.liquidity.gainEur).toBeLessThan(100)
+    expect(result.liquidity.lockedNetPosition).not.toBeNull()
+    expect(result.liquidity.why).toMatch(/would leave only €[\d.,]+ more/)
+    expect(locks(result)).toEqual([])
+    expect(() => buildPlanResponseSchema.parse(result)).not.toThrow()
+    noAdvice(result)
+  })
+
+  it('locks when the thresholds are lowered, and says what instant access would leave', () => {
+    const result = plan({ minLockGainEur: 0, minLockGainPctPerYear: 0 })
+    expect(result.liquidity.decision).toBe('locked')
+    expect(locks(result).length).toBe(1)
+    expect(result.whatIf.lines.join(' ')).toMatch(/Keeping every euro in instant access instead/)
+  })
+
+  it('states where the freed loan repayment goes', () => {
+    const result = plan()
+    expect(result.reasoning.join(' ')).toMatch(
+      /The €284\.73 a month the Car loan took is saved instead .* €1,084\.73 a month goes into the accounts below/,
+    )
+    expect(result.plan.recommendation.totals?.monthly).toBeCloseTo(1_084.73, 2)
+  })
+
+  it('gives what-ifs and the offer to save', () => {
+    const result = plan()
+    expect(result.whatIf.extraMonthly?.extra).toBe(100)
+    // €100 a month for 24 months, plus its interest.
+    expect(result.whatIf.extraMonthly?.addsAtHorizon).toBeGreaterThan(2_400)
+    expect(result.whatIf.extraMonthly?.addsAtHorizon).toBeLessThan(2_600)
+    expect(result.whatIf.lines.join(' ')).toMatch(/Car loan: cleared from the lump sum/)
+    expect(result.next).toMatch(/saoi_save_plan/)
+    expect(result.next).toMatch(/rate changes/)
+  })
+
+  it('holds a €6,000 buffer apart and keeps everything accessible when asked', () => {
+    const result = plan({ emergencyBufferEur: 6_000, keepAccessible: true })
+    const buffer = result.plan.recommendation.products.find((p) => p.role === 'emergency_fund')
+    expect(buffer?.amount).toBe(6_000)
+    const bufferGoal = result.plan.goals.find((g) => g.kind === 'emergency_fund')
+    expect(bufferGoal).toMatchObject({ targetAmount: 6_000, label: 'Emergency buffer' })
+    expect(buffer?.goalIds).toEqual([bufferGoal?.id])
+    expect(result.liquidity.decision).toBe('instant_access')
+    expect(result.liquidity.lockedNetPosition).toBeNull()
+    expect(locks(result)).toEqual([])
+    expect(result.plan.recommendation.totals?.lumpSum).toBeCloseTo(16_000, 0)
+    expect(() => marketPlanSchema.parse(result.plan)).not.toThrow()
+  })
+
+  it('sizes the buffer from months of outgoings, and says when it cannot', () => {
+    const sized = buildPlan(
+      market,
+      buildPlanRequestSchema.parse({
+        situation: { ...asked, outgoings: { rentMonthly: 1_500, otherMonthly: 500 } },
+        goals: [goal],
+        emergencyBufferMonths: 3,
+      }),
+      AS_OF,
+      CREATED,
+    )
+    expect(
+      sized.plan.recommendation.products.find((p) => p.role === 'emergency_fund')?.amount,
+    ).toBe(6_000)
+    const unsized = plan({ emergencyBufferMonths: 3 })
+    expect(unsized.plan.recommendation.products.some((p) => p.role === 'emergency_fund')).toBe(
+      false,
+    )
+    expect(unsized.reasoning.join(' ')).toMatch(/outgoings were not given/)
+  })
+
+  it('locks nothing when the goal date is not certain', () => {
+    const result = plan({ goalDateCertain: false, minLockGainEur: 0, minLockGainPctPerYear: 0 })
+    expect(result.liquidity.decision).toBe('instant_access')
+    expect(locks(result)).toEqual([])
+  })
+
+  it('gives the month a target is reached at this pace', () => {
+    const result = buildPlan(
+      market,
+      buildPlanRequestSchema.parse({
+        situation: asked,
+        goals: [{ ...goal, targetAmount: 30_000 }],
+      }),
+      AS_OF,
+      CREATED,
+    )
+    expect(result.whatIf.goalReachedAtCurrentPace).toMatch(/^202[78]-\d{2}$/)
+    expect(result.whatIf.goalReachedAtCurrentPace).toBe(result.goalReachedOn)
+  })
+
+  it('shows each product’s deposit guarantee, with its source', () => {
+    const result = plan()
+    for (const product of result.plan.recommendation.products) {
+      expect(product.depositGuarantee?.scheme).toBeTruthy()
+      expect(product.depositGuarantee?.sourceUrl).toMatch(/^https:\/\//)
+    }
   })
 })

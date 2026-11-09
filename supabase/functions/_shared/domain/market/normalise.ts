@@ -8,6 +8,8 @@ import type {
   UnknownField,
 } from '../../contracts/market-tools.ts'
 import { BANK_CCPC_PAIRS } from '../../market/bank-ccpc-pairs.ts'
+import { cashbackPctOf } from '../../market/cashback.ts'
+import { DEPOSIT_GUARANTEES } from '../../market/deposit-guarantees.ts'
 import type { DepositRates, MarketProduct } from '../../market/schema.ts'
 import type { Market, MarketRecord } from './types.ts'
 
@@ -32,34 +34,9 @@ import type { Market, MarketRecord } from './types.ts'
 
 const DIRT_FREE = '0'
 
-/** Where Saoi has recorded the licence a provider's deposits are guaranteed under. */
-const RECORDED_GUARANTEES: Readonly<Record<string, DepositGuarantee>> = {
-  boi: irish(),
-  aib: irish(),
-  ptsb: irish(),
-  ebs: irish(),
-  haven: irish(),
-  credit_union: irish(),
-  state_savings: {
-    scheme: 'Guaranteed by the State (Ireland State Savings, managed by the NTMA)',
-    country: 'Ireland',
-    coverEur: null,
-    basis: 'recorded_by_saoi',
-  },
-}
-
-function irish(): DepositGuarantee {
-  return {
-    scheme: 'Deposit Guarantee Scheme (Central Bank of Ireland)',
-    country: 'Ireland',
-    coverEur: 100_000,
-    basis: 'recorded_by_saoi',
-  }
-}
-
 /** Providers whose deposits Saoi records as Irish-licensed: DIRT is taken at source. */
 const IRISH_PROVIDERS: ReadonlySet<string> = new Set(
-  Object.entries(RECORDED_GUARANTEES)
+  Object.entries(DEPOSIT_GUARANTEES)
     .filter(([, guarantee]) => guarantee.country === 'Ireland')
     .map(([provider]) => provider),
 )
@@ -398,7 +375,9 @@ function termsFor(products: readonly MarketProduct[], unknowns: UnknownField[]):
       const named = /\bBER\s+([A-G][1-3]?|Exempt)\b/i.exec(head.providerProductName)?.[1] ?? null
       const details = head.conditions.details ?? {}
       const cashbackText = details['Cashback description'] ?? details['Cashback'] ?? null
-      const pctText = /(\d+(?:\.\d+)?)\s*%/.exec(cashbackText ?? '')?.[1]
+      const cashbackPct =
+        cashbackPctOf(details['Cashback description']) ?? cashbackPctOf(details['Cashback'])
+      const offered = rates.cashback ?? (cashbackPct === null ? null : true)
       return {
         kind: 'mortgage',
         rateType: rates.rateType,
@@ -412,8 +391,8 @@ function termsFor(products: readonly MarketProduct[], unknowns: UnknownField[]):
         berFromName: rates.ber === null && named !== null,
         buyerTypes: [...rates.customerTypes],
         cashback: {
-          offered: rates.cashback,
-          pct: rates.cashback === true && pctText !== undefined ? Number(pctText) : null,
+          offered,
+          pct: offered === true ? cashbackPct : null,
           stated: cashbackText,
         },
         fees: Object.fromEntries(
@@ -641,6 +620,9 @@ function guaranteeOf(
 ): DepositGuarantee {
   const head = products[0]
   if (head === undefined) throw new Error('no products')
+  // Saoi's own record, read from a primary page, first.
+  const recorded = DEPOSIT_GUARANTEES[head.provider]
+  if (recorded !== undefined) return { ...recorded, basis: 'recorded_by_saoi' }
   // Every rung's words: a ladder's shortest term is not always the row that names the scheme.
   const text = products.map(textOf).join('\n')
   const adjective = /\b([A-Za-z]+)\s+deposit\s+guarantee\s+(?:scheme|fund)/i.exec(text)?.[1]
@@ -652,13 +634,22 @@ function guaranteeOf(
       country,
       // Harmonised across the EU by the Deposit Guarantee Schemes Directive.
       coverEur: 100_000,
+      note: null,
       basis: 'stated_by_source',
+      sourceUrl: head.sourceUrl,
+      checkedOn: head.checkedAt.slice(0, 10),
     }
   }
-  const recorded = RECORDED_GUARANTEES[head.provider]
-  if (recorded !== undefined) return recorded
   unknowns.push({ field: 'depositGuarantee', meaning: 'which deposit guarantee scheme covers it' })
-  return { scheme: null, country: null, coverEur: null, basis: 'unknown' }
+  return {
+    scheme: null,
+    country: null,
+    coverEur: null,
+    note: null,
+    basis: 'unknown',
+    sourceUrl: null,
+    checkedOn: null,
+  }
 }
 
 function checksFor(
