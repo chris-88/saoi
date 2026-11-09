@@ -82,6 +82,10 @@ export const easySaver: Parser = (html: string): Parsed => {
     'how monthly saving is paid in',
   )
   const daily = find(/Daily Interest/i, 'daily interest')
+  const dirt = find(
+    /we are obliged to deduct deposit interest retention tax \(DIRT\) from interest earned/i,
+    'DIRT taken at source',
+  )
   const guarantee = find(
     /guaranteed up to €100,000 by the Austrian Government pursuant to the Austrian Deposit Guarantee Scheme/i,
     'the deposit guarantee',
@@ -104,6 +108,7 @@ export const easySaver: Parser = (html: string): Parsed => {
       },
       interestPaid: 'daily',
       rateForNewAccounts: true,
+      dirtAtSource: true,
       prose: {
         Rate: current[0],
         'Rate for new accounts': forNew[0],
@@ -115,6 +120,7 @@ export const easySaver: Parser = (html: string): Parsed => {
         'Joint accounts': joint[0],
         'Monthly saving': standingOrder[0],
         Interest: daily[0],
+        DIRT: dirt[0],
         'Deposit guarantee': guarantee[0],
       },
     },

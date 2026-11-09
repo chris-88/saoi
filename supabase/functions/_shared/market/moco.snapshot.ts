@@ -8,7 +8,7 @@ import type { MarketSnapshot } from './schema.ts'
 
 export const mocoSnapshot: MarketSnapshot = {
   provider: 'moco',
-  checkedAt: '2026-11-09T15:44:14.393Z',
+  checkedAt: '2026-11-09T16:27:28.881Z',
   rateSheet: null,
   products: [
     {
@@ -37,6 +37,7 @@ export const mocoSnapshot: MarketSnapshot = {
         },
         interestPaid: 'daily',
         rateForNewAccounts: true,
+        dirtAtSource: true,
         prose: {
           Rate: "MoCo's current variable rate is 2.1% AER",
           'Rate for new accounts': "For new accounts, MoCo's current variable rate is 2.1% AER",
@@ -51,12 +52,13 @@ export const mocoSnapshot: MarketSnapshot = {
           'Monthly saving':
             'A standing order facility can be arranged with the bank from which you wish to transfer money to MoCo.',
           Interest: 'Daily Interest',
+          DIRT: 'we are obliged to deduct deposit interest retention tax (DIRT) from interest earned',
           'Deposit guarantee':
             'guaranteed up to €100,000 by the Austrian Government pursuant to the Austrian Deposit Guarantee Scheme',
         },
       },
       sourceUrl: 'https://www.moco.ie/moco/savings',
-      checkedAt: '2026-11-09T15:44:14.393Z',
+      checkedAt: '2026-11-09T16:27:28.881Z',
       effectiveFrom: null,
     },
     {
@@ -85,6 +87,7 @@ export const mocoSnapshot: MarketSnapshot = {
         },
         interestPaid: 'daily',
         rateForNewAccounts: true,
+        dirtAtSource: true,
         prose: {
           Rate: "MoCo's current variable rate is 2.1% AER",
           'Rate for new accounts': "For new accounts, MoCo's current variable rate is 2.1% AER",
@@ -99,12 +102,13 @@ export const mocoSnapshot: MarketSnapshot = {
           'Monthly saving':
             'A standing order facility can be arranged with the bank from which you wish to transfer money to MoCo.',
           Interest: 'Daily Interest',
+          DIRT: 'we are obliged to deduct deposit interest retention tax (DIRT) from interest earned',
           'Deposit guarantee':
             'guaranteed up to €100,000 by the Austrian Government pursuant to the Austrian Deposit Guarantee Scheme',
         },
       },
       sourceUrl: 'https://www.moco.ie/moco/savings',
-      checkedAt: '2026-11-09T15:44:14.393Z',
+      checkedAt: '2026-11-09T16:27:28.881Z',
       effectiveFrom: null,
     },
   ],

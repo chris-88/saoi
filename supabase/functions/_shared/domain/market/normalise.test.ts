@@ -210,6 +210,8 @@ describe('normaliseMarket', () => {
     const checks = moco.checks.join(' ')
     expect(checks).toMatch(/aged 18 or over, resident in Ireland, not a US citizen/)
     expect(checks).toMatch(/rate for new accounts/)
+    // MoCo's page says it deducts DIRT: no note that a bank abroad may not.
+    expect(checks).not.toMatch(/may not take DIRT at source/)
     expect(checks).not.toMatch(/who can open it is not recorded|CCPC does not record/)
     for (const check of moco.checks) expect(check.length).toBeLessThanOrEqual(200)
     expect(view('aib:savings.c396').eligibility).toBeNull()

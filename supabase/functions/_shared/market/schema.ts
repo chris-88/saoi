@@ -250,6 +250,8 @@ export const marketConditionsSchema = z
      * (MoCo publishes existing accounts' rate only after login).
      */
     rateForNewAccounts: z.boolean().optional(),
+    /** The provider deducts DIRT and pays it to Revenue (stated on its own page). */
+    dirtAtSource: z.boolean().optional(),
     bonus: savingsBonusSchema.optional(),
     /** The source's own prose, verbatim: introductory offers, bonuses, extra information. */
     prose: verbatim.optional(),
