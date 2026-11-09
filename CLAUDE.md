@@ -1,8 +1,23 @@
-# CLAUDE.md: Saoi (assistant: Saoirse) Conversational Banking POC
+# CLAUDE.md: Saoi backend (assistant: Saoirse) Conversational Banking POC
 
 ## What this is
 
-Naming: everything is `saoi` (repo `chris-88/saoi`, `saoi-api`, `SAOI_*`, `--saoi-*`); `saoirse` is only the assistant as a persona (`src/saoirse/`, `Saoirse*`). The only `baz` left is the `/baz` redirect (the chat's old address) and the contact mailbox in the privacy notice. The assistant is stored as `assistant` (`messages.role`, `assistant_usage` in catalogue products); the MCP server lives in its own repo.
+Naming: everything is `saoi` (repo `chris-88/saoi`, `saoi-api`, `SAOI_*`, `--saoi-*`); `saoirse` is only the assistant as a persona (`Saoirse*`; the chat UI is `src/saoirse/` in saoi-web). The `baz` left in this repo is the pooler tenant and sender noted in the infra README. The assistant is stored as `assistant` (`messages.role`, `assistant_usage` in catalogue products); the MCP server lives in its own repo.
+
+**This repo is the backend.** Since 2026-11-09 (cutover step 8) the browser apps are their own repos:
+
+| Repo                     | What                                                                                                                                              | Where                                                                          |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `chris-88/saoi` (this)   | `saoi-api` (`services/api`), migrations and seed, `supabase/functions/_shared` (domain, contracts, prompts, tenants), evals, `supabase/templates` | `https://api.saoi.ie`, built by `~/code/infra/stacks/saoi-api/redeploy-api.sh` |
+| `chris-88/saoi-web`      | the Saoirse chat, partner join, ask, privacy; PWA and push                                                                                        | `https://app.saoi.ie`                                                          |
+| `chris-88/saoi-admin`    | the presenter console                                                                                                                             | `https://admin.saoi.ie`                                                        |
+| `chris-88/saoi-showcase` | showcase, explainer, article                                                                                                                      | `https://showcase.saoi.ie`                                                     |
+
+The apps call `saoi-api` through a client generated from `https://api.saoi.ie/api/openapi.json`
+(`npm run api:generate` in each), and keep copies of the `_shared` files they import in
+`src/shared/` (`npm run shared:sync` / `shared:check`, reading a checkout of this repo). A change to
+a route or a contract here is finished when both apps have regenerated and synced.
+`supabase/templates/sign-in-link.html` stays at that path: the auth stack loads it from GitHub.
 
 Saoirse is a conversational orchestration layer over simulated retail banking product journeys for a fictional Demo Bank. The customer says what they are trying to do. Saoirse discovers needs, the customer chooses products, facts are collected once and reused across concurrent applications, and the case persists across channels, sessions, a partner and time.
 
@@ -38,45 +53,28 @@ When trading off, follow §63 in order: persistent context, natural conversation
 
 Standard prototyping stack. Do not add frameworks or services outside it without asking.
 
-| Concern       | Choice                                                                                                                                     |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Build         | Vite, React, TypeScript (strict)                                                                                                           |
-| UI            | shadcn/ui (mandatory default), Tailwind                                                                                                    |
-| Routing       | React Router, hash routing (GitHub Pages has no rewrites)                                                                                  |
-| Server state  | TanStack Query, invalidated by Supabase Realtime                                                                                           |
-| Client state  | Zustand, ephemeral UI state only                                                                                                           |
-| Validation    | Zod at every boundary                                                                                                                      |
-| Forms         | React Hook Form + zodResolver                                                                                                              |
-| Backend       | Supabase: Postgres, RLS, Auth (anonymous + email for admins), Realtime, Storage; `saoi-api` (Node, Hono) is the server                     |
-| LLM           | Anthropic API, called only from `saoi-api`                                                                                                 |
-| PWA           | vite-plugin-pwa                                                                                                                            |
-| Notifications | Web Push (RFC 8291/8292), hand-written in `saoi-api`. Twilio was never built — push needs no per-message charge and no sender registration |
-| Tests         | Vitest, Playwright                                                                                                                         |
-| Monitoring    | Sentry in the browser. **`saoi-api` has none**: failures there surface as `events` rows and service logs                                   |
-| Hosting       | GitHub Pages via GitHub Actions; hosted Supabase project                                                                                   |
+| Concern       | Choice                                                                                                                        |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Service       | `saoi-api`: Node 24, Hono, `@hono/zod-openapi` (the OpenAPI document the apps generate from)                                  |
+| Validation    | Zod at every boundary; contracts in `_shared/contracts`                                                                       |
+| Backend       | Supabase, self-hosted (stack `saoi` in `~/code/infra`): Postgres, RLS, Auth (anonymous + email for admins), Realtime, Storage |
+| LLM           | Anthropic API, called only from `saoi-api`                                                                                    |
+| Notifications | Web Push (RFC 8291/8292), hand-written in `saoi-api`. Twilio was never built                                                  |
+| Tests         | Vitest (shared domain here, routes in `services/api`)                                                                         |
+| Monitoring    | **`saoi-api` has none**: failures surface as `events` rows and service logs. Browser Sentry lives in the apps                 |
+| Hosting       | `saoi-api` in Docker behind the Cloudflare Tunnel; the apps on GitHub Pages from their repos                                  |
 
 Models are env-configured. Defaults: `SAOI_MODEL=claude-sonnet-5-5`, `GATE_MODEL=claude-haiku-4-5-20251001`.
 
 ## Architecture
 
 ```
-Browser: one SPA on GitHub Pages
-  /#/                Saoirse itself - the same screen in a tab and in the installed PWA
-  /#/ask             questions and offers to collaborate, from a phone
-  /#/privacy         what happens to what you type
-  /#/join/:token     partner experience
-  /#/admin/*         presenter console
-  /#/app/*, /#/try   redirect to /#/ (old links and printed QR codes)
-  /#/baz             redirect to /#/ (the chat's old address; query string kept)
-  /#/showcase, /#/how-it-works/:section?, /#/article
-                     redirect to https://showcase.saoi.ie/ (see below)
-    reads:  supabase-js under RLS (primary customer and admin only)
-    writes: saoi-api only (https://api.saoi.ie)
-    live:   Realtime -> TanStack Query invalidation
-
-The replica Demo Bank public site and the authenticated app shell behind a simulated login were
-deleted on 2026-10-06 (`9569094`): scaffolding around the only part worth showing. There is no
-signed-in version of Saoirse that knows more about you. `src/app/routes.ts` explains the pivot.
+Browsers
+  saoi-web    https://app.saoi.ie     Saoirse, /ask, /privacy, /join/:token, PWA and push;
+                                       /admin/* redirects to admin.saoi.ie
+  saoi-admin  https://admin.saoi.ie   the presenter console, email sign-in
+    writes and reads: saoi-api only (https://api.saoi.ie), generated client
+    auth:             supabase-js against the stack; the console also uses Realtime under RLS
 
 saoi-api, services/api (Node, Hono; service role; holds ANTHROPIC_API_KEY, VAPID keys, PRESENTER_KEY)
   turns         gate -> Saoirse model with tools -> SSE stream -> persist
@@ -125,11 +123,11 @@ Never weaken one of these to make a demo step work. Fix the data or the flow ins
 8. **Nothing sensitive in URLs.** Links carry opaque tokens: 128-bit random, stored hashed (§29, §58). Handoff codes and notification links are single-use with a short TTL, consumed on redemption. The partner invite is the exception: it neither expires nor is used up, because the second applicant opens it when they get to it and on whichever phone they have; inviting again voids every earlier link for any browser that has not already joined.
 9. **Everything significant writes an event.** Every item in §52 is an `events` row with actor (`customer | partner | model | admin | system`). Metrics are derived from events.
 10. **Synthetic data only.** No real credentials, no real Demo Bank auth, no real customer data. The simulated login accepts anything and says so.
-11. **Saoirse is portable.** `src/saoirse/**` and `_shared/domain/**` never import from `_shared/tenants/demo/**`. Tenant config is injected. Enforced with ESLint `no-restricted-imports` (§32).
+11. **Saoirse is portable.** `_shared/domain/**` here and `src/saoirse/**` in saoi-web never import from `_shared/tenants/demo/**`. Tenant config is injected. Enforced with ESLint `no-restricted-imports` (§32).
 
 ## Domain model
 
-All domain logic is pure TypeScript in `supabase/functions/_shared/domain/`, imported by `saoi-api` (`@shared` alias) and by the app (`@domain` alias). No Node or browser APIs in this folder. The only third-party import allowed is bare `zod`, pinned to the same major version in the app and the service.
+All domain logic is pure TypeScript in `supabase/functions/_shared/domain/`, imported by `saoi-api` (`@shared` alias) and copied into saoi-web and saoi-admin (`src/shared/`, `@domain` alias). No Node or browser APIs in this folder. The only third-party import allowed is bare `zod`, pinned to the same major version in the apps and the service.
 
 ### Facts
 
@@ -317,8 +315,8 @@ Stream events are a Zod discriminated union: `text_delta | retract | card | stat
 
 These moved out on 2026-11-04 to their own repo and site, `chris-88/saoi-showcase`, served at
 `https://showcase.saoi.ie/` (`/#/`, `/#/how-it-works/:section?`, `/#/article`). This repo
-keeps only redirects (`src/app/ExternalRedirect.tsx`) and the `showcaseUrls` links in
-`src/app/routes.ts`. The feature doc is still `vault/docs/features/showcase.md`.
+has nothing of them; saoi-web keeps the redirects (`src/app/ExternalRedirect.tsx`) and the
+`showcaseUrls` links in `src/app/routes.ts`. The feature doc is still `vault/docs/features/showcase.md`.
 
 ## Guardrails (§19 to §27, §39, §47)
 
@@ -413,21 +411,11 @@ Gate output:
 
 **Zod**: every saoi-api route validates its request body and returns `{ ok: true, data } | { ok: false, error: { code, message } }`. Request and response schemas live in `_shared/contracts/` and types are inferred from them. Never hand-write a type that duplicates a schema.
 
-**TanStack Query**: query key factory in `src/lib/queryKeys.ts`. No fetching in `useEffect`. Mutations invalidate by key. Realtime handlers invalidate; they do not write to the cache. The only manual cache write is the optimistic chat message.
-
-**Zustand**: composer draft, open sheets, unsaved admin slider drafts. Never cases, applications, facts or messages.
-
-**Forms**: React Hook Form + zodResolver + shadcn `Form` for every form.
-
-**shadcn/ui**: add components with the CLI. Never hand-roll something shadcn provides. Demo Bank look comes from theme tokens in `src/index.css`, not per-component overrides. Mobile first at 390px wide.
-
-**Sentry**: initialised in `main.tsx`, browser only. Never send message content or fact values. Tag `case_id`, participant role, gate category.
-
 **Server failures**: there is no Sentry on the server. A write that matters goes through `mustWrite`, which throws rather than failing silently, and anything worth explaining afterwards writes an `events` row (`tool_rejected`, `turn_tools`, `request_blocked`). This was learned the hard way: thirty-nine writes had no error check, and one of them broke §49 for a week without a symptom.
 
-**Secrets**: nothing secret in `VITE_*`. The Anthropic key, the VAPID private key and `PRESENTER_KEY` exist only in the saoi-api environment.
+**Browser apps**: TanStack Query, Zustand, forms, shadcn, Sentry and Pages rules live in the CLAUDE.md of saoi-web and saoi-admin.
 
-**GitHub Pages**: Vite `base` from env (`/<repo>/` or `/` with a custom domain). PWA `start_url` and `scope` follow `base`. Service worker precaches the shell and uses network-only for the Supabase domain. Never cache API responses.
+**Secrets**: nothing secret in any app's `VITE_*`. The Anthropic key, the VAPID private key and `PRESENTER_KEY` exist only in the saoi-api environment.
 
 ## Repo layout
 
@@ -436,19 +424,9 @@ vault/docs/                 gitignored since 2026-10-20. README.md is the map; s
                             dev, architecture, design, features, journeys, decisions,
                             learnings, security, operations, archive
 docs/                       overview.md: the long-form product pitch (the old README)
-src/
-  app/                      router, routes, providers, lazy boundaries, stale-deploy
-  saoirse/                     portable chat UI, cards/, card registry, hooks
-  surfaces/                 Landing, SaoirseScreen, HowItWorks, showcase, Privacy
-  content/                  the explainer's figures, every one sourced
-  partner/  admin/
-  components/ui/            shadcn generated
-  components/  hooks/       shared components and hooks
-  lib/                      supabase client, query client, queryKeys, identity, sentry
-  assets/  styles/          images, audio, fonts and global styles (index.css holds the tokens)
-  test/                     Vitest setup
 supabase/
-  migrations/
+  migrations/  seed.sql     schema, RLS, the canonical seed (npm run seed:generate)
+  templates/                auth email templates; sign-in-link.html is loaded by the stack
   functions/
     _shared/
       domain/               facts, journeys/, state-machine, requirements,
@@ -458,26 +436,23 @@ supabase/
       tenants/demo/         products, domain config, brand strings
       db/  push/            generated DB types, Web Push
 services/
-  api/                      saoi-api: Hono service (its own package), serves the same routes
-                            the whole backend; bundles supabase/functions/_shared via @shared
-scripts/                    seed generator, bundle scan, model comparison, one-off tools
+  api/                      saoi-api: Hono service (its own package), the whole backend;
+                            bundles supabase/functions/_shared via @shared
+scripts/                    seed generator, model comparison
 tests/                      schema-drift test
-e2e/                        Playwright
 evals/guardrails/           cases.jsonl + runner
-.github/workflows/          ci.yml, deploy-pages.yml
+.github/workflows/          ci.yml (shared checks, api, api-integration, api-image)
 ```
 
 ## Commands
 
 ```
-npm run dev                  # Vite
 npx supabase start           # local Supabase
 (cd services/api && npm run dev)   # saoi-api; needs services/api/.env
-npm run check                # the pre-merge gate: typecheck, lint, seed, test, build, bundle scan
+npm run check                # the pre-merge gate: typecheck, lint, format, seed check, tests
 npm run typecheck
 npm run lint
-npm run test                 # Vitest
-npm run e2e                  # Playwright: route and render checks only (see below)
+npm run test                 # Vitest: _shared and tests/
 npm run eval:guardrails      # live gate against the adversarial set
 ```
 
@@ -491,7 +466,7 @@ implementations, and `_shared` reads no environment to choose between them.
 
 ## Environment
 
-App (`.env`): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_SAOI_API_URL` (required), `VITE_SENTRY_DSN`, `VITE_BASE_PATH`, `VITE_VAPID_PUBLIC_KEY`.
+The browser apps' `VITE_*` variables are documented in saoi-web and saoi-admin. Root `.env` here is read only by `eval:guardrails` and `compare:models` (the Anthropic key).
 
 saoi-api environment, as actually read: `ANTHROPIC_API_KEY`, `SAOI_MODEL`, `GATE_MODEL`,
 `APP_BASE_URL`, `AUDIENCE_MAX_CASES`, `PRESENTER_KEY`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_D`,
@@ -504,20 +479,21 @@ Set on the project but read nowhere: `TWILIO_*` and `SENTRY_DSN` (never built) a
 `AUDIENCE_MAX_TURNS` (declared, never implemented). Removed from the `.env.example` files on
 2026-10-15; `vault/docs/dev/environment-variables.md` is the full reference.
 
-GitHub: repo vars for the `VITE_*` values. The `SUPABASE_*` secrets are left over from the retired hosted-project deploy.
+GitHub: the `VITE_*` repo variables here are no longer read by anything (the apps have their own copies). The `SUPABASE_*` secrets are left over from the retired hosted-project deploy.
 
 ## CI and deploy
 
-- `ci.yml` on PR: typecheck, lint, Vitest, build; the `api` job checks `services/api`, `api-image` builds its container.
-- `deploy-pages.yml` on main: build, upload Pages artifact, deploy.
+- `ci.yml` on push and PR: the shared checks (typecheck, lint, format, seed check, tests); the
+  `api` job checks `services/api`, `api-integration` runs its routes against a local stack,
+  `api-image` builds its container.
+- No Pages deploy here any more: the apps deploy from saoi-web and saoi-admin.
 - `saoi-api` is built from `origin/main` and redeployed from the infra repo (`stacks/saoi-api/redeploy-api.sh`), not by a workflow here.
-- Playwright runs locally against `supabase start`. Move it to CI later if it earns its keep.
 
 ## Testing
 
 - **Vitest, required**: requirement engine, reuse policies, subject matching, state machine (every legal and illegal transition), advisories, questions-avoided, persona composer, gate routing given fixed classifier outputs, token issue and redeem.
-- **Playwright**: route, render and disclosure checks at iPhone viewport. It does not yet drive
-  a conversation; the fixture provider (`LLM_PROVIDER=fixture`) now makes that possible.
+- **Playwright** lives in saoi-web and saoi-admin: route, render and disclosure checks. It does
+  not yet drive a conversation; the fixture provider (`LLM_PROVIDER=fixture`) makes that possible.
 - **Guardrail evals**: `evals/guardrails/cases.jsonl` holds a must-block set (§22, §24, §47: trivia, jokes, competitors, excessive output, injection, persona escape) and a must-allow set (profane banking questions, short contextual answers, sensitive but in-scope disclosures). 100% on both before any presentation.
 
 ## Build order
