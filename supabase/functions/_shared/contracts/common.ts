@@ -11,6 +11,8 @@ export const ERROR_CODES = [
   'forbidden',
   'not_found',
   'conflict',
+  /** A link or code that was valid once and has run out (a plan claim link past its TTL). */
+  'expired',
   'illegal_transition',
   'rate_limited',
   'upstream_unavailable',
@@ -65,6 +67,8 @@ export function statusFor(code: ErrorCode): number {
     case 'conflict':
     case 'illegal_transition':
       return 409
+    case 'expired':
+      return 410
     case 'rate_limited':
       return 429
     case 'upstream_unavailable':

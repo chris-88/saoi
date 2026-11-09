@@ -1,3 +1,7 @@
+import { PLAN_PRODUCT_CATEGORIES, PLAN_PRODUCT_SOURCES, marketPlanSchema } from './market-plan.ts'
+import { exampleMarketPlan } from './market-plan.example.ts'
+import { claimPlanBodySchema } from './session.ts'
+import { MARKET_CATEGORIES, MARKET_SOURCES } from '../market/schema.ts'
 import { describe, expect, it } from 'vitest'
 import { awaitsCustomer, CARD_TYPES, cardSchema } from './cards.ts'
 import { ERROR_CODES, fail, ok, statusFor } from './common.ts'
@@ -166,5 +170,66 @@ describe('the saoirse-turn request', () => {
       })
       expect(parsed.success, trigger).toBe(true)
     }
+  })
+})
+
+describe('the market plan (market-plan.ts)', () => {
+  it('accepts the worked example', () => {
+    expect(marketPlanSchema.safeParse(exampleMarketPlan()).success).toBe(true)
+  })
+
+  it('keeps its source and category lists equal to the market schema it repeats', () => {
+    expect([...PLAN_PRODUCT_SOURCES]).toEqual([...MARKET_SOURCES])
+    expect([...PLAN_PRODUCT_CATEGORIES]).toEqual([...MARKET_CATEGORIES])
+  })
+
+  it('strips fields it does not know rather than refusing the plan', () => {
+    const parsed = marketPlanSchema.parse({ ...exampleMarketPlan(), engineVersion: '2.1' })
+    expect('engineVersion' in parsed).toBe(false)
+  })
+
+  it('refuses a version it does not read', () => {
+    expect(marketPlanSchema.safeParse({ ...exampleMarketPlan(), version: 2 }).success).toBe(false)
+  })
+
+  it('refuses a product pointing at a goal the plan does not have', () => {
+    const plan = exampleMarketPlan()
+    const first = plan.recommendation.products[0]
+    if (first === undefined) throw new Error('no product')
+    const broken = {
+      ...plan,
+      recommendation: { products: [{ ...first, goalIds: ['pension'] }] },
+    }
+    const result = marketPlanSchema.safeParse(broken)
+    expect(result.success).toBe(false)
+    expect(result.error?.issues[0]?.message).toBe('no goal with id pension')
+  })
+
+  it('refuses a payoff step for a debt the situation does not list', () => {
+    const plan = exampleMarketPlan()
+    const result = marketPlanSchema.safeParse({
+      ...plan,
+      debts: [{ debtId: 'mortgage', action: 'overpay', why: 'Because.' }],
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('refuses a plan with no goals, and a link that is not https', () => {
+    expect(marketPlanSchema.safeParse({ ...exampleMarketPlan(), goals: [] }).success).toBe(false)
+    const plan = exampleMarketPlan()
+    const first = plan.recommendation.products[0]
+    if (first === undefined) throw new Error('no product')
+    expect(
+      marketPlanSchema.safeParse({
+        ...plan,
+        recommendation: { products: [{ ...first, url: 'javascript:alert(1)' }] },
+      }).success,
+    ).toBe(false)
+  })
+
+  it('reads a claim token only in the shape the route issues', () => {
+    expect(claimPlanBodySchema.safeParse({ token: 'A'.repeat(22) }).success).toBe(true)
+    expect(claimPlanBodySchema.safeParse({ token: 'A'.repeat(21) }).success).toBe(false)
+    expect(claimPlanBodySchema.safeParse({ token: `${'A'.repeat(21)}/` }).success).toBe(false)
   })
 })

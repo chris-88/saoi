@@ -143,3 +143,31 @@ export const newCaseBodySchema = z.object({ mode: z.enum(['new', 'known']).defau
 /** `POST /api/sessions/claim`: the `claim_participant` action without its discriminator. */
 export const claimBodySchema = z.object({ priorAuthUserId: z.uuid() })
 export const registerInterestResponseSchema = z.object({ registered: z.literal(true) })
+
+/**
+ * `POST /api/plans/claim`: open a plan made in the customer's own AI (`market-plan.ts`).
+ *
+ * The token is the one-time code from the claim link (`#/plan/<token>`): 128 random bits,
+ * base64url, stored only as its hash (Invariant 8).
+ */
+export const PLAN_TOKEN_PATTERN = /^[A-Za-z0-9_-]{22}$/
+
+export const claimPlanBodySchema = z.object({
+  token: z.string().regex(PLAN_TOKEN_PATTERN, 'not a plan link'),
+})
+
+/**
+ * The conversation the plan is now in, which is the one this browser opens next.
+ *
+ * `reopened` is true when this browser had already claimed it: the same link opened twice in
+ * one browser (a reload, a second tap) lands on the same conversation rather than an error.
+ * Any other browser gets 409 `conflict`; an expired link 410 `expired`; a link nobody issued
+ * 404 `not_found`.
+ */
+export const claimPlanResponseSchema = sessionResponseSchema.extend({
+  planTitle: z.string(),
+  reopened: z.boolean(),
+})
+
+export type ClaimPlanBody = z.infer<typeof claimPlanBodySchema>
+export type ClaimPlanResponse = z.infer<typeof claimPlanResponseSchema>
