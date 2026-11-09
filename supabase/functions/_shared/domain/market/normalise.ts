@@ -91,6 +91,7 @@ const UNKNOWN_MEANINGS: Readonly<Record<string, string>> = {
   'rates.aprcPct': 'the APRC',
   'rates.minAmountEur': 'the smallest amount that can be borrowed',
   'rates.rateType': 'whether the rate is fixed or variable',
+  'rates.maxTermMonths': 'the longest term',
 }
 
 const meaningOf = (field: string): string => UNKNOWN_MEANINGS[field] ?? field
@@ -389,6 +390,9 @@ function termsFor(products: readonly MarketProduct[], unknowns: UnknownField[]):
       const stated = head.conditions.details?.['Maximum term:'] ?? null
       const months = loanTermMonths(stated, rates.maxTermMonths)
       if (months === null && stated !== null) {
+        // The refresh names it unknown too since 2026-11-09; one entry, with CCPC's words.
+        const at = unknowns.findIndex((unknown) => unknown.field === 'rates.maxTermMonths')
+        if (at >= 0) unknowns.splice(at, 1)
         unknowns.push({
           field: 'rates.maxTermMonths',
           meaning: `the longest term: CCPC gives “${stated}” with no unit`,

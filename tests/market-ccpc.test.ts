@@ -10,6 +10,7 @@ import {
   creditCard,
   currentAccount,
   loan,
+  loanTermMonths,
   lumpSum,
   merge,
   mortgage,
@@ -257,6 +258,25 @@ describe('reading CCPC items', () => {
       maxTermMonths: 120,
       purposes: ['Home improvements', 'Home energy upgrade loans (SCBI)'],
     })
+  })
+
+  it('reads a loan’s longest term in the unit CCPC states, and no unit as unknown', () => {
+    expect(loanTermMonths('60 months', 5)).toEqual({ months: 60, unknown: false })
+    expect(loanTermMonths('10 Years', 10)).toEqual({ months: 120, unknown: false })
+    expect(loanTermMonths('7 years', 7)).toEqual({ months: 84, unknown: false })
+    expect(loanTermMonths('7', 7)).toEqual({ months: null, unknown: true })
+    expect(loanTermMonths(undefined, 5)).toEqual({ months: 60, unknown: false })
+    expect(loanTermMonths(undefined, null)).toEqual({ months: null, unknown: true })
+
+    const withTerm = (term: string): CcpcItem => ({
+      ...LOAN,
+      ...f({ 'Rate type:': 'Variable', 'Maximum term:': term, 'Home improvements': '1' }),
+    })
+    const years = checked(loan(withTerm('10 Years')))
+    expect(years.rates).toMatchObject({ maxTermMonths: 120 })
+    const bare = checked(loan(withTerm('7')))
+    expect(bare.rates).toMatchObject({ maxTermMonths: null })
+    expect(bare.unknown).toContain('rates.maxTermMonths')
   })
 
   it('reads cards and current accounts with the date CCPC last edited them', () => {
