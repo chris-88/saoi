@@ -460,8 +460,8 @@ export async function buildGeneration(
       role: 'user',
       content:
         '(The customer has just opened, in this app, the plan they made with their own AI ' +
-        'assistant. The plan card is on screen directly above your reply and shows every ' +
-        'figure. Open by welcoming them and saying in a sentence what the plan is, from "The ' +
+        'assistant. The plan card is on screen with your reply and shows every figure. ' +
+        'Open by welcoming them and saying in a sentence what the plan is, from "The ' +
         'plan they brought from their own AI assistant". Then say what is next, which is the ' +
         'line that begins "Next:". Do not repeat the figures and do not work anything out. ' +
         'Ask whether they want to start there or talk any of it through. Keep it short.)',
