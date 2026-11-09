@@ -8,31 +8,67 @@ import type { MarketSnapshot } from './schema.ts'
 
 export const boiSnapshot: MarketSnapshot = {
   provider: 'boi',
-  checkedAt: '2026-10-08T00:00:00.000Z',
-  rateSheet: null,
+  checkedAt: '2026-11-09T11:04:06.773Z',
+  rateSheet: {
+    url: 'https://personalbanking.bankofireland.com/app/uploads/Deposit-Interest-Rates-Table-22nd-October-2026-A.pdf',
+    asOf: '2026-10-22',
+  },
   products: [
     {
       provider: 'boi',
       productId: 'savings.supersaver',
       category: 'savings',
       providerProductName: 'SuperSaver Account',
-      rates: { kind: 'deposit', aerPct: 3, basis: 'fixed', fixedMonths: 12, thenAerPct: 2 },
+      rates: {
+        kind: 'deposit',
+        aerPct: 3,
+        basis: 'fixed',
+        fixedMonths: 12,
+        thenAerPct: 2,
+        tierCapEur: 30000,
+        aboveTierAerPct: 0.5,
+      },
       conditions: {
         takesMonthly: true,
         takesLumpSum: false,
         minMonthlyEur: 5,
         maxMonthlyEur: 2500,
+        minAge: 16,
       },
       sourceUrl:
         'https://personalbanking.bankofireland.com/save-and-invest/savings/regular-savings-accounts/supersaver-account/features-and-benefits/',
-      checkedAt: '2026-10-08T00:00:00.000Z',
+      checkedAt: '2026-11-09T11:04:06.773Z',
+      effectiveFrom: null,
+    },
+    {
+      provider: 'boi',
+      productId: 'savings.goalsaver',
+      category: 'savings',
+      providerProductName: 'GoalSaver Account',
+      rates: {
+        kind: 'deposit',
+        aerPct: 2,
+        basis: 'variable',
+        tierCapEur: 15000,
+        aboveTierAerPct: 0.5,
+      },
+      conditions: {
+        takesMonthly: true,
+        takesLumpSum: false,
+        minMonthlyEur: 20,
+        maxMonthlyEur: 2000,
+        minAge: 18,
+      },
+      sourceUrl:
+        'https://personalbanking.bankofireland.com/save-and-invest/savings/regular-savings-accounts/goalsaver-account/features-and-benefits/',
+      checkedAt: '2026-11-09T11:04:06.773Z',
       effectiveFrom: null,
     },
     {
       provider: 'boi',
       productId: 'savings.mortgagesaver',
       category: 'savings',
-      providerProductName: 'MortgageSaver Account',
+      providerProductName: 'MortgageSaver account',
       rates: {
         kind: 'deposit',
         aerPct: 2,
@@ -47,6 +83,7 @@ export const boiSnapshot: MarketSnapshot = {
         minMonthlyEur: 200,
         maxMonthlyEur: 2500,
         maxLumpSumEur: 20000,
+        minAge: 18,
         bonus: {
           amountEur: 2000,
           lessDirt: true,
@@ -60,31 +97,48 @@ export const boiSnapshot: MarketSnapshot = {
       },
       sourceUrl:
         'https://personalbanking.bankofireland.com/save-and-invest/savings/regular-savings-accounts/mortgagesaver/',
-      checkedAt: '2026-10-08T00:00:00.000Z',
+      checkedAt: '2026-11-09T11:04:06.773Z',
       effectiveFrom: null,
     },
     {
       provider: 'boi',
       productId: 'savings.instant_access',
       category: 'deposit',
-      providerProductName: 'Instant Access Demand Account / Money Pot',
-      rates: { kind: 'deposit', aerPct: 0.1, basis: 'variable' },
-      conditions: { takesMonthly: true, takesLumpSum: true },
+      providerProductName: 'Instant Access Demand Account',
+      rates: {
+        kind: 'deposit',
+        aerPct: 0.1,
+        basis: 'variable',
+      },
+      conditions: {
+        takesMonthly: true,
+        takesLumpSum: true,
+        minLumpSumEur: 1,
+      },
       sourceUrl:
         'https://personalbanking.bankofireland.com/save-and-invest/savings/instant-access-and-notice-accounts/demand-deposit-account/features-and-benefits/',
-      checkedAt: '2026-10-08T00:00:00.000Z',
+      checkedAt: '2026-11-09T11:04:06.773Z',
       effectiveFrom: null,
     },
     {
       provider: 'boi',
       productId: 'savings.notice_31_day',
       category: 'deposit',
-      providerProductName: '31-Day Notice Account',
-      rates: { kind: 'deposit', aerPct: 1, basis: 'variable' },
-      conditions: { takesMonthly: false, takesLumpSum: true, minLumpSumEur: 5000 },
+      providerProductName: '365 31 Day Notice Account',
+      rates: {
+        kind: 'deposit',
+        aerPct: 1,
+        basis: 'variable',
+      },
+      conditions: {
+        takesMonthly: false,
+        takesLumpSum: true,
+        minLumpSumEur: 5000,
+        minAge: 18,
+      },
       sourceUrl:
         'https://personalbanking.bankofireland.com/save-and-invest/savings/online-deposits/365-31-day-notice-account/features-and-benefits/',
-      checkedAt: '2026-10-08T00:00:00.000Z',
+      checkedAt: '2026-11-09T11:04:06.773Z',
       effectiveFrom: null,
     },
     {
@@ -97,15 +151,31 @@ export const boiSnapshot: MarketSnapshot = {
         aerPct: null,
         basis: 'fixed',
         terms: [
-          { months: 6, aerPct: 1.51 },
-          { months: 12, aerPct: 2.15 },
-          { months: 18, aerPct: 2.24 },
+          {
+            months: 6,
+            aerPct: 2.01,
+            termReturnPct: 0.99,
+          },
+          {
+            months: 12,
+            aerPct: 2.4,
+            termReturnPct: 2.39,
+          },
+          {
+            months: 18,
+            aerPct: 2.48,
+            termReturnPct: 3.73,
+          },
         ],
       },
-      conditions: { takesMonthly: false, takesLumpSum: true, minLumpSumEur: 5000 },
+      conditions: {
+        takesMonthly: false,
+        takesLumpSum: true,
+        minLumpSumEur: 5000,
+      },
       sourceUrl:
         'https://personalbanking.bankofireland.com/save-and-invest/savings/fixed-term-savings-accounts/advantage-deposit-account/features-and-benefits/',
-      checkedAt: '2026-10-08T00:00:00.000Z',
+      checkedAt: '2026-11-09T11:04:06.773Z',
       effectiveFrom: null,
     },
   ],
