@@ -23,6 +23,8 @@ export default tseslint.config(
       '.claude/**',
       // Its own package with its own lint config and tsconfig.
       'services/**',
+      // Brand tooling: standalone render scripts, not part of the app.
+      'brand/**',
       'dev-dist/**',
       'coverage/**',
       'playwright-report/**',
