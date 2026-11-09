@@ -38,6 +38,13 @@ describe('translating the pack into something that can be arranged', () => {
    * numbers travelling together, ranking on the headline puts €32,000 in the worst home on the
    * page.
    */
+  it('carries the lump-sum rate from the market record', () => {
+    expect(byId('savings.mortgagesaver')?.lumpSumRate).toBeCloseTo(
+      (market('savings.mortgagesaver').rates.lumpSumAerPct ?? Number.NaN) / 100,
+      6,
+    )
+  })
+
   it('carries the tier and the rate above it', () => {
     expect(byId('savings.mortgagesaver')).toMatchObject({
       tierCap: 15000,
@@ -76,6 +83,34 @@ describe('translating the pack into something that can be arranged', () => {
       minTotal: bonus?.minTotalEur,
       withinMonths: bonus?.withinMonths,
     })
+  })
+})
+
+describe('a lump sum against the real catalogue', () => {
+  /**
+   * €10,000 needed in three months: no fixed term fits, so it is between MortgageSaver (2% on
+   * monthly saving, the lump-sum rate on this) and the notice account. Before the lump-sum rate
+   * was read, MortgageSaver won at a 2% it does not pay on lump sums.
+   */
+  it('puts it where it earns the most on the rates the site states for lump sums', () => {
+    const result = arrange(
+      {
+        lumpSum: 10000,
+        monthly: 500,
+        firstTimeBuyer: true,
+        mortgageWithThisBank: true,
+        monthsToTarget: 3,
+      },
+      demoSavingsOptions,
+    )
+    const lump = result?.allocations.find((allocation) => allocation.cadence === 'once')
+    const lumpRate = (market('savings.mortgagesaver').rates.lumpSumAerPct ?? 0) / 100
+    const noticeRate = (market('savings.notice_31_day').rates.aerPct ?? 0) / 100
+
+    expect(lump?.productId).toBe(
+      noticeRate > lumpRate ? 'savings.notice_31_day' : 'savings.mortgagesaver',
+    )
+    expect(lump?.annualRate).toBeCloseTo(Math.max(noticeRate, lumpRate), 6)
   })
 })
 

@@ -34,6 +34,7 @@ const mortgageSaver: SavingsOption = {
   maxLumpSum: 20000,
   tierCap: 15000,
   aboveTierRate: 0.005,
+  lumpSumRate: 0.005,
   bonus: {
     amount: 2000,
     requiresMortgageHere: true,
@@ -222,6 +223,58 @@ describe('the limits the products actually carry', () => {
   it('never offers a regular saver a lump sum it does not take', () => {
     const result = arrange({ ...dublin, monthly: null }, CATALOGUE)
     expect(found('savings.supersaver', result)).toBeUndefined()
+  })
+})
+
+describe('a lump sum earns the lump-sum rate', () => {
+  /**
+   * MortgageSaver's 2% is for monthly direct debits. A lump sum lodged in branch earns 0.5% on
+   * every euro, even under the €15,000 tier. Pricing it at the headline ranked MortgageSaver
+   * above a 1% notice account it loses to, and overstated what the arrangement earns.
+   */
+  const notice: SavingsOption = {
+    id: 'savings.notice_31_day',
+    name: '31-Day Notice Account',
+    annualRate: 0.01,
+    takesLumpSum: true,
+    takesMonthly: false,
+    minLumpSum: 5000,
+    watch: [],
+  }
+  const noTerm = { ...dublin, lumpSum: 10000, monthsToTarget: 3 }
+
+  it('prices a lump sum under the tier at the lump-sum rate, not the headline', () => {
+    const result = arrange(noTerm, [mortgageSaver, superSaver, instant])
+    const lump = result?.allocations.find(
+      (allocation) =>
+        allocation.productId === 'savings.mortgagesaver' && allocation.cadence === 'once',
+    )
+
+    expect(lump?.amount).toBe(10000)
+    expect(lump?.annualRate).toBe(0.005)
+    // And the monthly bonus money still earns the headline.
+    expect(
+      result?.allocations.find(
+        (allocation) =>
+          allocation.productId === 'savings.mortgagesaver' && allocation.cadence === 'monthly',
+      )?.annualRate,
+    ).toBe(0.02)
+  })
+
+  it('ranks a 1% notice account above MortgageSaver for the lump sum', () => {
+    const result = arrange(noTerm, [mortgageSaver, superSaver, instant, notice])
+    const lumpHome = result?.allocations.find((allocation) => allocation.cadence === 'once')
+
+    expect(lumpHome?.productId).toBe('savings.notice_31_day')
+  })
+
+  it('falls back to the tier where no lump-sum rate is stated', () => {
+    const { lumpSumRate: _none, ...tierOnly } = mortgageSaver
+    const result = arrange(noTerm, [tierOnly, superSaver, instant])
+
+    expect(
+      result?.allocations.find((allocation) => allocation.cadence === 'once')?.annualRate,
+    ).toBe(0.02)
   })
 })
 

@@ -62,6 +62,7 @@ function optionFor(product: KnowledgeProduct): SavingsOption | null {
     ...(rates.tierCapEur === undefined || rates.aboveTierAerPct === undefined
       ? {}
       : { tierCap: rates.tierCapEur, aboveTierRate: fraction(rates.aboveTierAerPct) }),
+    ...(rates.lumpSumAerPct === undefined ? {} : { lumpSumRate: fraction(rates.lumpSumAerPct) }),
     ...(bonus === undefined
       ? {}
       : {

@@ -67,6 +67,12 @@ export type SavingsOption = {
   /** Where the headline rate only applies up to a balance. */
   readonly tierCap?: number
   readonly aboveTierRate?: number
+  /**
+   * What a lump sum earns, where the provider pays lump sums something other than the headline.
+   * MortgageSaver pays its headline only on monthly direct debits; a lump sum lodged in branch
+   * earns this on every euro, whatever the tier.
+   */
+  readonly lumpSumRate?: number
   readonly bonus?: SavingsBonus
   readonly watch: readonly string[]
 }
@@ -371,9 +377,14 @@ function termFor(option: SavingsOption, monthsToTarget: number | null): SavingsT
  *
  * MortgageSaver pays 2% on monthly contributions up to a tier and 0.5% on everything else, so
  * a €32,000 lump sum sitting in it earns the 0.5%. Ranking on the headline is how Saoirse came to
- * offer exactly that.
+ * offer exactly that. Where the provider states a lump-sum rate, that is the answer for every
+ * euro of it: pricing a €10,000 lump sum at the 2% headline because it fits under the tier
+ * ranked MortgageSaver above a 1% notice account it actually loses to.
  */
 function effectiveLumpRate(option: SavingsOption, amount: number): number {
+  // A rate stated for lump sums is the rate for the whole lump sum; the tier is for monthly money.
+  if (option.lumpSumRate !== undefined) return option.lumpSumRate
+
   const headline = option.annualRate ?? 0
   if (option.tierCap === undefined || option.aboveTierRate === undefined) return headline
   if (amount <= option.tierCap) return headline
