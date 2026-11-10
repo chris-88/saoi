@@ -9,6 +9,7 @@ import { supabasePartnerStore } from './store/partners.ts'
 import { supabaseSessionStore } from './store/sessions.ts'
 import { supabaseUploadStore } from './store/uploads.ts'
 import { supabasePlanStore } from './store/plans.ts'
+import { supabaseCalculatorRunStore } from './store/calculator-runs.ts'
 import { supabaseMarketStore } from './store/market.ts'
 import { createAdminStores } from './store/admin/factory.ts'
 import { anthropicModels, fixtureModels } from './turn/generate.ts'
@@ -52,6 +53,7 @@ const app = createApp({
   plans: { store: planStore, appBaseUrl: env.APP_BASE_URL },
   market: {
     store: supabaseMarketStore(db),
+    runs: supabaseCalculatorRunStore(db),
     drafts: { store: planStore, appBaseUrl: env.APP_BASE_URL },
   },
   admin: createAdminStores(db, {

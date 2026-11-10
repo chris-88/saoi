@@ -5,6 +5,14 @@ import { CASE_KINDS } from '../supabase/functions/_shared/domain/case.ts'
 import { FACT_SOURCES } from '../supabase/functions/_shared/domain/facts.ts'
 import { DOCUMENT_TYPES, PRODUCTS } from '../supabase/functions/_shared/domain/journey.ts'
 import { APPLICATION_STATES } from '../supabase/functions/_shared/domain/state-machine.ts'
+import { LOCAL_AREAS } from '../supabase/functions/_shared/market/areas.ts'
+import { PROPERTY_KINDS } from '../supabase/functions/_shared/contracts/market-tools.ts'
+import {
+  GAP_MONTHS_BANDS,
+  INCOME_BANDS,
+  RENT_BANDS,
+  UNKNOWN_BAND,
+} from '../supabase/functions/_shared/domain/market/run-bands.ts'
 
 /**
  * Lives outside `_shared/domain` on purpose: it reads the filesystem, and the domain folder
@@ -140,5 +148,24 @@ describe('the schema keeps the invariants', () => {
   it('stores only a hash of a token, never the token (Invariant 8)', () => {
     expect(migrations).toMatch(/token_hash text not null unique/)
     expect(migrations).not.toMatch(/\btoken text\b/)
+  })
+
+  it('accepts exactly the calculator-run bands, counties and kinds', () => {
+    const sorted = (values: readonly string[]) => [...values].sort()
+    expect(sorted(checkConstraintLiterals('calculator_runs', 'income_band'))).toEqual(
+      sorted([...INCOME_BANDS, UNKNOWN_BAND]),
+    )
+    expect(sorted(checkConstraintLiterals('calculator_runs', 'gap_months_band'))).toEqual(
+      sorted([...GAP_MONTHS_BANDS, UNKNOWN_BAND]),
+    )
+    expect(sorted(checkConstraintLiterals('calculator_runs', 'rent_band'))).toEqual(
+      sorted(RENT_BANDS),
+    )
+    expect(sorted(checkConstraintLiterals('calculator_runs', 'county'))).toEqual(
+      sorted(LOCAL_AREAS),
+    )
+    expect(sorted(checkConstraintLiterals('calculator_runs', 'property_kind'))).toEqual(
+      sorted(PROPERTY_KINDS),
+    )
   })
 })

@@ -234,6 +234,45 @@ export type Database = {
           },
         ]
       }
+      calculator_runs: {
+        Row: {
+          county: string | null
+          first_time_buyer: boolean | null
+          gap_months_band: string
+          id: string
+          income_band: string
+          kind: string
+          property_kind: string | null
+          ran_on: string
+          rent_band: string | null
+          target_met: boolean | null
+        }
+        Insert: {
+          county?: string | null
+          first_time_buyer?: boolean | null
+          gap_months_band: string
+          id?: string
+          income_band: string
+          kind: string
+          property_kind?: string | null
+          ran_on?: string
+          rent_band?: string | null
+          target_met?: boolean | null
+        }
+        Update: {
+          county?: string | null
+          first_time_buyer?: boolean | null
+          gap_months_band?: string
+          id?: string
+          income_band?: string
+          kind?: string
+          property_kind?: string | null
+          ran_on?: string
+          rent_band?: string | null
+          target_met?: boolean | null
+        }
+        Relationships: []
+      }
       cases: {
         Row: {
           auth_level: string
