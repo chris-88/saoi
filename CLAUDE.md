@@ -89,7 +89,7 @@ saoi-api, services/api (Node, Hono; service role; holds ANTHROPIC_API_KEY, VAPID
                 config, case inspection, metrics
 
 Postgres
-  33 tables. Core: cases, participants, participant_sessions, customers
+  34 tables. Core: cases, participants, participant_sessions, customers
   (synthetic bank-held), facts, messages, events, consents, tokens.
   Applications: applications, application_requests, application_confirmations,
   documents, product_interests.
@@ -101,6 +101,7 @@ Postgres
   admin_users, push_subscriptions.
   Open banking, simulated: linked_accounts, linked_transactions, transfers.
   Feedback and collaborators: feedback, collaborators.
+  Evidence: calculator_runs (one anonymous, banded row per home-calculator run).
 ```
 
 ### A Saoirse turn (`POST /api/cases/:caseId/turns`)
@@ -273,19 +274,19 @@ line in the refresh output. Shapes in `_shared/market/schema.ts`: `rates` is a u
 The engine behind the Saoi MCP tools, in `_shared/domain/market/` (pure; contracts in
 `contracts/market-tools.ts`), served by saoi-api without sign-in:
 
-| Route                                      | MCP tool                  | What                                                    |
-| ------------------------------------------ | ------------------------- | ------------------------------------------------------- |
-| `POST /api/market/search`                  | `saoi_search_products`    | rank one category for the caller's figures              |
-| `GET /api/market/products/{id}`            | `saoi_product`            | the view, rate history, the source's words              |
-| `GET /api/market/about/{ranking,earnings}` | resources                 | how Saoi ranks; how Saoi earns                          |
-| `POST /api/calc/review-situation`          | `saoi_review_situation`   | findings with euro figures, candidate goals             |
-| `POST /api/calc/savings-projection`        | `saoi_savings_projection` | month by month, net of DIRT                             |
-| `POST /api/calc/mortgage`                  | `saoi_mortgage`           | affordability (Central Bank limits) or switch           |
-| `POST /api/calc/debt`                      | `saoi_debt`               | cost, payoff order, overpay versus save, refinance      |
-| `POST /api/calc/build-plan`                | `saoi_build_plan`         | a `MarketPlan` for `POST /api/plans`                    |
-| `POST /api/calc/first-home`                | `saoi_first_home`         | Help to Buy, CB limits with it, green rates             |
-| `POST /api/calc/home`                      | `saoi_home_calculator`    | the home calculator: limits, deposit, date; no products |
-| `POST /api/calc/money-check`               | `saoi_money_check`        | the entry: review, plan or questions, link              |
+| Route                                      | MCP tool                  | What                                               |
+| ------------------------------------------ | ------------------------- | -------------------------------------------------- |
+| `POST /api/market/search`                  | `saoi_search_products`    | rank one category for the caller's figures         |
+| `GET /api/market/products/{id}`            | `saoi_product`            | the view, rate history, the source's words         |
+| `GET /api/market/about/{ranking,earnings}` | resources                 | how Saoi ranks; how Saoi earns                     |
+| `POST /api/calc/review-situation`          | `saoi_review_situation`   | findings with euro figures, candidate goals        |
+| `POST /api/calc/savings-projection`        | `saoi_savings_projection` | month by month, net of DIRT                        |
+| `POST /api/calc/mortgage`                  | `saoi_mortgage`           | affordability (Central Bank limits) or switch      |
+| `POST /api/calc/debt`                      | `saoi_debt`               | cost, payoff order, overpay versus save, refinance |
+| `POST /api/calc/build-plan`                | `saoi_build_plan`         | a `MarketPlan` for `POST /api/plans`               |
+| `POST /api/calc/first-home`                | `saoi_first_home`         | Help to Buy, CB limits with it, green rates        |
+| `POST /api/calc/home`                      | `saoi_home_calculator`    | the home calculator: limits, deposit, date, routes |
+| `POST /api/calc/money-check`               | `saoi_money_check`        | the entry: review, plan or questions, link         |
 
 - **Normalised** (`normalise.ts`): one view per product. CCPC's one-row-per-term fixed deposits
   fold into ladders; bank-direct rows (Bank of Ireland, bunq, MoCo) replace their CCPC twins by the pairing in
@@ -385,9 +386,31 @@ The engine behind the Saoi MCP tools, in `_shared/domain/market/` (pure; contrac
   current rate not given, bonuses and cashback are shown in `notCounted`, never in the total.
 - **First home** (`first-home.ts`): the rules live in `_shared/market/first-home-rules.ts` with
   their Revenue and Central Bank pages and dates (Help to Buy cap €35,000 for applications from
-  7 October 2026, to 31 December 2029; LTI 4 and 3.5, LTV 90%, 15% allowances). The First Home
-  shared equity scheme is recorded as not confirmed and stated as nothing more. The review adds a
+  7 October 2026, to 31 December 2029; LTI 4 and 3.5, LTV 90%, 15% allowances). The review adds a
   `help_to_buy` finding and the plan's affordability adds Help to Buy for a first-time buyer.
+- **Routes to a home** (`routes.ts`, decision `2026-11-10-saoi-routes-card`): the home
+  calculator and first-home results carry `routes`, every way to a home as a fact: second-hand
+  and a new build with Help to Buy (each with a keys date from `home-arithmetic.ts`, the same
+  arithmetic as the headline), the First Home Scheme, the Local Authority Home Loan, affordable
+  purchase from a council and the Vacant Property Refurbishment Grant. Each is `potential`,
+  `needs_one_detail` (with `missing`, one plain question) or `not_applicable` (with `reason`),
+  with a line of about 90 characters, its conditions, `confirmed` and dated sources. Order: the
+  customer's own kind of property, then by status; no route is best, fastest or recommended.
+  Presentations show three route lines right after the headline, then "More routes: N". The
+  scheme rules were read 2026-11-10 (header of `first-home-rules.ts`: firsthomescheme.ie,
+  localauthorityhomeloan.ie, newstarterhomes.ie and two councils, as gov.ie and
+  citizensinformation.ie refused automated reads; the grant's build year is unconfirmed). On a
+  new build with tax paid not given, the calculator's headline leaves Help to Buy out
+  (`helpToBuyConditional`) and the new-build route carries the keys date if tax paid covers it.
+  The first-time-buyer default is named in `assumed`. Rent a month (`monthlyRentEur`) is an
+  optional input that changes no figure: first-home sets it beside the options' repayments
+  (`rentVsRepayment`), and the calculator asks it last, marked `optional`.
+- **Calculator runs** (`run-bands.ts`, `calculator_runs`): each `POST /api/calc/home` writes one
+  anonymous row after responding (fire and forget; a failure is logged, never returned): the day,
+  income band, months-to-the-keys band, target met, county (only from the fixed list in
+  `_shared/market/areas.ts`), rent band, kind of property, first-time buyer. No figures, no
+  identifiers, no IP, no free text. Service-role only; nothing reads it yet. Build-plan, money
+  check and plan previews write nothing.
 - **Rules** that hold everywhere: DIRT at 33% except DIRT-free products; interest credited
   yearly; an unknown is never zero and never assumed to hold, so a fixed term or an introductory
   rate with no stated reversion ends the figures there and says so; bonuses are never interest;
