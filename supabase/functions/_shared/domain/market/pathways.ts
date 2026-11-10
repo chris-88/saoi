@@ -1,7 +1,7 @@
 import type { HomePathways, MortgageTerms, ProductView } from '../../contracts/market-tools.ts'
 import { HELP_TO_BUY, MORTGAGE_MEASURES } from '../../market/first-home-rules.ts'
 import { BUYING_COSTS, CASHBACK, LINKED_SAVERS } from '../../market/mortgage-incentives.ts'
-import { balanceAfter, euro, mortgageFigures } from './figures.ts'
+import { euro, mortgageFigures } from './figures.ts'
 import { berMatches } from './search.ts'
 import { DIRT_RATE, round2 } from './simulate.ts'
 import type { Market } from './types.ts'
@@ -43,11 +43,32 @@ export type PathwayInput = {
 type Candidate = {
   readonly product: ProductView
   readonly terms: MortgageTerms
+  /** Interest over the first five years, plus the valuation fee where stated. */
   readonly interest: number
+  /** Cashback paid within the five years. */
   readonly cashback: number
   readonly cashbackNow: number
   readonly cashbackLater: number
+  /** Cashback paid after the five years (BoI's later 1%): listed, not ranked. */
+  readonly cashbackAfter: number
+  readonly cashbackAfterYears: number | null
   readonly monthly: number
+  /** A fix shorter than five years with no follow-on rate stated: the fixed rate carried on. */
+  readonly followOnAssumed: boolean
+  readonly thirtyYearInterest: number | null
+}
+
+/** The comparison horizon: the first five years (Chris, 2026-11-10). */
+export const HORIZON_YEARS = 5
+
+/** The valuation fee where the source states one in euro; other fees are listed, not added. */
+function valuationFeeOf(fees: Readonly<Record<string, string>>): number {
+  for (const [label, value] of Object.entries(fees)) {
+    if (!/valuation/i.test(label)) continue
+    const found = /€\s?([\d,]+(?:\.\d+)?)/.exec(value)?.[1]
+    if (found !== undefined) return Number(found.replaceAll(',', ''))
+  }
+  return 0
 }
 
 /** Help to Buy at a price, for a first-time buyer's new build: up to the cap, or the tax given. */
@@ -187,34 +208,11 @@ export function homePathways(input: PathwayInput): HomePathways | null {
   const fixedYearsOf = (terms: MortgageTerms): number | null =>
     terms.rateType === 'fixed' ? terms.fixedYears : null
 
-  // Like for like: over the term where every lender has a known follow-on rate, otherwise over
-  // the fixed period most lenders offer at this loan-to-value.
+  // Like for like (Chris, 2026-11-10): every lender over the first five years. Ranking on 30
+  // years at today's follow-on rates mostly compares standard variable rates people rarely pay,
+  // as they switch; five years covers the fixes on offer and the cashback paid up front.
   const lenders = [...new Set(eligible.map((item) => item.product.provider))]
-  const termKnown = lenders.every((lender) =>
-    eligible.some(
-      (item) =>
-        item.product.provider === lender &&
-        mortgageFigures(item.terms, loan, TERM_YEARS, ltvPct).totalRepaid !== null,
-    ),
-  )
-  let basis: HomePathways['comparedOver']
-  if (termKnown) {
-    basis = { basis: 'term', years: TERM_YEARS }
-  } else {
-    const counts = new Map<number, number>()
-    for (const item of eligible) {
-      const years = fixedYearsOf(item.terms)
-      if (years === null) continue
-      const providers = new Set(
-        eligible
-          .filter((other) => fixedYearsOf(other.terms) === years)
-          .map((other) => other.product.provider),
-      )
-      counts.set(years, providers.size)
-    }
-    const common = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0]?.[0] ?? 3
-    basis = { basis: 'fixed_period', years: common }
-  }
+  const basis: HomePathways['comparedOver'] = { basis: 'first_years', years: HORIZON_YEARS }
 
   const bonusFor = (lender: string): { eur: number; conditions: string[]; confirmed: boolean } => {
     const savers = (LINKED_SAVERS[lender] ?? []).filter(
@@ -253,33 +251,48 @@ export function homePathways(input: PathwayInput): HomePathways | null {
     } else if (offered && rule === undefined && item.terms.cashback.pct !== null) {
       now += (loan * item.terms.cashback.pct) / 100
     }
-    if (basis.basis === 'term') {
-      if (figures.totalRepaid === null) return null
-      const counted = now + (laterAfter !== null && laterAfter <= TERM_YEARS ? later : 0)
-      return {
-        product: item.product,
-        terms: item.terms,
-        interest: round2(figures.totalRepaid - loan),
-        cashback: round2(counted),
-        cashbackNow: round2(now),
-        cashbackLater: round2(counted - now),
-        monthly: figures.monthlyRepayment,
+    // Interest over the first 60 months on a 30-year term: the initial rate for the fix, then the
+    // follow-on rate for the rest of the 60 months; with no follow-on stated, the fixed rate is
+    // carried on and the figure says so.
+    const horizonMonths = HORIZON_YEARS * 12
+    const fixedMonths =
+      item.terms.rateType === 'fixed' && item.terms.fixedYears !== null
+        ? Math.min(item.terms.fixedYears * 12, horizonMonths)
+        : horizonMonths
+    const r1 = item.terms.initialRatePct / 100 / 12
+    const pay1 = figures.monthlyRepayment
+    let balance = loan
+    let interest = 0
+    for (let month = 0; month < fixedMonths; month += 1) {
+      const charge = balance * r1
+      interest += charge
+      balance = balance + charge - pay1
+    }
+    const followOnAssumed = fixedMonths < horizonMonths && item.terms.followOnRatePct === null
+    if (fixedMonths < horizonMonths) {
+      const r2 = (item.terms.followOnRatePct ?? item.terms.initialRatePct) / 100 / 12
+      const left = TERM_YEARS * 12 - fixedMonths
+      const pay2 = r2 === 0 ? balance / left : (balance * r2) / (1 - Math.pow(1 + r2, -left))
+      for (let month = fixedMonths; month < horizonMonths; month += 1) {
+        const charge = balance * r2
+        interest += charge
+        balance = balance + charge - pay2
       }
     }
-    if (fixedYearsOf(item.terms) !== basis.years) return null
-    const months = basis.years * 12
-    const r = item.terms.initialRatePct / 100 / 12
-    const paid = figures.monthlyRepayment * months
-    const owed = balanceAfter(loan, r, figures.monthlyRepayment, months)
-    const counted = now + (laterAfter !== null && laterAfter <= basis.years ? later : 0)
+    const within = laterAfter !== null && laterAfter < HORIZON_YEARS ? later : 0
+    const fees = valuationFeeOf(item.terms.fees)
     return {
       product: item.product,
       terms: item.terms,
-      interest: round2(paid - (loan - owed)),
-      cashback: round2(counted),
+      interest: round2(interest + fees),
+      cashback: round2(now + within),
       cashbackNow: round2(now),
-      cashbackLater: round2(counted - now),
-      monthly: figures.monthlyRepayment,
+      cashbackLater: round2(within),
+      cashbackAfter: round2(later - within),
+      cashbackAfterYears: laterAfter,
+      monthly: pay1,
+      followOnAssumed,
+      thirtyYearInterest: figures.totalRepaid === null ? null : round2(figures.totalRepaid - loan),
     }
   }
 
@@ -300,19 +313,14 @@ export function homePathways(input: PathwayInput): HomePathways | null {
     const name =
       eligible.find((item) => item.product.provider === lender)?.product.providerName ?? lender
     if (top === undefined) {
-      leftOut.push(
-        `${name}: no ${basis.basis === 'term' ? 'rate with a stated follow-on rate' : `${String(basis.years)}-year fixed rate`} at ${String(ltvPct)}% loan-to-value.`,
-      )
+      leftOut.push(`${name}: no first-time-buyer rate at ${String(ltvPct)}% loan-to-value.`)
       return []
     }
     return [{ lender, name, top, bonus, options }]
   })
   if (best.length === 0) return null
 
-  const period =
-    basis.basis === 'term'
-      ? `${String(TERM_YEARS)} years`
-      : `the ${String(basis.years)}-year fixed period`
+  const period = `the first ${String(HORIZON_YEARS)} years`
   const ranked = best
     .map(({ lender, name, top, bonus, options }) => {
       const net = round2(top.interest - top.cashback - bonus.eur)
@@ -333,6 +341,11 @@ export function homePathways(input: PathwayInput): HomePathways | null {
         ...(top.cashbackNow > 0 ? [`${euro(top.cashbackNow)} cashback at drawdown`] : []),
         ...(top.cashbackLater > 0
           ? [`${euro(top.cashbackLater)} more after ${String(rule?.laterAfterYears ?? 5)} years`]
+          : []),
+        ...(top.cashbackAfter > 0
+          ? [
+              `+${euro(top.cashbackAfter)} after ${String(top.cashbackAfterYears ?? HORIZON_YEARS)} years if repayments are on time (not counted in the ranking)`,
+            ]
           : []),
       ]
       const greenAlternative = input.newBuild
@@ -361,7 +374,19 @@ export function homePathways(input: PathwayInput): HomePathways | null {
         interestEur: top.interest,
         cashbackEur: top.cashback,
         bonusEur: bonus.eur,
+        cashbackAfterEur: top.cashbackAfter,
         netCostEur: net,
+        thirtyYearNetEur:
+          top.thirtyYearInterest === null
+            ? null
+            : round2(
+                top.thirtyYearInterest -
+                  top.cashbackNow -
+                  top.cashbackLater -
+                  top.cashbackAfter -
+                  bonus.eur,
+              ),
+        followOnAssumed: top.followOnAssumed,
         vsCheapestEur: 0,
         drivers: drivers.length === 0 ? 'the rate alone' : drivers.join(', '),
         conditions: [
@@ -373,6 +398,11 @@ export function homePathways(input: PathwayInput): HomePathways | null {
               ? [`${top.product.name} is for loans of ${euro(top.terms.minLoanEur)} or more.`]
               : []),
           ...(rule === undefined || top.cashback === 0 ? [] : [rule.conditions]),
+          ...(top.followOnAssumed
+            ? [
+                `${top.product.name}: no follow-on rate is stated, so the fixed rate is carried on to the end of the first ${String(HORIZON_YEARS)} years (unconfirmed).`,
+              ]
+            : []),
           ...bonus.conditions,
           ...(bonus.eur > 0
             ? [
@@ -380,7 +410,11 @@ export function homePathways(input: PathwayInput): HomePathways | null {
               ]
             : []),
         ],
-        confirmed: cashbackConfirmed && (bonus.eur === 0 || bonus.confirmed) && !minLoanUnknown,
+        confirmed:
+          cashbackConfirmed &&
+          (bonus.eur === 0 || bonus.confirmed) &&
+          !minLoanUnknown &&
+          !top.followOnAssumed,
         lowestRatePct,
         considered: options.slice(0, 3).map((option) => ({
           productId: option.product.id,
@@ -415,7 +449,7 @@ export function homePathways(input: PathwayInput): HomePathways | null {
     const costLine =
       index === 0
         ? `the lowest cost over ${period}`
-        : `about ${euro(Math.round(vs))} more over ${period} than the lowest`
+        : `about ${euro(Math.round(vs))} more over ${period} than the cheapest`
     const bundle = bundleFor(pathway.lender, pathway, input)
     const held = bundle.products.map((product) => `${product.name} (${product.detail})`).join(', ')
     return {
@@ -436,7 +470,7 @@ export function homePathways(input: PathwayInput): HomePathways | null {
       ? `a new build, taken as BER A (green rates apply), with Help to Buy of ${euro(helpToBuy)}${input.taxPaid === undefined ? ' (up to; limited by Income Tax and DIRT paid, not given)' : ''}`
       : 'not a new build, so no Help to Buy and standard rates (a BER C where a lender prices by BER)',
     `stamp duty of ${euro(stampDuty)} (1%) and ${euro(BUYING_COSTS.legalAndSurveyEur)} for legal fees and a survey (an estimate)`,
-    `costs compared over ${period} for every lender${basis.basis === 'fixed_period' ? ', as not every lender states a follow-on rate' : ', at each lender’s stated follow-on rate after the fixed period'}`,
+    `costs compared over ${period} for every lender: interest on a ${String(TERM_YEARS)}-year term plus the valuation fee, less cashback paid within ${String(HORIZON_YEARS)} years and any savings bonus; a shorter fix moves to its stated follow-on rate for the rest of the ${String(HORIZON_YEARS)} years`,
   ].join('; ')
 
   return {

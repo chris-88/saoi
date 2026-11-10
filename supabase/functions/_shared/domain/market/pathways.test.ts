@@ -192,15 +192,27 @@ describe('the Bank of Ireland route: first-time buyer, €350,000, €35,000 sav
       homePrice: 250_000,
     }).home?.pathways.find((pathway) => pathway.lender === 'boi')
     expect(smaller?.mortgage.name).toBe('5 Year Fixed BER C')
-    expect(smaller?.cashbackEur).toBe(6_750)
+    // Over the first 5 years: the 2% at drawdown counts; the 1% at year 5 is listed, not ranked.
+    expect(smaller?.cashbackEur).toBe(4_500)
+    expect(smaller?.cashbackAfterEur).toBe(2_250)
+    expect(smaller?.drivers).toMatch(/\+€2,250 after 5 years if repayments are on time/)
     expect(LINKED_SAVERS['boi']?.[0]?.paid).toBe('after_drawdown')
   })
 
-  it('ranks by cost over the same 30 years, the cheapest at 0, and marks CCPC-only incentives', () => {
+  it('ranks by cost over the first 5 years, the cheapest at 0, and marks CCPC-only incentives', () => {
     const costs = home?.pathways.map((pathway) => pathway.netCostEur) ?? []
     expect([...costs].sort((a, b) => a - b)).toEqual(costs)
     expect(home?.pathways[0]?.vsCheapestEur).toBe(0)
-    expect(home?.comparedOver).toEqual({ basis: 'term', years: 30 })
+    expect(home?.comparedOver).toEqual({ basis: 'first_years', years: 5 })
+    expect(home?.pathways[1]?.line).toMatch(
+      /about €[\d,]+ more over the first 5 years than the cheapest/,
+    )
+    for (const pathway of home?.pathways ?? []) {
+      // The 30-year figure stays as secondary detail, where follow-on rates are known.
+      if (pathway.mortgage.followOnRatePct !== null || pathway.mortgage.fixedYears === 30) {
+        expect(pathway.thirtyYearNetEur).not.toBeNull()
+      }
+    }
     const avant = home?.pathways.find((pathway) => pathway.lender === 'avant_money')
     expect(avant?.cashbackEur).toBe(3_150)
     expect(avant?.confirmed).toBe(false)
@@ -457,5 +469,53 @@ describe('high-value rates and the per-lender pick (after Chris spotted BoI at 3
         }
       }
     }
+  })
+})
+
+describe('the first five years', () => {
+  const avantOnly = (fixedYears: number, followOnRatePct: number | null) =>
+    normaliseMarket([
+      ...MARKET_FIXTURE.filter((record) => record.product.category !== 'mortgage'),
+      mortgage(
+        'aib',
+        'mortgage.f1',
+        `${String(fixedYears)} year fixed`,
+        { rateType: 'fixed', fixedYears, initialRatePct: 3.5, followOnRatePct },
+        { field: 'No', text: 'N/A' },
+      ),
+    ])
+  const run = (m: ReturnType<typeof normaliseMarket>) =>
+    buildPlan(
+      m,
+      buildPlanRequestSchema.parse({
+        situation: {
+          monthlySaving: 800,
+          savings: [{ label: 'Savings', balance: 35_000, aerPct: 1 }],
+          firstTimeBuyer: true,
+          income: { annualGross: 90_000 },
+        },
+        goals: [firstHome],
+        homePrice: 350_000,
+      }),
+      AS_OF,
+      CREATED,
+    ).home?.pathways[0]
+
+  it('moves a shorter fix to its follow-on rate for the rest of the five years', () => {
+    const twoYear = run(avantOnly(2, 4.5))
+    const fiveYear = run(avantOnly(5, 4.5))
+    // Same 3.5% start: two years then 4.5% costs more than five years at 3.5%.
+    expect(twoYear?.interestEur).toBeGreaterThan(fiveYear?.interestEur ?? Infinity)
+    expect(twoYear?.followOnAssumed).toBe(false)
+  })
+
+  it('carries the fixed rate on where no follow-on is stated, and says it is unconfirmed', () => {
+    const unknown = run(avantOnly(2, null))
+    expect(unknown?.followOnAssumed).toBe(true)
+    expect(unknown?.confirmed).toBe(false)
+    expect(unknown?.conditions.join(' ')).toMatch(
+      /no follow-on rate is stated, so the fixed rate is carried on/,
+    )
+    expect(unknown?.thirtyYearNetEur).toBeNull()
   })
 })
