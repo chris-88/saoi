@@ -248,7 +248,7 @@ function workOutAlternative(
   const differenceEur = round2(position.total - main.position.total)
   const sameDate = position.at === main.position.at
   const owed = position.owed > 0 ? `, less ${euro(position.owed)} still owed` : ''
-  const line = `${alternative.name} (${changes.length === 0 ? 'as given' : changes.join(', ')}): ${euro(position.total)} at ${monthName(position.at)}, everything held${owed}${sameDate ? `; ${differenceEur >= 0 ? `${euro(differenceEur)} more` : `${euro(-differenceEur)} less`} than the plan above` : ''}.`
+  const line = `Option “${alternative.name}” (${changes.length === 0 ? 'as given' : changes.join(', ')}): ${euro(position.total)} at ${monthName(position.at)}, everything held${owed}${sameDate ? `; ${differenceEur >= 0 ? `${euro(differenceEur)} more` : `${euro(-differenceEur)} less`} than the plan above` : ''}.`
   return {
     name: alternative.name,
     changes,
@@ -798,12 +798,15 @@ function buildMain(
       price === null
         ? ''
         : ` on ${euro(price)}${request.homePrice === undefined ? ' (the most the limits allow with it)' : ''}`
+    const source = HELP_TO_BUY.sources[1]
+    const cite = `Source: Revenue, ${source?.url ?? 'revenue.ie'}, checked ${source?.checkedOn ?? ''}; saoi_first_home works it out for a price.`
+    const fact = `the lesser of 10% of a new build’s price (up to ${euro(HELP_TO_BUY.maxPriceEur)}), ${euro(HELP_TO_BUY.capEur)} (applications from ${HELP_TO_BUY.capFrom}) and the Income Tax and DIRT paid over the last four years, for homes bought or built by ${HELP_TO_BUY.endsOn}`
     const note =
       htb.status === 'not_available'
-        ? `Help to Buy: not available here. ${htb.reasons.join(' ')}`
+        ? `Help to Buy: not available here. ${htb.reasons.join(' ')} ${cite}`
         : htb.status === 'available'
-          ? `Help to Buy: ${euro(htb.amountEur ?? 0)}${where}, counted towards the deposit (Revenue).`
-          : `Help to Buy: depends, up to ${euro(htb.upToEur)}${where} for a new build or self-build. ${htb.reasons.slice(1).join(' ')} (Revenue, cap ${euro(HELP_TO_BUY.capEur)} from ${HELP_TO_BUY.capFrom}, to ${HELP_TO_BUY.endsOn}.)`
+          ? `Help to Buy: ${euro(htb.amountEur ?? 0)}${where}, counted towards the deposit: ${fact}. ${cite}`
+          : `Help to Buy: depends, up to ${euro(htb.upToEur)}${where}: ${fact}. ${htb.reasons.slice(1).join(' ')} ${cite}`
     helpToBuy = {
       status: htb.status,
       amountEur: htb.amountEur,
@@ -824,6 +827,10 @@ function buildMain(
     reachedOn: current.reachedOn,
     targetAmount: main?.targetAmount,
     scenarios: chosen.scenarios.map((scenario) => ({
+      ...comparable(
+        modelled.debts.find((debt) => debt.id === scenario.debtId),
+        horizon,
+      ),
       label: situation.debts.find((debt) => debt.id === scenario.debtId)?.label ?? scenario.debtId,
       cleared: scenario.cleared.netPosition,
       kept: scenario.kept.netPosition,
@@ -1298,6 +1305,20 @@ function planSituation(situation: Situation): MarketPlan['situation'] {
  * One net figure per scenario (savings less what is still owed), never a gross pot alone.
  * No instructions: the customer decides.
  */
+/** What makes clearing and keeping comparable: the repayment freed, and the interest if kept. */
+function comparable(
+  debt: Debt | undefined,
+  horizon: number,
+): { repayment: number | null; interestIfKept: number | null } {
+  if (debt === undefined) return { repayment: null, interestIfKept: null }
+  const repayment = repaymentOf(debt)
+  const after = debtAfter(debt, horizon)
+  return {
+    repayment: repayment === null ? null : round2(repayment),
+    interestIfKept: after === null ? null : round2(after.interest),
+  }
+}
+
 function planPresentation(input: {
   assumed: readonly string[]
   moneyFound: BuildPlanResponse['moneyFound']
@@ -1312,6 +1333,8 @@ function planPresentation(input: {
     kept: number
     keptOwed: number
     chosen: 'cleared' | 'kept'
+    repayment: number | null
+    interestIfKept: number | null
   }[]
   questions: readonly string[]
   liquidity: BuildPlanResponse['liquidity']
@@ -1324,7 +1347,7 @@ function planPresentation(input: {
   for (const scenario of input.scenarios) {
     const better = scenario.cleared >= scenario.kept ? 'cleared' : 'kept'
     out.push(
-      `${scenario.label}, cleared or kept (both worked out in this call, each everything held less what is still owed at ${input.when}): cleared from savings now, ${euro(scenario.cleared)}; kept, ${euro(scenario.kept)} (${scenario.keptOwed > 0 ? `${euro(scenario.keptOwed)} still owed then` : 'repaid by then'}). ${better === 'cleared' ? 'Clearing it' : 'Keeping it'} leaves ${euro(round2(Math.abs(scenario.cleared - scenario.kept)))} more. This plan has it ${scenario.chosen}.`,
+      `${scenario.label}, cleared or kept (both worked out in this call, each everything held less what is still owed at ${input.when}): cleared from savings now, ${euro(scenario.cleared)}; kept, ${euro(scenario.kept)} (${scenario.keptOwed > 0 ? `${euro(scenario.keptOwed)} still owed then` : 'repaid by then'}). ${better === 'cleared' ? 'Clearing it' : 'Keeping it'} leaves ${euro(round2(Math.abs(scenario.cleared - scenario.kept)))} more, with everything counted: ${scenario.interestIfKept === null ? 'the interest kept' : `about ${euro(scenario.interestIfKept)} of interest paid if it is kept`}, the interest the same savings would earn if it is cleared, and ${scenario.repayment === null ? 'its repayment' : `its ${euro(scenario.repayment)} a month repayment`} saved once it is cleared. This plan has it ${scenario.chosen}.`,
     )
   }
   if (input.mainLabel !== null && input.targetAmount !== undefined) {

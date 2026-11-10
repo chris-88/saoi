@@ -189,9 +189,30 @@ describe('public comparison routes', () => {
     expect(JSON.stringify(drafts.held)).not.toContain(token)
     expect(drafts.sweeps.count).toBe(1)
     expect(body.presentation.join('\n')).toContain(
-      `Save this plan to the Saoi app: ${body.saveLink?.url ?? ''}`,
+      `This plan can be opened in the Saoi app: ${body.saveLink?.url ?? ''}`,
     )
     expect(body.presentation.at(-1)).toMatch(/the customer decides/)
+  })
+
+  it('hold one draft and give one link, however many alternatives are asked for', async () => {
+    const drafts = fakeDrafts()
+    const { app } = appWith({ drafts })
+    const body = buildPlanResponseSchema.parse(
+      await (
+        await post(app, '/api/calc/build-plan', {
+          situation,
+          goals,
+          alternatives: [
+            { name: 'More a month', monthlySaving: 1_000 },
+            { name: 'Accessible', keepAccessible: true },
+          ],
+        })
+      ).json(),
+    )
+    expect(body.alternatives).toHaveLength(2)
+    expect(drafts.held).toHaveLength(1)
+    expect(body.presentation.filter((line) => line.includes('/#/plan/'))).toHaveLength(1)
+    expect(JSON.stringify(body.alternatives)).not.toContain('/#/plan/')
   })
 
   it('return the plan without a link when the draft cannot be held', async () => {
@@ -227,7 +248,7 @@ describe('public comparison routes', () => {
     )
     expect(full.plan?.saveLink?.url).toMatch(/#\/plan\//)
     expect(full.presentation.join('\n')).toContain(
-      `Save this plan to the Saoi app: ${full.plan?.saveLink?.url ?? ''}`,
+      `This plan can be opened in the Saoi app: ${full.plan?.saveLink?.url ?? ''}`,
     )
     expect(drafts.held).toHaveLength(1)
   })
