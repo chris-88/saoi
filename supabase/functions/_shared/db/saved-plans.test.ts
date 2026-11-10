@@ -83,15 +83,49 @@ describe('the plan card', () => {
 })
 
 describe('what the model is told', () => {
-  it('lists the steps in the plan’s order and names the first as next', () => {
+  it('lists the steps in the plan’s order and offers a choice, never a pick, as next', () => {
     const lines = savedPlanDigestLines({ id: PLAN_ID, plan: plan() })
     expect(lines[0]).toBe('Title: House deposit by November 2028')
     expect(lines).toContain(
       'Step 1: Monthly saving, SuperSaver Account with Bank of Ireland, €500 a month. Check first: Paid by direct debit from a Bank of Ireland current account',
     )
-    expect(lines.at(-1)).toMatch(
-      /^Next: monthly saving with Bank of Ireland \(SuperSaver Account\)/,
-    )
+    expect(lines.at(-1)).toMatch(/^Next: offer them a choice, never a pick: /)
+    expect(lines.at(-1)).not.toMatch(/SuperSaver/)
+  })
+
+  it('carries a home comparison: the count, the order and the first three options', () => {
+    const base = plan()
+    const option = {
+      lender: 'Bank of Ireland',
+      kind: '4-year fixed',
+      productName: '4 Year Fixed HVM BER C',
+      ratePct: 3.2,
+      monthlyEur: 1362.27,
+      fiveYearCostEur: 49338.1,
+      keysOn: '2028-07',
+      confirmed: true,
+    }
+    const claimed = {
+      id: PLAN_ID,
+      plan: {
+        ...base,
+        comparison: {
+          kind: 'home' as const,
+          headline: 'At these figures, the deposit and buying costs are in place around July 2028.',
+          priceEur: 350_000,
+          sortBy: 'five_year_cost' as const,
+          sortedBy: '4 options that fit, sorted by cost over the first 5 years, lowest first.',
+          filters: ['Showing Bank of Ireland options, as you asked.'],
+          options: [option, option, option, option],
+        },
+      },
+    }
+    const lines = savedPlanDigestLines(claimed)
+    expect(lines.join('\n')).toMatch(/Home comparison: 4 mortgage options for a €350,000 home/)
+    expect(lines.filter((line) => line.startsWith('Option '))).toHaveLength(3)
+    const card = savedPlanCard(claimed)
+    expect(card.type === 'saved_plan' && card.comparison?.total).toBe(4)
+    expect(card.type === 'saved_plan' && card.comparison?.options[0]?.monthly).toBe('€1,362/mo')
   })
 
   it('falls back to the first debt step when there are no products', () => {
@@ -100,7 +134,7 @@ describe('what the model is told', () => {
       id: PLAN_ID,
       plan: { ...base, combination: { products: [] } },
     })
-    expect(lines.at(-1)).toMatch(/^Next: Car loan: part paid from the lump sum in this plan\./)
+    expect(lines.at(-1)).toMatch(/The debt step in it: Car loan: part paid from the lump sum/)
   })
 })
 

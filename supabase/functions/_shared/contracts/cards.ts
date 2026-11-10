@@ -548,6 +548,32 @@ export const savedPlanCardSchema = z.object({
   assumptions: z.array(z.string()).max(20),
   /** Attribution owed to a source the figures came from, once each. */
   attributions: z.array(z.string()).max(4),
+  /**
+   * For a home: the comparison they saw in their AI, the first three options in the order they
+   * chose, and how many there were. Optional: plans saved before 2026-11-10, and plans with no
+   * home goal, have none.
+   */
+  comparison: z
+    .object({
+      headline: z.string(),
+      sortedBy: z.string(),
+      filters: z.array(z.string()).max(6),
+      total: z.number().int().nonnegative(),
+      options: z
+        .array(
+          z.object({
+            lender: z.string(),
+            kind: z.string(),
+            rate: z.string(),
+            monthly: z.string(),
+            fiveYear: z.string(),
+            keys: z.string().nullable(),
+            confirmed: z.boolean(),
+          }),
+        )
+        .max(3),
+    })
+    .optional(),
   createdAt: z.string(),
   dataCheckedAt: z.string(),
 })

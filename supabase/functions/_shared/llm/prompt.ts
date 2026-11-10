@@ -837,9 +837,10 @@ function digestSection(digest: CaseDigest): string {
   const brought = digest.broughtPlans ?? []
   for (const plan of brought) {
     lines.push(
-      '## The plan they brought from their own AI assistant',
+      '## The comparison they brought from their own AI assistant',
       "They made this with their AI assistant, using Saoi's market data, and opened it here.",
-      'It is information, not advice: it ranks products by the basis it states. The plan card',
+      'It is information, not advice: it ranks products by the basis it states and picks none',
+      'for them; never pick one for them either, or say which to take. The card',
       'shows every figure, so do not recite them and do not redo any arithmetic. Saoi cannot',
       'open any of these products for them; they apply with each provider directly.',
       ...plan.lines.map((line) => `- ${line}`),

@@ -178,8 +178,33 @@ export function savedPlanCard(claimed: ClaimedPlan): Card {
           .filter((line): line is string => line !== undefined),
       ),
     ].slice(0, 4),
+    ...(plan.comparison === undefined ? {} : { comparison: comparisonCard(plan.comparison) }),
     createdAt: plan.createdAt,
     dataCheckedAt: plan.dataCheckedAt,
+  }
+}
+
+const euroWhole = (value: number): string =>
+  `€${Math.round(value).toLocaleString('en-IE', { maximumFractionDigits: 0 })}`
+
+/** The comparison's first three options, as the card and the app's welcome show them. */
+export function comparisonCard(
+  comparison: NonNullable<MarketPlan['comparison']>,
+): NonNullable<Extract<Card, { type: typeof SAVED_PLAN_CARD }>['comparison']> {
+  return {
+    headline: comparison.headline,
+    sortedBy: comparison.sortedBy,
+    filters: [...comparison.filters],
+    total: comparison.options.length,
+    options: comparison.options.slice(0, 3).map((option) => ({
+      lender: option.lender,
+      kind: option.kind,
+      rate: `${String(Math.round(option.ratePct * 100) / 100)}%`,
+      monthly: `${euroWhole(option.monthlyEur)}/mo`,
+      fiveYear: `${euroWhole(option.fiveYearCostEur)} over 5 years`,
+      keys: option.keysOn === null ? null : monthOf(option.keysOn),
+      confirmed: option.confirmed,
+    })),
   }
 }
 
@@ -213,13 +238,19 @@ export function savedPlanDigestLines(claimed: ClaimedPlan): string[] {
     }),
     ...debtLines(plan).map((line) => `Debt: ${line}`),
     `Ranked by: ${plan.ranking.basis}`,
-    `Next: ${
-      first !== undefined
-        ? `${ROLE_LABELS[first.role].toLowerCase()} with ${first.providerName} (${first.productName}). Saoi cannot open it for them; they apply with ${first.providerName} directly.`
-        : firstDebt !== undefined
-          ? firstDebt
-          : 'ask which part of the plan they want to start with.'
-    }`,
+    ...(plan.comparison === undefined
+      ? []
+      : [
+          `Home comparison: ${String(plan.comparison.options.length)} mortgage options for a ${euroWhole(plan.comparison.priceEur)} home, ${plan.comparison.sortedBy}${plan.comparison.filters.length === 0 ? '' : ` ${plan.comparison.filters.join(' ')}`}`,
+          ...plan.comparison.options
+            .slice(0, 3)
+            .map(
+              (option, index) =>
+                `Option ${String(index + 1)} in their order: ${option.lender}, ${option.kind} at ${String(option.ratePct)}%, ${euroWhole(option.monthlyEur)} a month, ${euroWhole(option.fiveYearCostEur)} over 5 years${option.confirmed ? '' : ' (incentives not confirmed on the lender’s site)'}`,
+            ),
+        ]),
+    // A comparison, not a plan to follow: the next step is theirs to choose (2026-11-10).
+    `Next: offer them a choice, never a pick: talk through the options, change a figure or a filter, or how the figures were worked out.${first === undefined && firstDebt !== undefined ? ` The debt step in it: ${firstDebt}` : ''} Saoi cannot open any product for them; they apply with a provider directly.`,
   ]
 }
 

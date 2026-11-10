@@ -421,7 +421,8 @@ amounts, projections and unknowns, the payoff order, the ranking basis, assumpti
   a host reads first: money found, the position with its parts, one net figure per scenario (everything held less what is still owed,
   never a gross pot alone), the split, the liquidity call, Help to Buy for a home, the questions, the save link,
   and that the customer decides. No imperatives.
-- **Claiming** (`#/plan/<token>` in saoi-web) puts it in the browser's current conversation when
+- **The link** is `https://app.saoi.ie/?plan=<token>` (2026-11-10: opened from claude.ai's card on a phone, a `#/plan/<token>` fragment never reached the app; the app moves `?plan=` into its route and strips it). `POST /api/plans/preview` (public, by token, not spent) gives the app's welcome the title, the figures in one line and a home comparison's first three options (`plan.comparison`, every option the customer saw, carried in the `MarketPlan`), before the data notice and the claim.
+- **Claiming** (`#/plan/<token>` in saoi-web, after the welcome and the data notice) puts it in the browser's current conversation when
   that is empty, otherwise a new one (`source: 'plan'`, under the audience cap, refused before
   the token is spent). It records the situation's figures that map cleanly onto the fact
   catalogue (`factsFromPlan` in `_shared/db/saved-plans.ts`: take-home pay, rent, outgoings,

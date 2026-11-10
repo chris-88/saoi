@@ -459,12 +459,14 @@ export async function buildGeneration(
     history.push({
       role: 'user',
       content:
-        '(The customer has just opened, in this app, the plan they made with their own AI ' +
-        'assistant. The plan card is on screen with your reply and shows every figure. ' +
-        'Open by welcoming them and saying in a sentence what the plan is, from "The ' +
-        'plan they brought from their own AI assistant". Then say what is next, which is the ' +
-        'line that begins "Next:". Do not repeat the figures and do not work anything out. ' +
-        'Ask whether they want to start there or talk any of it through. Keep it short.)',
+        '(The customer has just opened, in this app, the comparison they saved in their own AI ' +
+        'assistant, after reading what Saoi keeps. The card is on screen with your reply and ' +
+        'shows every figure. Open with "I\u2019ve got your comparison:" and say in one sentence ' +
+        'what it compares, from "The comparison they brought from their own AI assistant". Then ' +
+        'offer the next step as their choice, from the line that begins "Next:". It is a ' +
+        'comparison, not advice: never pick a product, lender or option for them, never say ' +
+        'which is best or what to do first, and give no instruction. Do not repeat the figures ' +
+        'and do not work anything out. Keep it short.)',
     })
   } else if (turn.trigger === 'return') {
     // §36 — the customer did not ask anything; they came back. Lead with what changed.
