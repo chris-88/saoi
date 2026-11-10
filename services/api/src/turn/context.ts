@@ -471,7 +471,8 @@ export async function buildGeneration(
         'assistant. In the app you have already said hello and shown what Saoi keeps, and they ' +
         'accepted, so do not greet them, introduce yourself or mention the notice again. The ' +
         'card is on screen above your reply with their figures and the first three options. ' +
-        'Say one short line, such as "Here it is. Where would you like to start?", and stop: ' +
+        'Say exactly "Here it is. Where would you like to start?" and nothing else: no ' +
+        'judgement of the comparison ("solid", "good", "strong"), no summary. ' +
         'quick replies under your line offer talking the options through, changing a figure, ' +
         'or how it was worked out. It is a comparison, not advice: never pick a product, lender ' +
         'or option for them. No figures in this line.)',
