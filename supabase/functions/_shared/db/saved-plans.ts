@@ -281,7 +281,7 @@ export function savedPlanDigestLines(claimed: ClaimedPlan): string[] {
           'The card shows the first three; the rest come out when they ask.',
           ...plan.comparison.options.map(
             (option, index) =>
-              `Option ${String(index + 1)} in their order: ${option.lender}, ${option.kind} (${option.productName}) at ${String(option.ratePct)}%, ${euroWhole(option.monthlyEur)} a month, ${euroWhole(option.fiveYearCostEur)} over 5 years, keys ${option.keysOn === null ? 'not reached' : monthOf(option.keysOn)}${option.confirmed ? '' : ' (incentives not confirmed on the lender’s site)'}`,
+              `Option ${String(index + 1)} in their order: ${option.lender}, ${option.kind} (${option.productName}) at ${String(option.ratePct)}%, ${euroWhole(option.monthlyEur)} a month, ${euroWhole(option.fiveYearCostEur)} over 5 years, keys ${option.keysOn === null ? 'not reached' : monthOf(option.keysOn)}${option.confirmed ? '' : ' (incentives not confirmed on the lender’s site)'}${option.conditions.length === 0 ? '' : `. Conditions: ${option.conditions.join(' ')}`}`,
           ),
         ]),
     // A comparison, not a plan to follow: the next step is theirs to choose (2026-11-10).
