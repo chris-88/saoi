@@ -167,12 +167,16 @@ export function review(market: Market, request: ReviewRequest, asOf: AsOf): Revi
     const home =
       income === undefined
         ? null
-        : firstHome(market, {
-            annualGrossIncome: income,
-            deposit: total,
-            propertyKind: 'new_build',
-            limit: 1,
-          })
+        : firstHome(
+            market,
+            {
+              annualGrossIncome: income,
+              deposit: total,
+              propertyKind: 'new_build',
+              limit: 1,
+            },
+            asOf,
+          )
     const withHtb = home?.lending.maxPriceWithHelpToBuy ?? null
     findings.push({
       kind: 'help_to_buy',

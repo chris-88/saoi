@@ -844,16 +844,20 @@ function buildMain(
     const note = `A ${euro(deposit)} deposit${owedAtHorizon > 0 ? ` (with ${euro(owedAtHorizon)} still owed on debts)` : ''} and ${euro(situation.income.annualGross)} gross income support a price up to ${euro(result.maxPrice)} under the Central Bank limits (the ${result.bindingLimit} limit binds)${situation.firstTimeBuyer === undefined ? ', as a first-time buyer' : ''}.`
     let helpToBuy: NonNullable<BuildPlanResponse['affordability']>['helpToBuy'] = null
     if (situation.firstTimeBuyer !== false && request.propertyKind !== 'second_hand') {
-      const home = firstHome(market, {
-        annualGrossIncome: situation.income.annualGross,
-        deposit,
-        propertyKind: request.propertyKind ?? 'new_build',
-        firstTimeBuyer: true,
-        ...(request.taxPaidLastFourYearsEur === undefined
-          ? {}
-          : { taxPaidLastFourYearsEur: request.taxPaidLastFourYearsEur }),
-        limit: 1,
-      })
+      const home = firstHome(
+        market,
+        {
+          annualGrossIncome: situation.income.annualGross,
+          deposit,
+          propertyKind: request.propertyKind ?? 'new_build',
+          firstTimeBuyer: true,
+          ...(request.taxPaidLastFourYearsEur === undefined
+            ? {}
+            : { taxPaidLastFourYearsEur: request.taxPaidLastFourYearsEur }),
+          limit: 1,
+        },
+        asOf,
+      )
       const withHtb = home.lending.maxPriceWithHelpToBuy
       const htbAt = home.helpToBuy.upToEur
       const htbNote =

@@ -8,8 +8,9 @@ import {
 import { MORTGAGE_WARNINGS, RESULT_STATEMENT } from '../../market/disclosures.ts'
 import { euro } from './figures.ts'
 import { affordability } from './mortgage.ts'
+import { homeRoutes, routeLines } from './routes.ts'
 import { round2 } from './simulate.ts'
-import type { Market } from './types.ts'
+import type { AsOf, Market } from './types.ts'
 
 /**
  * A first home: Help to Buy, the Central Bank's limits with Help to Buy counted towards the
@@ -104,7 +105,11 @@ export function helpToBuyFor(input: {
   }
 }
 
-export function firstHome(market: Market, request: FirstHomeRequest): FirstHomeResponse {
+export function firstHome(
+  market: Market,
+  request: FirstHomeRequest,
+  asOf: AsOf,
+): FirstHomeResponse {
   const firstTimeBuyer = request.firstTimeBuyer ?? true
   const measures = firstTimeBuyer
     ? MORTGAGE_MEASURES.first_time_buyer
@@ -200,6 +205,39 @@ export function firstHome(market: Market, request: FirstHomeRequest): FirstHomeR
     `Rules as recorded on ${HELP_TO_BUY.sources[0]?.checkedOn ?? ''} from Revenue and the Central Bank; each is listed with its page.`,
   ]
 
+  const options = afford.options.slice(0, request.limit ?? 5)
+  const routes = homeRoutes(
+    {
+      priceEur: price ?? round2(withoutHtb),
+      propertyKind: request.propertyKind,
+      firstTimeBuyer,
+      incomeEur: request.annualGrossIncome,
+      applicants:
+        request.jointApplication === undefined
+          ? undefined
+          : request.jointApplication
+            ? 'joint'
+            : 'single',
+      savedEur: deposit,
+      monthlyEur: 0,
+      taxPaidEur: request.taxPaidLastFourYearsEur,
+      county: request.county,
+      maxLoanEur: round2(maxLoanByIncome),
+      maxLtvPct: measures.maxLtvPct,
+    },
+    asOf,
+  )
+  const rent = request.monthlyRentEur
+  const rentVsRepayment =
+    rent === undefined
+      ? []
+      : options
+          .slice(0, 3)
+          .map(
+            (option) =>
+              `Rent ${euro(Math.round(rent))} a month against a ${euro(Math.round(option.figures.monthlyRepayment))} repayment (${option.product.providerName} ${option.product.name}).`,
+          )
+
   const htbLine =
     helpToBuy.status === 'not_available'
       ? `Help to Buy: not available. ${helpToBuy.reasons.join(' ')}`
@@ -209,6 +247,7 @@ export function firstHome(market: Market, request: FirstHomeRequest): FirstHomeR
   const presentation = [
     `${htbLine} Cap ${euro(HELP_TO_BUY.capEur)} for applications from ${HELP_TO_BUY.capFrom}; homes bought or built by ${HELP_TO_BUY.endsOn} (Revenue, checked ${HELP_TO_BUY.sources[1]?.checkedOn ?? ''}).`,
     `Central Bank limits: borrowing up to ${String(measures.loanToIncome)} times income (${euro(round2(maxLoanByIncome))}) and 90% of the price. The highest price they allow is ${euro(round2(withoutHtb))}${withHtb === null ? '' : `, or ${euro(withHtb)} for a new build with Help to Buy towards the deposit`}.`,
+    ...routeLines(routes),
     ...(forPrice === null
       ? []
       : [
@@ -219,7 +258,7 @@ export function firstHome(market: Market, request: FirstHomeRequest): FirstHomeR
           `Green rates are the lenders’ own: the lowest at this loan-to-value is ${green.product.providerName} ${green.product.name} at ${String(green.rate)}%${green.terms.ber === null ? '' : ` (BER ${green.terms.ber})`}, against ${String(standard.rate)}% standard.`,
         ]
       : []),
-    'The First Home shared equity scheme could not be confirmed from a primary page, so it is not included.',
+    ...rentVsRepayment,
     ...MORTGAGE_WARNINGS,
     `These are the published rules and the figures for the inputs given; the customer decides. ${RESULT_STATEMENT}`,
   ]
@@ -227,6 +266,8 @@ export function firstHome(market: Market, request: FirstHomeRequest): FirstHomeR
   return {
     presentation,
     helpToBuy,
+    routes,
+    rentVsRepayment,
     lending: {
       loanToIncome: measures.loanToIncome,
       maxLtvPct: measures.maxLtvPct,
@@ -264,7 +305,7 @@ export function firstHome(market: Market, request: FirstHomeRequest): FirstHomeR
               ratePct: standard.rate,
             },
     },
-    options: afford.options.slice(0, request.limit ?? 5),
+    options,
     ranking: afford.ranking,
     assumptions,
     dataCheckedAt: afford.dataCheckedAt,

@@ -3,7 +3,9 @@ import { MORTGAGE_WARNINGS, RESULT_STATEMENT } from '../../market/disclosures.ts
 import { HELP_TO_BUY, MORTGAGE_MEASURES } from '../../market/first-home-rules.ts'
 import { BUYING_COSTS } from '../../market/mortgage-incentives.ts'
 import { euro } from './figures.ts'
-import { addMonths, round2 } from './simulate.ts'
+import { keysAt, monthName, monthsBetween, stampDutyAt } from './home-arithmetic.ts'
+import { homeRoutes, routeLines } from './routes.ts'
+import { round2 } from './simulate.ts'
 import type { AsOf } from './types.ts'
 
 /**
@@ -15,33 +17,12 @@ import type { AsOf } from './types.ts'
  *
  * The same arithmetic runs in the calculator card as sliders move, from `rules` in the result,
  * so the two agree. Savings are counted before interest here (stated): the plan adds interest.
+ *
+ * Help to Buy is counted in the headline only when tax paid is given (decision
+ * `2026-11-10-saoi-routes-card`): without it, the headline is without Help to Buy, the figure is
+ * what it could be (`helpToBuyConditional`), and the new-build route carries the keys date if
+ * tax paid covers it. The routes (`routes.ts`) follow the headline.
  */
-
-const MONTHS = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-]
-const monthName = (yyyyMm: string): string => {
-  const [year, month] = yyyyMm.split('-')
-  return `${MONTHS[Number(month) - 1] ?? month ?? ''} ${year ?? ''}`.trim()
-}
-
-/** Whole months from the month of `asOf` to `yyyyMm` (0 for the same month; never negative). */
-function monthsBetween(asOf: AsOf, yyyyMm: string): number {
-  const from = Number(asOf.slice(0, 4)) * 12 + Number(asOf.slice(5, 7)) - 1
-  const to = Number(yyyyMm.slice(0, 4)) * 12 + Number(yyyyMm.slice(5, 7)) - 1
-  return Math.max(0, to - from)
-}
 
 const NEW_KINDS = new Set(['new_build', 'self_build'])
 
@@ -58,17 +39,18 @@ export function homeCalculator(request: HomeCalculatorRequest, asOf: AsOf): Home
   const maxLoan = income === null ? null : round2(income * measures.loanToIncome)
   const htbApplies =
     firstTimeBuyer && request.propertyKind !== undefined && NEW_KINDS.has(request.propertyKind)
-  const helpToBuyAt = (price: number): number =>
+  /** Counted towards the cash at the keys only when tax paid, which limits it, was given. */
+  const htbCounted = htbApplies && request.taxPaidLastFourYearsEur !== undefined
+  /** What Help to Buy could be at a price, before the tax-paid limit. */
+  const helpToBuyUpTo = (price: number): number =>
     !htbApplies || price > HELP_TO_BUY.maxPriceEur
       ? 0
-      : round2(
-          Math.min(
-            price * HELP_TO_BUY.shareOfPrice,
-            HELP_TO_BUY.capEur,
-            request.taxPaidLastFourYearsEur ?? Infinity,
-          ),
-        )
-  const stampAt = (price: number): number => round2((price * BUYING_COSTS.stampDutyPct) / 100)
+      : round2(Math.min(price * HELP_TO_BUY.shareOfPrice, HELP_TO_BUY.capEur))
+  const helpToBuyAt = (price: number): number =>
+    !htbCounted
+      ? 0
+      : round2(Math.min(helpToBuyUpTo(price), request.taxPaidLastFourYearsEur ?? Infinity))
+  const stampAt = stampDutyAt
   const saved = request.depositSavedEur ?? 0
   const monthly = request.monthlySavingEur ?? 0
   const target = request.targetDate?.slice(0, 7)
@@ -99,20 +81,29 @@ export function homeCalculator(request: HomeCalculatorRequest, asOf: AsOf): Home
     }
   }
 
-  const loan = price === null ? null : round2(Math.min(price * ltv, maxLoan ?? Infinity))
-  const deposit = price === null || loan === null ? null : round2(price - loan)
-  const stamp = price === null ? null : stampAt(price)
   const helpToBuy = price === null ? 0 : helpToBuyAt(price)
-  const needed =
-    deposit === null || stamp === null
+  const keys =
+    price === null
       ? null
-      : round2(Math.max(0, deposit + stamp + BUYING_COSTS.legalAndSurveyEur - helpToBuy))
-
-  let reachedOn: string | null = null
-  if (needed !== null) {
-    if (saved >= needed) reachedOn = addMonths(asOf, 0)
-    else if (monthly > 0) reachedOn = addMonths(asOf, Math.ceil((needed - saved) / monthly))
-  }
+      : keysAt(
+          {
+            priceEur: price,
+            maxLoanEur: maxLoan,
+            maxLtvPct: measures.maxLtvPct,
+            savedEur: saved,
+            monthlyEur: monthly,
+            helpToBuyEur: helpToBuy,
+          },
+          asOf,
+        )
+  const loan = keys?.loanEur ?? null
+  const deposit = keys?.depositEur ?? null
+  const stamp = keys?.stampDutyEur ?? null
+  const needed = keys?.neededEur ?? null
+  const reachedOn = keys?.reachedOn ?? null
+  const helpToBuyConditional =
+    htbApplies && !htbCounted && price !== null && helpToBuyUpTo(price) > 0
+  const helpToBuyShown = helpToBuyConditional && price !== null ? helpToBuyUpTo(price) : helpToBuy
   const targetMet = reachedOn === null || target === undefined ? null : reachedOn <= target
 
   // ---- In words: facts and figures, never a pick ---------------------------------------------
@@ -145,16 +136,49 @@ export function homeCalculator(request: HomeCalculatorRequest, asOf: AsOf): Home
       ? null
       : `Existing repayments of ${euro(request.monthlyDebtRepaymentsEur)} a month are not part of the Central Bank limits; lenders count them when they assess repayment capacity.`
   if (monthlyCommitmentsNote !== null) lines.push(monthlyCommitmentsNote)
-  if (htbApplies && helpToBuy > 0 && request.taxPaidLastFourYearsEur === undefined) {
+  if (helpToBuyConditional) {
     lines.push(
-      'Help to Buy is shown at its most; it is limited by the Income Tax and DIRT paid over the last four years.',
+      `Help to Buy is not counted above: up to ${euro(helpToBuyShown)}, it is limited by the Income Tax and DIRT paid over the last four tax years, not given.`,
+    )
+  }
+
+  // ---- Every route to a home, after the headline ---------------------------------------------
+  const routes = homeRoutes(
+    {
+      priceEur: price,
+      propertyKind: request.propertyKind,
+      firstTimeBuyer,
+      incomeEur: income,
+      applicants:
+        income === null
+          ? undefined
+          : request.secondIncomeEur !== undefined && request.annualGrossIncomeEur !== undefined
+            ? 'joint'
+            : 'single',
+      savedEur: saved,
+      monthlyEur: monthly,
+      taxPaidEur: request.taxPaidLastFourYearsEur,
+      county: request.county,
+      maxLoanEur: maxLoan,
+      maxLtvPct: measures.maxLtvPct,
+    },
+    asOf,
+  )
+
+  const assumed: string[] = []
+  if (request.firstTimeBuyer === undefined) {
+    assumed.push(
+      `First-time buyer, as nothing else was said: the ${String(MORTGAGE_MEASURES.first_time_buyer.loanToIncome)} times income limit applies (${String(MORTGAGE_MEASURES.second_and_subsequent.loanToIncome)} times for a second or later buyer).`,
     )
   }
 
   // ---- What is missing, as plain questions, most useful first --------------------------------
   const questions: HomeCalculatorResponse['questions'] = []
-  const ask = (key: HomeCalculatorResponse['questions'][number]['key'], question: string) =>
-    questions.push({ key, question })
+  const ask = (
+    key: HomeCalculatorResponse['questions'][number]['key'],
+    question: string,
+    optional = false,
+  ) => questions.push({ key, question, optional })
   if (request.depositSavedEur === undefined)
     ask('depositSavedEur', 'How much is saved towards the deposit so far?')
   if (request.monthlySavingEur === undefined)
@@ -177,6 +201,8 @@ export function homeCalculator(request: HomeCalculatorRequest, asOf: AsOf): Home
       'Who do you bank with now, and do you want to see only their options or every lender’s?',
     )
   if (request.rateType === undefined) ask('rateType', 'Fixed rate, variable, or show both?')
+  if (request.monthlyRentEur === undefined)
+    ask('monthlyRentEur', 'What do you pay in rent a month? (optional)', true)
 
   const next =
     'To see every eligible option, sorted by keys date, cost over the first 5 years or monthly repayment: the card’s "Show my options" button, or saoi_build_plan with a house_deposit goal, these figures, `homePrice`, `propertyKind` and `homePreferences`.'
@@ -217,17 +243,22 @@ export function homeCalculator(request: HomeCalculatorRequest, asOf: AsOf): Home
       depositNeededEur: deposit,
       stampDutyEur: stamp,
       legalAndSurveyEur: BUYING_COSTS.legalAndSurveyEur,
-      helpToBuyEur: helpToBuy,
+      helpToBuyEur: helpToBuyShown,
+      helpToBuyConditional,
       neededAtKeysEur: needed,
       depositReachedOn: reachedOn,
       targetDateMet: targetMet,
       monthlyCommitmentsNote,
     },
     lines,
+    assumed,
+    routes,
     questions,
     next,
     presentation: [
       ...lines,
+      ...routeLines(routes),
+      ...assumed,
       ...(questions.length === 0
         ? []
         : [`Still to know: ${questions.map((item) => item.question).join(' ')}`]),

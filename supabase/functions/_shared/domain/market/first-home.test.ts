@@ -6,6 +6,7 @@ import {
   reviewRequestSchema,
 } from '../../contracts/market-tools.ts'
 import { HELP_TO_BUY, MORTGAGE_MEASURES } from '../../market/first-home-rules.ts'
+import { adviceWordsIn } from '../../market/disclosures.ts'
 import { firstHome, helpToBuyFor } from './first-home.ts'
 import { MARKET_FIXTURE } from './fixture.ts'
 import { normaliseMarket } from './normalise.ts'
@@ -13,7 +14,8 @@ import { buildPlan } from './plan.ts'
 import { review } from './review.ts'
 
 const market = normaliseMarket(MARKET_FIXTURE)
-const ask = (body: Record<string, unknown>) => firstHome(market, firstHomeRequestSchema.parse(body))
+const ask = (body: Record<string, unknown>) =>
+  firstHome(market, firstHomeRequestSchema.parse(body), '2026-11-10')
 
 describe('the first-home rules, as recorded', () => {
   it('carries a primary source and a date for every rule', () => {
@@ -118,8 +120,10 @@ describe('a first home: €62,000 gross, €35,000 saved, a new build at €380,
     expect(result.helpToBuy).toMatchObject({ status: 'depends', upToEur: 35_000, limitedBy: 'cap' })
   })
 
-  it('states the First Home scheme only as far as it is confirmed, and green rates from the data', () => {
-    expect(result.firstHomeScheme.confirmed).toBe(false)
+  it('states the First Home Scheme as read from its own site, and green rates from the data', () => {
+    expect(result.firstHomeScheme.confirmed).toBe(true)
+    expect(result.firstHomeScheme.source.url).toMatch(/^https:\/\/www\.firsthomescheme\.ie/)
+    expect(result.routes.map((route) => route.id)).toContain('first_home_scheme')
     expect(result.greenRates.note).toMatch(/No Central Bank or government rule/)
     expect(result.greenRates.cheapestGreen?.name ?? '').not.toMatch(/HVM|high(er)? value/i)
     expect(result.greenRates.cheapestStandard?.name ?? '').not.toMatch(/HVM|high(er)? value/i)
@@ -159,5 +163,43 @@ describe('first home in the review and the plan', () => {
       result.affordability?.maxPrice ?? Infinity,
     )
     expect(result.affordability?.helpToBuy?.sourceUrl).toMatch(/revenue\.ie/)
+  })
+})
+
+describe('routes and rent in the first-home result', () => {
+  it('carries every route, three in the presentation after the limits, and no pick', () => {
+    const result = ask({
+      annualGrossIncome: 100_000,
+      deposit: 30_000,
+      propertyPrice: 400_000,
+      propertyKind: 'new_build',
+      jointApplication: true,
+    })
+    expect(result.routes).toHaveLength(6)
+    expect(result.routes[0]?.id).toBe('new_build_help_to_buy')
+    const lahl = result.routes.find((route) => route.id === 'local_authority_home_loan')
+    expect(lahl?.status).toBe('not_applicable')
+    expect(lahl?.line).toBe(
+      'Local Authority Home Loan: not at €100,000 joint income, the ceiling is €85,000',
+    )
+    const at = result.presentation.findIndex((line) => line.startsWith('Central Bank limits'))
+    expect(result.presentation.slice(at + 1, at + 5)).toEqual([
+      ...result.routes.slice(0, 3).map((route) => route.line),
+      'More routes: 3',
+    ])
+    expect(result.rentVsRepayment).toEqual([])
+    for (const line of result.presentation) expect(adviceWordsIn(line)).toEqual([])
+  })
+
+  it('sets rent beside the options’ repayments as facts, changing no figure', () => {
+    const body = { annualGrossIncome: 80_000, deposit: 40_000, propertyPrice: 350_000 }
+    const without = ask(body)
+    const withRent = ask({ ...body, monthlyRentEur: 1_800 })
+    expect(withRent.lending).toEqual(without.lending)
+    expect(withRent.options).toEqual(without.options)
+    expect(withRent.rentVsRepayment.length).toBe(Math.min(3, withRent.options.length))
+    for (const line of withRent.rentVsRepayment) {
+      expect(line).toMatch(/^Rent €1,800 a month against a €[\d,]+ repayment \(/)
+    }
   })
 })

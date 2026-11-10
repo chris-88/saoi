@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { LOCAL_AREAS } from '../market/areas.ts'
 import {
   INTEREST_PAID,
   MARKET_CATEGORIES,
@@ -19,7 +20,8 @@ import {
  * `saoi_savings_projection`, `saoi_mortgage`, `saoi_debt`, `saoi_build_plan`).
  *
  * Every figure is worked out by `_shared/domain/market/` from the market data in
- * `market_products`; nothing is stored except a plan, held as a 24-hour draft. The descriptions here become the OpenAPI document, and
+ * `market_products`; nothing is stored except a plan, held as a 24-hour draft, and one anonymous,
+ * banded record per home-calculator run (no figures). The descriptions here become the OpenAPI document, and
  * the MCP tool descriptions are generated from that, so they are written for a model reading
  * them cold: what the field is, its unit, and what an absent value means.
  *
@@ -956,6 +958,82 @@ const ruleSourceSchema = z.object({
   checkedOn: z.string().describe('YYYY-MM-DD the page was read.'),
 })
 
+export const HOME_ROUTE_IDS = [
+  'second_hand',
+  'new_build_help_to_buy',
+  'first_home_scheme',
+  'local_authority_home_loan',
+  'affordable_purchase',
+  'vacant_property_grant',
+] as const
+export const HOME_ROUTE_STATUSES = ['potential', 'needs_one_detail', 'not_applicable'] as const
+
+const countySchema = z
+  .enum(LOCAL_AREAS)
+  .describe(
+    'Where the home is: one of the 26 counties, or one of Dublin’s four local authorities (`dublin_city`, `dun_laoghaire_rathdown`, `fingal`, `south_dublin`). Sets the First Home Scheme and Local Authority Home Loan price limits. Absent: a price between the lowest and highest limits makes those routes ask for it.',
+  )
+
+const monthlyRentSchema = eur.describe(
+  'Rent paid a month today. Optional: it changes no figure; it is set beside the monthly repayments of the options as a fact.',
+)
+
+export const homeRouteSchema = z
+  .object({
+    id: z
+      .enum(HOME_ROUTE_IDS)
+      .describe(
+        '`second_hand`: a second-hand home with a mortgage. `new_build_help_to_buy`: a new build with the Help to Buy refund. `first_home_scheme`: shared equity on a new build. `local_authority_home_loan`: the council’s own mortgage. `affordable_purchase`: a council home sold below market value. `vacant_property_grant`: a grant for works on a vacant home.',
+      ),
+    name: z.string().describe('The route’s short name, as a heading.'),
+    mechanism: z
+      .string()
+      .describe(
+        'How it helps, in plain words: a tax refund towards the deposit, shared equity, an alternative mortgage, a below-market price with a council share, a grant for works after purchase.',
+      ),
+    status: z
+      .enum(HOME_ROUTE_STATUSES)
+      .describe(
+        '`potential`: nothing given rules it out. `needs_one_detail`: one detail would settle it (`missing`). `not_applicable`: ruled out on the figures given (`reason`). Never a pick.',
+      ),
+    line: z
+      .string()
+      .describe(
+        'The route in one line (about 90 characters at most), a fact with its figure, date or reason. Show it as is, in the order given; never call one route best, fastest or recommended.',
+      ),
+    reason: z
+      .string()
+      .nullable()
+      .describe('Why it is not applicable, or what makes it potential, with the figure.'),
+    missing: z
+      .string()
+      .nullable()
+      .describe(
+        'For `needs_one_detail`: the one detail that would settle it, as a plain question to ask. Null otherwise.',
+      ),
+    keysOn: z
+      .string()
+      .nullable()
+      .describe(
+        'YYYY-MM the deposit and buying costs are saved on this route, at this pace, before interest. Only second-hand and new build carry one; null where there is no arithmetic or it is not reached.',
+      ),
+    conditions: z.array(z.string()).describe('The scheme’s main conditions, as short facts.'),
+    confirmed: z
+      .boolean()
+      .describe(
+        'False when a figure on this route rests on a rule not read from a primary page (say so when showing it).',
+      ),
+    sources: z.array(ruleSourceSchema).describe('The pages the rules were read from, dated.'),
+  })
+  .describe('One route to a home, as a fact with its status. A comparison, not a recommendation.')
+export type HomeRoute = z.infer<typeof homeRouteSchema>
+
+const routesSchema = z
+  .array(homeRouteSchema)
+  .describe(
+    'Every route to a home, the customer’s own kind of property first, then potential, needs one detail, not applicable. Show the first three lines right after the headline, then "More routes: N" for the rest; the customer chooses, and none is marked best.',
+  )
+
 export const firstHomeRequestSchema = z.object({
   annualGrossIncome: eur.describe('Gross income a year, before tax; joint for two applicants.'),
   deposit: eur.describe('Savings for the deposit, not counting Help to Buy.'),
@@ -985,6 +1063,14 @@ export const firstHomeRequestSchema = z.object({
       'The home’s BER, for green rates. Absent: green rates are shown with the BER they need.',
     ),
   limit: z.number().int().min(1).max(25).optional(),
+  county: countySchema.optional(),
+  jointApplication: z
+    .boolean()
+    .optional()
+    .describe(
+      'Buying with someone (two applicants). Sets the Local Authority Home Loan income ceiling: €80,000 single, €85,000 joint. Absent: an income between the two makes that route ask.',
+    ),
+  monthlyRentEur: monthlyRentSchema.optional(),
 })
 export type FirstHomeRequest = z.infer<typeof firstHomeRequestSchema>
 
@@ -1051,10 +1137,18 @@ export const firstHomeResponseSchema = z.object({
       .nullable(),
     source: ruleSourceSchema,
   }),
+  routes: routesSchema,
+  rentVsRepayment: z
+    .array(z.string())
+    .describe(
+      'With `monthlyRentEur`: "Rent €1,800 a month against a €1,620 repayment", one line per option shown (the first three), as facts. Empty without rent.',
+    ),
   firstHomeScheme: z.object({
     confirmed: z
       .boolean()
-      .describe('False: not confirmed from a primary page; nothing about it is stated as fact.'),
+      .describe(
+        'True: read from firsthomescheme.ie; the `first_home_scheme` route carries its figures.',
+      ),
     note: z.string(),
     source: ruleSourceSchema,
   }),
@@ -1536,8 +1630,10 @@ export const homeCalculatorRequestSchema = z
     taxPaidLastFourYearsEur: eur
       .optional()
       .describe(
-        'Income Tax and DIRT paid over the last four tax years: the most Help to Buy can be.',
+        'Income Tax and DIRT paid over the last four tax years: the most Help to Buy can be. Absent on a new build: the headline leaves Help to Buy out and `helpToBuyEur` is what it could be (`helpToBuyConditional`).',
       ),
+    county: countySchema.optional(),
+    monthlyRentEur: monthlyRentSchema.optional(),
   })
   .extend(homePreferencesSchema.shape)
   .describe(
@@ -1555,6 +1651,7 @@ export const HOME_INPUT_KEYS = [
   'propertyKind',
   'currentBank',
   'rateType',
+  'monthlyRentEur',
 ] as const
 
 export const homeCalculatorResponseSchema = z.object({
@@ -1592,8 +1689,17 @@ export const homeCalculatorResponseSchema = z.object({
     depositNeededEur: eur.nullable(),
     stampDutyEur: eur.nullable(),
     legalAndSurveyEur: eur,
-    helpToBuyEur: eur,
-    neededAtKeysEur: eur.nullable().describe('Deposit plus stamp duty and fees, less Help to Buy.'),
+    helpToBuyEur: eur.describe(
+      'Help to Buy at this price. With `helpToBuyConditional`, what it could be (the cap or 10% of the price), not counted in the figures.',
+    ),
+    helpToBuyConditional: z
+      .boolean()
+      .describe(
+        'True for a new build when tax paid was not given: the headline (`neededAtKeysEur`, `depositReachedOn`, `targetDateMet`) is without Help to Buy, and the `new_build_help_to_buy` route carries the keys date if tax paid covers it.',
+      ),
+    neededAtKeysEur: eur
+      .nullable()
+      .describe('Deposit plus stamp duty and fees, less Help to Buy when it is counted.'),
     depositReachedOn: z
       .string()
       .nullable()
@@ -1602,15 +1708,35 @@ export const homeCalculatorResponseSchema = z.object({
     monthlyCommitmentsNote: z.string().nullable(),
   }),
   lines: z.array(z.string()).describe('The figures in words, as options and facts.'),
+  assumed: z
+    .array(z.string())
+    .describe(
+      'What the figures take as given when it was not said (first-time buyer), each correctable.',
+    ),
+  routes: routesSchema,
   questions: z
-    .array(z.object({ key: z.enum(HOME_INPUT_KEYS), question: z.string() }))
+    .array(
+      z.object({
+        key: z.enum(HOME_INPUT_KEYS),
+        question: z.string(),
+        optional: z
+          .boolean()
+          .describe(
+            'True when the answer changes no figure (rent): ask it at most once, as a chip.',
+          ),
+      }),
+    )
     .describe('The inputs not given yet, as plain questions, most useful first.'),
   next: z
     .string()
     .describe(
       'How to see the options: the card’s "Show my options" button, or saoi_build_plan with these inputs.',
     ),
-  presentation: z.array(z.string()).describe('Present to the customer, in this order.'),
+  presentation: z
+    .array(z.string())
+    .describe(
+      'Present to the customer, in this order: the headline figures, then three route lines and "More routes: N", then what is assumed and still to know. No route is picked.',
+    ),
   warnings: z.array(z.string()).describe('The statutory mortgage warnings.'),
   statement: z.string().describe('Saoi is not regulated and does not give advice.'),
 })
