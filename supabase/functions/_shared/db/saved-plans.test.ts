@@ -122,10 +122,14 @@ describe('what the model is told', () => {
     }
     const lines = savedPlanDigestLines(claimed)
     expect(lines.join('\n')).toMatch(/Home comparison: 4 mortgage options for a €350,000 home/)
-    expect(lines.filter((line) => line.startsWith('Option '))).toHaveLength(3)
+    // Every option is in the digest, so a follow-up about any of them can be answered.
+    expect(lines.filter((line) => line.startsWith('Option '))).toHaveLength(4)
     const card = savedPlanCard(claimed)
     expect(card.type === 'saved_plan' && card.comparison?.total).toBe(4)
     expect(card.type === 'saved_plan' && card.comparison?.options[0]?.monthly).toBe('€1,362/mo')
+    expect(card.type === 'saved_plan' && card.comparison?.options[0]?.lead).toBe('€49,338 / 5 yrs')
+    expect(card.type === 'saved_plan' && card.comparison?.options).toHaveLength(3)
+    expect(card.type === 'saved_plan' && card.figures).toMatch(/ · €350k$/)
   })
 
   it('falls back to the first debt step when there are no products', () => {

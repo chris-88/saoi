@@ -460,13 +460,13 @@ export async function buildGeneration(
       role: 'user',
       content:
         '(The customer has just opened, in this app, the comparison they saved in their own AI ' +
-        'assistant, after reading what Saoi keeps. The card is on screen with your reply and ' +
-        'shows every figure. Open with "I\u2019ve got your comparison:" and say in one sentence ' +
-        'what it compares, from "The comparison they brought from their own AI assistant". Then ' +
-        'offer the next step as their choice, from the line that begins "Next:". It is a ' +
-        'comparison, not advice: never pick a product, lender or option for them, never say ' +
-        'which is best or what to do first, and give no instruction. Do not repeat the figures ' +
-        'and do not work anything out. Keep it short.)',
+        'assistant. In the app you have already said hello and shown what Saoi keeps, and they ' +
+        'accepted, so do not greet them, introduce yourself or mention the notice again. The ' +
+        'card is on screen above your reply with their figures and the first three options. ' +
+        'Say one short line, such as "Here it is. Where would you like to start?", and stop: ' +
+        'quick replies under your line offer talking the options through, changing a figure, ' +
+        'or how it was worked out. It is a comparison, not advice: never pick a product, lender ' +
+        'or option for them. No figures in this line.)',
     })
   } else if (turn.trigger === 'return') {
     // §36 — the customer did not ask anything; they came back. Lead with what changed.

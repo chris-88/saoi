@@ -178,6 +178,7 @@ export function savedPlanCard(claimed: ClaimedPlan): Card {
           .filter((line): line is string => line !== undefined),
       ),
     ].slice(0, 4),
+    figures: figuresLine(plan),
     ...(plan.comparison === undefined ? {} : { comparison: comparisonCard(plan.comparison) }),
     createdAt: plan.createdAt,
     dataCheckedAt: plan.dataCheckedAt,
@@ -187,6 +188,31 @@ export function savedPlanCard(claimed: ClaimedPlan): Card {
 const euroWhole = (value: number): string =>
   `€${Math.round(value).toLocaleString('en-IE', { maximumFractionDigits: 0 })}`
 
+/** "€25k": short euro for the one-line figures. */
+const shortEur = (value: number): string =>
+  value >= 1_000_000
+    ? `€${String(Math.round(value / 100_000) / 10)}m`
+    : value >= 1_000
+      ? `€${String(Math.round(value / 100) / 10)}k`
+      : `€${String(Math.round(value))}`
+
+/** Their figures in one line: "€25k saved · €800/mo · €90k · €350k". */
+export function figuresLine(plan: MarketPlan): string {
+  const saved = plan.situation.savings.reduce((sum, item) => sum + item.balance, 0)
+  return [
+    saved > 0 ? `${shortEur(saved)} saved` : null,
+    plan.situation.monthlySaving === undefined
+      ? null
+      : `${euroWhole(plan.situation.monthlySaving)}/mo`,
+    plan.situation.income?.annualGross === undefined
+      ? null
+      : shortEur(plan.situation.income.annualGross),
+    plan.comparison === undefined ? null : shortEur(plan.comparison.priceEur),
+  ]
+    .filter((part): part is string => part !== null)
+    .join(' · ')
+}
+
 /** The comparison's first three options, as the card and the app's welcome show them. */
 export function comparisonCard(
   comparison: NonNullable<MarketPlan['comparison']>,
@@ -194,6 +220,7 @@ export function comparisonCard(
   return {
     headline: comparison.headline,
     sortedBy: comparison.sortedBy,
+    sortBy: comparison.sortBy,
     filters: [...comparison.filters],
     total: comparison.options.length,
     options: comparison.options.slice(0, 3).map((option) => ({
@@ -204,6 +231,14 @@ export function comparisonCard(
       fiveYear: `${euroWhole(option.fiveYearCostEur)} over 5 years`,
       keys: option.keysOn === null ? null : monthOf(option.keysOn),
       confirmed: option.confirmed,
+      lead:
+        comparison.sortBy === 'monthly_repayment'
+          ? `${euroWhole(option.monthlyEur)}/mo`
+          : comparison.sortBy === 'keys_date'
+            ? option.keysOn === null
+              ? 'not reached'
+              : monthOf(option.keysOn)
+            : `${euroWhole(option.fiveYearCostEur)} / 5 yrs`,
     })),
   }
 }
@@ -242,12 +277,12 @@ export function savedPlanDigestLines(claimed: ClaimedPlan): string[] {
       ? []
       : [
           `Home comparison: ${String(plan.comparison.options.length)} mortgage options for a ${euroWhole(plan.comparison.priceEur)} home, ${plan.comparison.sortedBy}${plan.comparison.filters.length === 0 ? '' : ` ${plan.comparison.filters.join(' ')}`}`,
-          ...plan.comparison.options
-            .slice(0, 3)
-            .map(
-              (option, index) =>
-                `Option ${String(index + 1)} in their order: ${option.lender}, ${option.kind} at ${String(option.ratePct)}%, ${euroWhole(option.monthlyEur)} a month, ${euroWhole(option.fiveYearCostEur)} over 5 years${option.confirmed ? '' : ' (incentives not confirmed on the lender’s site)'}`,
-            ),
+          // Every option, so a follow-up about any of them is answered from the comparison.
+          'The card shows the first three; the rest come out when they ask.',
+          ...plan.comparison.options.map(
+            (option, index) =>
+              `Option ${String(index + 1)} in their order: ${option.lender}, ${option.kind} (${option.productName}) at ${String(option.ratePct)}%, ${euroWhole(option.monthlyEur)} a month, ${euroWhole(option.fiveYearCostEur)} over 5 years, keys ${option.keysOn === null ? 'not reached' : monthOf(option.keysOn)}${option.confirmed ? '' : ' (incentives not confirmed on the lender’s site)'}`,
+          ),
         ]),
     // A comparison, not a plan to follow: the next step is theirs to choose (2026-11-10).
     `Next: offer them a choice, never a pick: talk through the options, change a figure or a filter, or how the figures were worked out.${first === undefined && firstDebt !== undefined ? ` The debt step in it: ${firstDebt}` : ''} Saoi cannot open any product for them; they apply with a provider directly.`,
