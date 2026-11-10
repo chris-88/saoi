@@ -1329,7 +1329,72 @@ export const planAlternativeResultSchema = z.object({
   line: z.string().describe('The comparison in one sentence, for the presentation and the card.'),
 })
 
+// ---------------------------------------------------------------------------------------------
+// Pathways to a home: the goal assembled end to end per lender (Chris, 2026-11-10)
+// ---------------------------------------------------------------------------------------------
+
+export const homePathwaySchema = z.object({
+  lender: z.string(),
+  lenderName: z.string(),
+  mortgage: z.object({
+    productId: z.string(),
+    name: z.string(),
+    ratePct: pct,
+    fixedYears: z.number().int().nullable(),
+    followOnRatePct: pct.nullable(),
+    monthlyRepayment: eur,
+  }),
+  keysOn: z
+    .string()
+    .nullable()
+    .describe('YYYY-MM the money for the deposit and buying costs is in place.'),
+  interestEur: eur.describe('Interest over the period compared (the term, or the fixed period).'),
+  cashbackEur: eur.describe(
+    'Cashback counted: at drawdown, plus a later payment where it falls in the period.',
+  ),
+  bonusEur: eur.describe('Savings bonuses tied to this lender’s mortgage, net of DIRT.'),
+  netCostEur: z.number().describe('Interest less cashback and bonuses over the period compared.'),
+  vsCheapestEur: z.number().describe('Net cost less the cheapest pathway’s. 0 for the cheapest.'),
+  drivers: z.string().describe('What makes this pathway differ, in a few words.'),
+  conditions: z.array(z.string()),
+  confirmed: z
+    .boolean()
+    .describe('True when every incentive counted was read from the lender’s own site.'),
+  greenNote: z.string().nullable(),
+  sources: z.array(z.string()),
+  line: z.string().describe('The pathway in one sentence, as an option with its figures.'),
+})
+
+export const homePathwaysSchema = z
+  .object({
+    headline: z.string().describe('"Your home: keys around <month>".'),
+    assumptions: z.array(z.string()).describe('Each one stated and correctable.'),
+    price: eur,
+    priceFrom: z.enum(['given', 'savings']),
+    bindingLimit: z.enum(['deposit', 'income', 'income_not_given', 'price_given']),
+    loan: eur,
+    ltvPct: z.number(),
+    depositEur: eur,
+    stampDutyEur: eur,
+    legalAndSurveyEur: eur,
+    helpToBuyEur: eur,
+    neededAtKeysEur: eur.describe('Deposit plus stamp duty and fees, less Help to Buy.'),
+    keysOn: z.string().nullable(),
+    comparedOver: z
+      .object({ basis: z.enum(['term', 'fixed_period']), years: z.number().int() })
+      .describe('The period every pathway is costed over, the same for all.'),
+    pathways: z.array(homePathwaySchema),
+    leftOut: z.array(z.string()),
+  })
+  .describe(
+    'For a home: the goal assembled per lender (savings, Help to Buy, the mortgage, cashback, linked bonuses), compared on the keys date and the cost over the same period. Options with figures, ranked by cost.',
+  )
+export type HomePathways = z.infer<typeof homePathwaysSchema>
+
 export const buildPlanResponseSchema = z.object({
+  home: homePathwaysSchema
+    .nullable()
+    .describe('Pathways to a home, when the main goal is a house deposit. Null otherwise.'),
   alternatives: z
     .array(planAlternativeResultSchema)
     .describe(

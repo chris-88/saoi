@@ -15,6 +15,7 @@ import { debtMonthlyRate, payoffOrder, repaymentOf } from './debt.ts'
 import { displayName, euro, interestToClear } from './figures.ts'
 import { HELP_TO_BUY } from '../../market/first-home-rules.ts'
 import { firstHome, helpToBuyFor } from './first-home.ts'
+import { homePathways } from './pathways.ts'
 import { affordability } from './mortgage.ts'
 import { moneyFoundForPlan } from './money-found.ts'
 import { questionsFor, sharpenLines } from './questions.ts'
@@ -822,8 +823,30 @@ function buildMain(
     }
   }
 
+  // ---- Pathways to a home ------------------------------------------------------------------------
+  const home =
+    main?.kind === 'house_deposit'
+      ? homePathways({
+          market,
+          firstTimeBuyer: situation.firstTimeBuyer ?? true,
+          firstTimeBuyerStated: situation.firstTimeBuyer !== undefined,
+          newBuild: request.propertyKind === 'new_build' || request.propertyKind === 'self_build',
+          annualGrossIncome: situation.income?.annualGross,
+          homePrice: request.homePrice,
+          taxPaid: request.taxPaidLastFourYearsEur,
+          savedByGoal: position.towardsGoal,
+          goalDate: main.targetDate?.slice(0, 7) ?? addMonths(asOf, horizon),
+          reachedOn: (amount) =>
+            placer(false, Math.max(PACE_HORIZON, horizon), amount)(chosen.lump, chosen.monthly)
+              .reachedOn,
+          monthlySaving: chosen.monthly,
+          monthName,
+        })
+      : null
+
   // ---- Present to the customer ------------------------------------------------------------------
   const presentation = planPresentation({
+    home,
     assumed: assumedRepayments.map((item) => item.note),
     moneyFound,
     when: whenLabel,
@@ -852,6 +875,7 @@ function buildMain(
 
   return {
     alternatives: [],
+    home,
     assumedRepayments,
     presentation,
     questions,
@@ -1325,6 +1349,7 @@ function comparable(
 }
 
 function planPresentation(input: {
+  home: BuildPlanResponse['home']
   assumed: readonly string[]
   moneyFound: BuildPlanResponse['moneyFound']
   when: string
@@ -1348,7 +1373,18 @@ function planPresentation(input: {
   extraMonthly: BuildPlanResponse['whatIf']['extraMonthly']
   helpToBuy: BuildPlanResponse['helpToBuy']
 }): string[] {
-  const out: string[] = [input.moneyFound.headline, input.position, ...input.assumed]
+  const out: string[] = [
+    ...(input.home === null
+      ? []
+      : [
+          input.home.headline,
+          ...input.home.assumptions,
+          ...input.home.pathways.slice(0, 3).map((pathway) => pathway.line),
+        ]),
+    input.moneyFound.headline,
+    input.position,
+    ...input.assumed,
+  ]
   for (const scenario of input.scenarios) {
     const better = scenario.cleared >= scenario.kept ? 'cleared' : 'kept'
     out.push(

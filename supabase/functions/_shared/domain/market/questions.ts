@@ -28,12 +28,15 @@ export function questionsFor(situation: Situation, goals: readonly Goal[]): stri
   if (goals.length === 0) {
     out.push('What is the money for: a home, a car, or nothing in particular yet? And by when?')
   }
-  if (home && situation.firstTimeBuyer === undefined) {
-    out.push('Is this a first home? Help to Buy and the lending limits depend on it.')
-  }
+  // A first-time buyer is assumed when no home is mentioned, and stated in the pathways: not asked.
   if (home && situation.income?.annualGross === undefined) {
     out.push(
       'What is the gross income a year (joint, if buying together)? It sets what the Central Bank limits allow.',
+    )
+  }
+  if (home) {
+    out.push(
+      'Roughly what price, and is it a new build? Help to Buy and green rates apply to new builds; the price sets the keys date.',
     )
   }
   if (situation.savings.some((item) => item.aerPct === undefined && !isCurrentAccount(item))) {
