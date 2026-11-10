@@ -305,7 +305,7 @@ describe('build_plan: what the first Claude test showed (2026-11-09)', () => {
     expect(result.liquidity.gainEur).toBeGreaterThan(0)
     expect(result.liquidity.gainEur).toBeLessThan(100)
     expect(result.liquidity.lockedNetPosition).not.toBeNull()
-    expect(result.liquidity.why).toMatch(/would leave only €[\d.,]+ more/)
+    expect(result.liquidity.why).toMatch(/would leave €[\d.,]+ more/)
     expect(locks(result)).toEqual([])
     expect(() => buildPlanResponseSchema.parse(result)).not.toThrow()
     noAdvice(result)
