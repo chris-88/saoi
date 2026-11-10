@@ -1,6 +1,7 @@
 import type { Database, Json } from '@shared/db/database.types.ts'
 import { mustWrite, writeEvent } from '@shared/db/case-repository.ts'
 import { factsFromPlan } from '@shared/db/saved-plans.ts'
+import { DATA_NOTICE_EVENT } from '@shared/llm/data-notice.ts'
 import type { MarketPlan } from '@shared/contracts/market-plan.ts'
 import type { Db } from './client.ts'
 
@@ -205,6 +206,14 @@ export function supabasePlanStore(db: Db): PlanStore {
           products: plan.combination.products.length,
           facts: fresh.length,
         },
+      })
+      // The app showed the data notice in the chat and the customer accepted it before the
+      // claim (2026-11-10), so the first turn does not show the notes card a second time.
+      await writeEvent(db, {
+        caseId,
+        type: DATA_NOTICE_EVENT,
+        actor: 'customer',
+        payload: { accepted: 'saved_comparison' },
       })
 
       return { facts: fresh.map((fact) => fact.key) }
