@@ -843,6 +843,8 @@ function digestSection(digest: CaseDigest): string {
       'for them; never pick one for them either, or say which to take. The card',
       'shows every figure, so do not recite them and do not redo any arithmetic. Saoi cannot',
       'open any of these products for them; they apply with each provider directly.',
+      'Questions about the providers and products in this comparison are in scope, real banks',
+      'included: answer them from its figures and conditions, side by side, and still pick none.',
       ...plan.lines.map((line) => `- ${line}`),
       '',
     )

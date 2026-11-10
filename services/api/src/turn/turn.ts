@@ -1,3 +1,4 @@
+import { loadClaimedPlans } from '@shared/db/saved-plans.ts'
 import type { SaoirseTurnRequest } from '@shared/contracts/saoirse-turn.ts'
 import { withdraw, type StreamEvent } from '@shared/contracts/stream.ts'
 import { loadCase, writeEvent, type Db } from '@shared/db/case-repository.ts'
@@ -101,6 +102,7 @@ export function createTurnRunner(deps: TurnDeps): TurnRunner {
       loaded,
       classify: handle.classify,
       tone,
+      comparesProviders: isCustomerTurn && (await loadClaimedPlans(admin, caseId)).length > 0,
     })
     meter.gateDone()
 

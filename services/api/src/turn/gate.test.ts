@@ -104,3 +104,17 @@ describe('admit: the gate in front of the model (Invariant 4)', () => {
     expect(classify).not.toHaveBeenCalled()
   })
 })
+
+describe('a comparison the customer brought', () => {
+  it('lets questions about its providers through, and only then', async () => {
+    const { withProvidersInScope } = await import('./gate.ts')
+    const { demoDomainConfig, categoryReachesModel } =
+      await import('@shared/tenants/demo/domain-config.ts')
+    expect(categoryReachesModel(demoDomainConfig, 'competitor')).toBe(false)
+    expect(categoryReachesModel(withProvidersInScope(demoDomainConfig), 'competitor')).toBe(true)
+    // Nothing else changes.
+    expect(categoryReachesModel(withProvidersInScope(demoDomainConfig), 'off_topic')).toBe(
+      categoryReachesModel(demoDomainConfig, 'off_topic'),
+    )
+  })
+})
