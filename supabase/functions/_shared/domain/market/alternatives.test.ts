@@ -53,7 +53,7 @@ describe('alternatives in one call', () => {
     expect(keep?.changes).toEqual(['the car loan kept', 'a €6,000 emergency buffer'])
     expect(more?.differenceEur).toBeGreaterThan(4_000)
     expect(keep?.line).toMatch(
-      /^Option “Keep €6,000 aside, keep the loan” \(the car loan kept, a €6,000 emergency buffer\): €[\d,.]+ at November 2028, everything held; €[\d,.]+ (more|less) than the plan above\.$/,
+      /^Option “Keep €6,000 aside, keep the loan” \(the car loan kept, a €6,000 emergency buffer\): €[\d,.]+ towards the house deposit at November 2028, €[\d,.]+ (more|less) than the plan above \(€[\d,.]+ held in all, €[\d,.]+ of it as a buffer\)\.$/,
     )
     expect(() => buildPlanResponseSchema.parse(result)).not.toThrow()
   })
@@ -124,5 +124,27 @@ describe('alternatives in one call', () => {
     const line = plan({}).presentation.find((text) => text.startsWith('Help to Buy')) ?? ''
     expect(line).toMatch(/€35,000 \(applications from 2026-10-07\)/)
     expect(line).toMatch(/Source: Revenue, https:\/\/www\.revenue\.ie\/.*checked 2026-11-09/)
+  })
+
+  it('compares a buffer by what goes towards the goal, not the unchanged total', () => {
+    const withBuffer = plan({
+      emergencyBufferEur: 0,
+      alternatives: [{ name: 'With a buffer', emergencyBufferEur: 5_000 }],
+    })
+    const option = withBuffer.alternatives[0]
+    expect(option?.towardsGoalDifferenceEur).toBeLessThan(-4_900)
+    expect(option?.line).toMatch(/€[\d,.]+ less than the plan above/)
+  })
+
+  it('never suggests a buffer the customer did not raise', () => {
+    const plain = plan({ emergencyBufferEur: undefined })
+    const text = [
+      ...plain.presentation,
+      ...plain.whatIf.lines,
+      plain.next,
+      ...plain.questions,
+    ].join(' ')
+    expect(plain.position.buffer).toBe(0)
+    expect(text).not.toMatch(/buffer/i)
   })
 })

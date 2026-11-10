@@ -26,9 +26,7 @@ export function questionsFor(situation: Situation, goals: readonly Goal[]): stri
     out.push('For each loan or card: the interest rate?')
   }
   if (goals.length === 0) {
-    out.push(
-      'What is the money for: a home, a car, a buffer for emergencies, or nothing in particular yet? And by when?',
-    )
+    out.push('What is the money for: a home, a car, or nothing in particular yet? And by when?')
   }
   if (home && situation.firstTimeBuyer === undefined) {
     out.push('Is this a first home? Help to Buy and the lending limits depend on it.')
@@ -44,7 +42,7 @@ export function questionsFor(situation: Situation, goals: readonly Goal[]): stri
     )
   }
   if (monthlyOutgoings(situation) === null) {
-    out.push('Roughly what goes out each month, rent included? It sizes an emergency buffer.')
+    // A buffer is modelled only when the customer raises one (Chris, 2026-11-10): no question.
   }
   return out.slice(0, 3)
 }

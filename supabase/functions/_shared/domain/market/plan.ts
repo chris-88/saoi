@@ -136,7 +136,7 @@ const PACE_HORIZON = 120
 export const PLAN_NEXT = [
   'The plan is held for 24 hours behind the single-use save link so the customer can open it in the Saoi app (app.saoi.ie), then deleted unless opened; nothing else is stored. Offer the link.',
   'In the app the plan opens as a card, and Saoirse, Saoi’s assistant, knows it and can talk it through; signing in with an email address keeps it across devices, including the installed app. Alerts when a chosen product’s rate changes and reminders as the goal date nears are coming, not built yet.',
-  'To compare options (another buffer, a debt kept or cleared, another monthly amount or date), pass them as `alternatives` in one saoi_build_plan call; call it again only when the customer changes their situation in a later message.',
+  'To compare options (a debt kept or cleared, another monthly amount or date), pass them as `alternatives` in one saoi_build_plan call; call it again only when the customer changes their situation in a later message.',
 ].join(' ')
 
 const lowerFirst = (text: string): string => `${text.charAt(0).toLowerCase()}${text.slice(1)}`
@@ -248,12 +248,17 @@ function workOutAlternative(
   const differenceEur = round2(position.total - main.position.total)
   const sameDate = position.at === main.position.at
   const owed = position.owed > 0 ? `, less ${euro(position.owed)} still owed` : ''
-  const line = `Option “${alternative.name}” (${changes.length === 0 ? 'as given' : changes.join(', ')}): ${euro(position.total)} at ${monthName(position.at)}, everything held${owed}${sameDate ? `; ${differenceEur >= 0 ? `${euro(differenceEur)} more` : `${euro(-differenceEur)} less`} than the plan above` : ''}.`
+  // Compared by what goes towards the goal (Chris, 2026-11-10): a buffer moves money out of the
+  // deposit without changing the total held, so the total alone reads as "no difference".
+  const towardsGoalDifferenceEur = round2(position.towardsGoal - main.position.towardsGoal)
+  const goalName = mainGoal === undefined ? 'the goal' : `the ${lowerFirst(mainGoal.label)}`
+  const line = `Option “${alternative.name}” (${changes.length === 0 ? 'as given' : changes.join(', ')}): ${euro(position.towardsGoal)} towards ${goalName} at ${monthName(position.at)}${sameDate ? `, ${towardsGoalDifferenceEur >= 0 ? `${euro(towardsGoalDifferenceEur)} more` : `${euro(-towardsGoalDifferenceEur)} less`} than the plan above` : ''} (${euro(position.total)} held in all${position.buffer > 0 ? `, ${euro(position.buffer)} of it as a buffer` : ''}${owed}).`
   return {
     name: alternative.name,
     changes,
     position,
     differenceEur,
+    towardsGoalDifferenceEur,
     goalReachedOn: result.goalReachedOn,
     moneyFoundAnnualEur: result.moneyFound.annualEur,
     line,
@@ -347,7 +352,7 @@ function buildMain(
       `An emergency buffer of ${String(bufferMonths)} months of outgoings was asked for, but outgoings were not given, so none is set aside.`,
     )
     whatIfLines.push(
-      'With monthly outgoings (rent and the rest), or a buffer in euro, the buffer is sized and held in instant access: give them in a later call, or a buffer as an alternative.',
+      'With monthly outgoings (rent and the rest), or the buffer in euro, the buffer asked for is sized and held in instant access.',
     )
   } else if (bufferTarget !== null && bufferTarget !== undefined && bufferTarget > 0) {
     if (emergency === null && ordered.length < 8) {

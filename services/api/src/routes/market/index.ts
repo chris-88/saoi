@@ -333,7 +333,7 @@ const buildPlanRoute = createRoute({
     'at the end (towards the goal and the buffer, named) less what is still owed; the questions ' +
     'that would sharpen the plan come with it, as in saoi_money_check. For a follow-up once ' +
     'saoi_money_check has run; one call per reply, never alongside saoi_money_check. To compare ' +
-    'options (another buffer, a debt kept or cleared, another monthly amount or date), pass up to ' +
+    'options (a debt kept or cleared, another monthly amount or date), pass up to ' +
     'three `alternatives` in the same call: each comes back with its own net figure. Call again ' +
     'only when the customer changes their situation in a later message, never to adjust ' +
     'figures. Returns `plan` (a ' +
