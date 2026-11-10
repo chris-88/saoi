@@ -16,7 +16,7 @@ import {
   type ClaimPlanResponse,
   type PreviewPlanResponse,
 } from '@shared/contracts/session.ts'
-import { comparisonCard } from '@shared/db/saved-plans.ts'
+import { comparisonCard, figuresLine } from '@shared/db/saved-plans.ts'
 import type { CaseSubstance } from '@shared/domain/continuity.ts'
 import type { AppEnv } from '../../context.ts'
 import { ApiError, errorBody } from '../../errors.ts'
@@ -145,30 +145,11 @@ const previewRoute = createRoute({
   },
 })
 
-/** "€25k": short euro for the one-line figures. */
-const shortEur = (value: number): string =>
-  value >= 1_000_000
-    ? `€${String(Math.round(value / 100_000) / 10)}m`
-    : value >= 1_000
-      ? `€${String(Math.round(value / 100) / 10)}k`
-      : `€${String(Math.round(value))}`
-
 /** The welcome's view of a plan: their figures in one line, and what it compares. */
 export function previewOf(plan: MarketPlan, expiresAt: string): PreviewPlanResponse {
-  const saved = plan.situation.savings.reduce((sum, item) => sum + item.balance, 0)
-  const figures = [
-    saved > 0 ? `${shortEur(saved)} saved` : null,
-    plan.situation.monthlySaving === undefined
-      ? null
-      : `€${Math.round(plan.situation.monthlySaving).toLocaleString('en-IE')}/mo`,
-    plan.situation.income?.annualGross === undefined
-      ? null
-      : shortEur(plan.situation.income.annualGross),
-    plan.comparison === undefined ? null : shortEur(plan.comparison.priceEur),
-  ].filter((part): part is string => part !== null)
   return {
     title: plan.title,
-    figures: figures.join(' · '),
+    figures: figuresLine(plan),
     comparison: plan.comparison === undefined ? null : comparisonCard(plan.comparison),
     products: plan.combination.products.slice(0, 3).map((product) => ({
       name: product.productName,

@@ -553,10 +553,13 @@ export const savedPlanCardSchema = z.object({
    * chose, and how many there were. Optional: plans saved before 2026-11-10, and plans with no
    * home goal, have none.
    */
+  /** "€25k saved · €800/mo · €90k · €350k": their figures in one line (2026-11-10). */
+  figures: z.string().optional(),
   comparison: z
     .object({
       headline: z.string(),
       sortedBy: z.string(),
+      sortBy: z.enum(['five_year_cost', 'keys_date', 'monthly_repayment']).optional(),
       filters: z.array(z.string()).max(6),
       total: z.number().int().nonnegative(),
       options: z
@@ -569,6 +572,8 @@ export const savedPlanCardSchema = z.object({
             fiveYear: z.string(),
             keys: z.string().nullable(),
             confirmed: z.boolean(),
+            /** The figure the comparison is sorted by, short: "€49,338 / 5 yrs", "€1,362/mo". */
+            lead: z.string().optional(),
           }),
         )
         .max(3),
