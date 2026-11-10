@@ -135,7 +135,7 @@ async function post(
 const save = async (app: ReturnType<typeof appWith>['app'], plan: unknown = exampleMarketPlan()) =>
   post(app, '/api/plans', { plan, client: 'claude' })
 
-const tokenOf = (claimUrl: string): string => claimUrl.split('/#/plan/')[1] ?? ''
+const tokenOf = (claimUrl: string): string => claimUrl.split('/?plan=')[1] ?? ''
 
 describe('POST /api/plans', () => {
   it('saves without signing in and returns a one-time link and its expiry', async () => {
@@ -143,7 +143,7 @@ describe('POST /api/plans', () => {
     const saved = await save(app)
 
     expect(saved.status).toBe(201)
-    expect(saved.body['claimUrl']).toMatch(/^https:\/\/app\.saoi\.ie\/#\/plan\/[A-Za-z0-9_-]{22}$/)
+    expect(saved.body['claimUrl']).toMatch(/^https:\/\/app\.saoi\.ie\/\?plan=[A-Za-z0-9_-]{22}$/)
     expect(saved.body['expiresAt']).toBe(new Date(NOW + PLAN_LINK_TTL_MS).toISOString())
 
     // Only the hash is kept (Invariant 8).
@@ -183,6 +183,65 @@ describe('POST /api/plans', () => {
   it('stops saving at the daily ceiling', async () => {
     const { app } = appWith({ plans: fakePlans({ savedToday: 5 }), dailyMax: 5 })
     expect((await save(app)).status).toBe(429)
+  })
+})
+
+describe('POST /api/plans/preview', () => {
+  it('shows a saved comparison without signing in and without spending the link', async () => {
+    const { app, plans } = appWith()
+    const token = tokenOf(String((await save(app)).body['claimUrl']))
+
+    const shown = await post(app, '/api/plans/preview', { token }, { as: null })
+    expect(shown.status).toBe(200)
+    expect(shown.body).toMatchObject({ title: 'House deposit by November 2028', comparison: null })
+    expect(String(shown.body['figures'])).toMatch(/saved · €\d[\d,]*\/mo/)
+    expect(plans.claims).toHaveLength(0)
+
+    // Still claimable afterwards.
+    const claimed = await post(app, '/api/plans/claim', { token }, { as: USER_ID })
+    expect(claimed.status).toBe(200)
+    // Then the preview says it has been opened.
+    expect((await post(app, '/api/plans/preview', { token }, { as: null })).status).toBe(409)
+  })
+
+  it('carries a home comparison’s first three options', async () => {
+    const { app } = appWith()
+    const option = {
+      lender: 'Bank of Ireland',
+      kind: '4-year fixed',
+      productName: '4 Year Fixed HVM BER C',
+      ratePct: 3.2,
+      monthlyEur: 1362.27,
+      fiveYearCostEur: 49338.1,
+      keysOn: '2028-07',
+      confirmed: true,
+    }
+    const plan = {
+      ...exampleMarketPlan(),
+      comparison: {
+        kind: 'home',
+        headline: 'At these figures, the deposit and buying costs are in place around July 2028.',
+        priceEur: 350_000,
+        sortBy: 'five_year_cost',
+        sortedBy: '4 options that fit, sorted by cost over the first 5 years, lowest first.',
+        filters: [],
+        options: [option, option, option, option],
+      },
+    }
+    const token = tokenOf(String((await save(app, plan)).body['claimUrl']))
+    const shown = await post(app, '/api/plans/preview', { token }, { as: null })
+    expect(shown.status).toBe(200)
+    const comparison = shown.body['comparison'] as { total: number; options: unknown[] }
+    expect(comparison.total).toBe(4)
+    expect(comparison.options).toHaveLength(3)
+    expect(String(shown.body['figures'])).toMatch(/€350k$/)
+  })
+
+  it('answers an unknown link with 404', async () => {
+    const { app } = appWith()
+    expect(
+      (await post(app, '/api/plans/preview', { token: 'A'.repeat(22) }, { as: null })).status,
+    ).toBe(404)
   })
 })
 

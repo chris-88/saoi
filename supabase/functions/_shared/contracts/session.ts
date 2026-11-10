@@ -147,7 +147,8 @@ export const registerInterestResponseSchema = z.object({ registered: z.literal(t
 /**
  * `POST /api/plans/claim`: open a plan made in the customer's own AI (`market-plan.ts`).
  *
- * The token is the one-time code from the claim link (`#/plan/<token>`): 128 random bits,
+ * The token is the one-time code from the claim link (`?plan=<token>`, or `#/plan/<token>` on
+ * links made before 2026-11-10): 128 random bits,
  * base64url, stored only as its hash (Invariant 8).
  */
 export const PLAN_TOKEN_PATTERN = /^[A-Za-z0-9_-]{22}$/
@@ -168,6 +169,42 @@ export const claimPlanResponseSchema = sessionResponseSchema.extend({
   planTitle: z.string(),
   reopened: z.boolean(),
 })
+
+/**
+ * `POST /api/plans/preview`: what a saved comparison shows before it is opened (2026-11-10).
+ * Reads without spending the token, so the app can welcome the customer with it and show the
+ * data notice before anything is stored against them. Same errors as the claim.
+ */
+export const previewPlanResponseSchema = z.object({
+  title: z.string(),
+  /** "€25k saved · €800/mo · €90k · €350k": their figures in one line. */
+  figures: z.string(),
+  comparison: z
+    .object({
+      headline: z.string(),
+      sortedBy: z.string(),
+      filters: z.array(z.string()),
+      total: z.number().int().nonnegative(),
+      options: z
+        .array(
+          z.object({
+            lender: z.string(),
+            kind: z.string(),
+            rate: z.string(),
+            monthly: z.string(),
+            fiveYear: z.string(),
+            keys: z.string().nullable(),
+            confirmed: z.boolean(),
+          }),
+        )
+        .max(3),
+    })
+    .nullable(),
+  /** For a plan with no home comparison: the first products in it, one line each. */
+  products: z.array(z.object({ name: z.string(), provider: z.string(), line: z.string() })).max(3),
+  expiresAt: z.string(),
+})
+export type PreviewPlanResponse = z.infer<typeof previewPlanResponseSchema>
 
 export type ClaimPlanBody = z.infer<typeof claimPlanBodySchema>
 export type ClaimPlanResponse = z.infer<typeof claimPlanResponseSchema>

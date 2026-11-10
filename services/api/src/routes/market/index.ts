@@ -47,6 +47,7 @@ import {
   hashPlanToken,
   linkBase,
   newPlanToken,
+  planLink,
   PLAN_LINK_TTL_MS,
 } from '../plans/index.ts'
 import { errorResponse } from '../common.ts'
@@ -529,7 +530,7 @@ export function marketRoutes(options: MarketRouteOptions) {
         tokenHash: hashPlanToken(token),
         expiresAt,
       })
-      return { url: `${linkBase(drafts.appBaseUrl)}/#/plan/${token}`, expiresAt }
+      return { url: planLink(linkBase(drafts.appBaseUrl), token), expiresAt }
     } catch (error) {
       c.get('log').warn('plan draft not held', {
         requestId: c.get('requestId'),

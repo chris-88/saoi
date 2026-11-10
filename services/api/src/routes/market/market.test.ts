@@ -208,9 +208,9 @@ describe('public comparison routes', () => {
     const body = buildPlanResponseSchema.parse(
       await (await post(app, '/api/calc/build-plan', { situation, goals })).json(),
     )
-    expect(body.saveLink?.url).toMatch(/^https:\/\/app\.saoi\.ie\/#\/plan\/[A-Za-z0-9_-]{22}$/)
+    expect(body.saveLink?.url).toMatch(/^https:\/\/app\.saoi\.ie\/\?plan=[A-Za-z0-9_-]{22}$/)
     expect(body.saveLink?.expiresAt).toBe(new Date(NOW + PLAN_LINK_TTL_MS).toISOString())
-    const token = body.saveLink?.url.split('/').at(-1) ?? ''
+    const token = body.saveLink?.url.split('?plan=').at(-1) ?? ''
     expect(drafts.held).toEqual([
       { tokenHash: hashPlanToken(token), expiresAt: body.saveLink?.expiresAt, client: 'draft' },
     ])
@@ -240,8 +240,8 @@ describe('public comparison routes', () => {
     )
     expect(body.alternatives).toHaveLength(2)
     expect(drafts.held).toHaveLength(1)
-    expect(body.presentation.filter((line) => line.includes('/#/plan/'))).toHaveLength(1)
-    expect(JSON.stringify(body.alternatives)).not.toContain('/#/plan/')
+    expect(body.presentation.filter((line) => line.includes('/?plan='))).toHaveLength(1)
+    expect(JSON.stringify(body.alternatives)).not.toContain('/?plan=')
   })
 
   it('return the plan without a link when the draft cannot be held', async () => {
@@ -275,7 +275,7 @@ describe('public comparison routes', () => {
     const full = moneyCheckResponseSchema.parse(
       await (await post(app, '/api/calc/money-check', { situation, goals })).json(),
     )
-    expect(full.plan?.saveLink?.url).toMatch(/#\/plan\//)
+    expect(full.plan?.saveLink?.url).toMatch(/\?plan=/)
     expect(full.presentation.join('\n')).toContain(
       `Save this comparison to the Saoi app: ${full.plan?.saveLink?.url ?? ''}`,
     )

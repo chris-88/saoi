@@ -4,7 +4,7 @@ import { z } from 'zod'
  * A plan made in the customer's own AI, through the Saoi MCP tools, and carried into the app.
  *
  * `saoi_build_plan` returns one of these; `saoi_save_plan` sends it back unchanged to
- * `POST /api/plans`, which stores it behind a one-time claim link (`#/plan/<token>` on
+ * `POST /api/plans`, which stores it behind a one-time claim link (`?plan=<token>` on
  * app.saoi.ie). Claiming it opens a conversation with the plan already there.
  *
  * What it holds, in the order a person reads it:
@@ -275,6 +275,34 @@ export const marketPlanSchema = z
         line: text(400),
       })
       .optional(),
+    /**
+     * For a home: the comparison the customer saw, every option in the order they chose, so the
+     * app can show it again (2026-11-10). Optional: plans without a home goal have none.
+     */
+    comparison: z
+      .object({
+        kind: z.literal('home'),
+        headline: text(300),
+        priceEur: eur,
+        sortBy: z.enum(['five_year_cost', 'keys_date', 'monthly_repayment']),
+        sortedBy: text(200),
+        filters: z.array(text(200)).max(6).default([]),
+        options: z
+          .array(
+            z.object({
+              lender: text(80),
+              kind: text(40),
+              productName: text(120),
+              ratePct: pct,
+              monthlyEur: eur,
+              fiveYearCostEur: z.number().min(-100_000_000).max(100_000_000),
+              keysOn: monthOrDay.nullable(),
+              confirmed: z.boolean(),
+            }),
+          )
+          .max(80),
+      })
+      .optional(),
     createdAt: isoDateTime,
     /** When the oldest market figure in the plan was last checked. */
     dataCheckedAt: isoDateTime,
@@ -337,7 +365,7 @@ export const savePlanBodySchema = z.object({
 })
 
 export const savePlanResponseSchema = z.object({
-  /** Open once. `https://app.saoi.ie/#/plan/<token>`. */
+  /** Open once. `https://app.saoi.ie/?plan=<token>`. */
   claimUrl: z.url(),
   expiresAt: isoDateTime,
 })

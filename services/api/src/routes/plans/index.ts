@@ -12,8 +12,11 @@ import {
 import {
   claimPlanBodySchema,
   claimPlanResponseSchema,
+  previewPlanResponseSchema,
   type ClaimPlanResponse,
+  type PreviewPlanResponse,
 } from '@shared/contracts/session.ts'
+import { comparisonCard } from '@shared/db/saved-plans.ts'
 import type { CaseSubstance } from '@shared/domain/continuity.ts'
 import type { AppEnv } from '../../context.ts'
 import { ApiError, errorBody } from '../../errors.ts'
@@ -41,7 +44,7 @@ const DAY_MS = 24 * 60 * 60 * 1000
 
 export type PlanRouteOptions = {
   readonly store: PlanStore
-  /** The app's origin; the claim link is `<appBaseUrl>/#/plan/<token>`. */
+  /** The app's origin; the claim link is `<appBaseUrl>/?plan=<token>`. */
   readonly appBaseUrl: string
   /** Saves a day across everybody, before the route refuses. */
   readonly dailyMax?: number
@@ -59,6 +62,15 @@ export const hashPlanToken = (token: string): string =>
 
 /** 128 random bits, base64url: 22 characters, nothing about the plan in it (Invariant 8). */
 export const newPlanToken = (): string => randomBytes(16).toString('base64url')
+
+/**
+ * The claim link. The token travels in the query, not the hash (2026-11-10): opened from
+ * claude.ai's card on a phone, the `#/plan/<token>` fragment never reached the app, which
+ * then opened on a bare chat. The app reads `?plan=`, moves it into its own route and strips
+ * it from the address at once; `#/plan/<token>` links still work.
+ */
+export const planLink = (base: string, token: string): string =>
+  `${base}/?plan=${encodeURIComponent(token)}`
 
 export function linkBase(appBaseUrl: string): string {
   return (appBaseUrl.trim() === '' ? 'https://app.saoi.ie' : appBaseUrl.trim()).replace(/\/+$/, '')
@@ -100,6 +112,81 @@ const saveRoute = createRoute({
     429: errorResponse('Too many saves. See `Retry-After`.'),
   },
 })
+
+const previewRoute = createRoute({
+  method: 'post',
+  path: '/api/plans/preview',
+  tags: ['plans'],
+  summary: 'What a saved comparison shows, before it is opened',
+  description:
+    'Reads a saved comparison by its link’s token without spending it, so the app can welcome ' +
+    'the customer with it and show what Saoi keeps before anything is stored against them: ' +
+    'the title, their figures in one line, and for a home the first three options in the ' +
+    'order they chose. No sign-in. Same errors as the claim.',
+  security: [],
+  request: {
+    body: {
+      required: true,
+      content: { 'application/json': { schema: claimPlanBodySchema.openapi('PreviewPlan') } },
+    },
+  },
+  responses: {
+    200: {
+      description: 'The comparison, as the welcome shows it.',
+      content: {
+        'application/json': { schema: previewPlanResponseSchema.openapi('PreviewPlanResponse') },
+      },
+    },
+    400: errorResponse('The body is not valid.'),
+    404: errorResponse('No plan was saved behind this link.'),
+    409: errorResponse('Somebody has already opened this link.'),
+    410: errorResponse('The link has expired.'),
+    429: errorResponse('Too many requests. See `Retry-After`.'),
+  },
+})
+
+/** "€25k": short euro for the one-line figures. */
+const shortEur = (value: number): string =>
+  value >= 1_000_000
+    ? `€${String(Math.round(value / 100_000) / 10)}m`
+    : value >= 1_000
+      ? `€${String(Math.round(value / 100) / 10)}k`
+      : `€${String(Math.round(value))}`
+
+/** The welcome's view of a plan: their figures in one line, and what it compares. */
+export function previewOf(plan: MarketPlan, expiresAt: string): PreviewPlanResponse {
+  const saved = plan.situation.savings.reduce((sum, item) => sum + item.balance, 0)
+  const figures = [
+    saved > 0 ? `${shortEur(saved)} saved` : null,
+    plan.situation.monthlySaving === undefined
+      ? null
+      : `€${Math.round(plan.situation.monthlySaving).toLocaleString('en-IE')}/mo`,
+    plan.situation.income?.annualGross === undefined
+      ? null
+      : shortEur(plan.situation.income.annualGross),
+    plan.comparison === undefined ? null : shortEur(plan.comparison.priceEur),
+  ].filter((part): part is string => part !== null)
+  return {
+    title: plan.title,
+    figures: figures.join(' · '),
+    comparison: plan.comparison === undefined ? null : comparisonCard(plan.comparison),
+    products: plan.combination.products.slice(0, 3).map((product) => ({
+      name: product.productName,
+      provider: product.providerName,
+      line: [
+        product.amount === undefined
+          ? null
+          : `€${Math.round(product.amount).toLocaleString('en-IE')}`,
+        product.monthlyAmount === undefined
+          ? null
+          : `€${Math.round(product.monthlyAmount).toLocaleString('en-IE')} a month`,
+      ]
+        .filter((part): part is string => part !== null)
+        .join(' + '),
+    })),
+    expiresAt,
+  }
+}
 
 const claimRoute = createRoute({
   method: 'post',
@@ -190,7 +277,21 @@ export function planRoutes(options: PlanRouteOptions) {
       products: body.plan.combination.products.length,
     })
 
-    return c.json({ claimUrl: `${base}/#/plan/${token}`, expiresAt }, 201)
+    return c.json({ claimUrl: planLink(base, token), expiresAt }, 201)
+  })
+
+  routes.use('/api/plans/preview', limiter)
+  routes.openapi(previewRoute, async (c) => {
+    const { token } = c.req.valid('json')
+    const stored = await store.findByTokenHash(hashPlanToken(token))
+    if (stored === null) throw new ApiError('not_found', UNKNOWN)
+    if (stored.claimedAt !== null) throw new ApiError('conflict', USED)
+    if (Date.parse(stored.expiresAt) <= now()) throw new ApiError('expired', EXPIRED)
+    const parsed = marketPlanSchema.safeParse(upgradeStoredPlan(stored.document))
+    if (!parsed.success) {
+      throw new ApiError('internal', 'This plan could not be read.', { cause: parsed.error })
+    }
+    return c.json(previewOf(parsed.data, stored.expiresAt), 200)
   })
 
   routes.openapi(claimRoute, async (c) => {

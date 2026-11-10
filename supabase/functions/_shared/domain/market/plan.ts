@@ -174,6 +174,7 @@ export function buildPlan(
   const closing = main.presentation.at(-1)
   return {
     ...main,
+    plan: withComparison(main.plan, main.home),
     alternatives,
     runnersUp,
     nextQuestion,
@@ -190,6 +191,35 @@ export function buildPlan(
       // The presentation ends with the one question: the host asks it, one per reply.
       ...(nextQuestion === null ? [] : [nextQuestionLine(nextQuestion)]),
     ],
+  }
+}
+
+/** The home options the customer saw, carried in the plan so the app can show them again. */
+function withComparison(plan: MarketPlan, home: BuildPlanResponse['home']): MarketPlan {
+  if (home === null || home.pathways.length === 0) return plan
+  return {
+    ...plan,
+    comparison: {
+      kind: 'home',
+      headline: clip(home.headline, 300),
+      priceEur: home.price,
+      sortBy: home.sortBy,
+      sortedBy: clip(home.sortedBy, 200),
+      filters: home.filters.slice(0, 6).map((filter) => clip(filter, 200)),
+      options: home.pathways.slice(0, 80).map((option) => ({
+        lender: clip(option.lenderName, 80),
+        kind:
+          option.mortgage.rateType === 'fixed' && option.mortgage.fixedYears !== null
+            ? `${String(option.mortgage.fixedYears)}-year fixed`
+            : 'variable',
+        productName: clip(option.mortgage.name, 120),
+        ratePct: option.mortgage.ratePct,
+        monthlyEur: option.mortgage.monthlyRepayment,
+        fiveYearCostEur: option.netCostEur,
+        keysOn: option.keysOn,
+        confirmed: option.confirmed,
+      })),
+    },
   }
 }
 

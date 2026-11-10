@@ -42,7 +42,7 @@ export type AppDeps = {
   readonly admin?: AdminStores
   /** The conversation turn. Unset, `POST /api/cases/:caseId/turns` is not mounted. */
   readonly turn?: TurnRouteOptions
-  /** Saved plans. Unset, `/api/plans` and `/api/plans/claim` are not mounted. */
+  /** Saved plans. Unset, `/api/plans`, `/api/plans/preview` and `/api/plans/claim` are not mounted. */
   readonly plans?: PlanRouteOptions
   /** The public comparison API. Unset, `/api/market/*` and `/api/calc/*` are not mounted. */
   readonly market?: MarketRouteOptions
@@ -56,7 +56,7 @@ export type AppDeps = {
 }
 
 /** Routes nobody signs in to. Each one carries its own size cap and rate limit. */
-const PUBLIC_ROUTES: ReadonlySet<string> = new Set(['POST /api/plans'])
+const PUBLIC_ROUTES: ReadonlySet<string> = new Set(['POST /api/plans', 'POST /api/plans/preview'])
 const isPublic = (method: string, path: string): boolean =>
   PUBLIC_ROUTES.has(`${method} ${path.replace(/\/+$/, '')}`) ||
   MARKET_ROUTE_PREFIXES.some((prefix) => path.startsWith(prefix))
