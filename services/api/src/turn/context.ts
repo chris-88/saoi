@@ -397,8 +397,16 @@ export async function buildGeneration(
   const openedPlan =
     turn.trigger === 'return' &&
     loaded.eventsSinceLastSeen.some((event) => event.type === 'plan_claimed')
+  /*
+   * Not on the first questions about it either (2026-11-10): asked to talk the options through,
+   * the reply is the answer, not an offer to sign in. Once they have said a few things.
+   */
+  const customerTurns = loaded.messages.filter((message) => message.role === 'customer').length
   const signInForPlan =
-    broughtPlans.length > 0 && loaded.authLevel !== 'authenticated' && !openedPlan
+    broughtPlans.length > 0 &&
+    loaded.authLevel !== 'authenticated' &&
+    !openedPlan &&
+    customerTurns >= 3
 
   const offeringSignIn =
     !(await caseHasEvent(admin, turn.caseId, SIGN_IN_PROMPT_EVENT)) &&
