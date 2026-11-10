@@ -60,7 +60,7 @@ export function mortgageCheck(products: readonly MarketProduct[], asOf: string):
     return lines
   }
   lines.push(
-    `pathways for the reference purchase (${String(home.price)} at ${String(home.ltvPct)}% LTV, over ${home.comparedOver.basis === 'term' ? `${String(home.comparedOver.years)} years` : `${String(home.comparedOver.years)}-year fixed`}):`,
+    `pathways for the reference purchase (${String(home.price)} at ${String(home.ltvPct)}% LTV, over the first ${String(home.comparedOver.years)} years):`,
   )
   for (const pathway of home.pathways) {
     const gap = Math.round((pathway.mortgage.ratePct - pathway.lowestRatePct) * 100) / 100

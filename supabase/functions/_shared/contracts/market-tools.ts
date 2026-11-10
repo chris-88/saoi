@@ -1358,7 +1358,25 @@ export const homePathwaySchema = z.object({
     'Cashback counted: at drawdown, plus a later payment where it falls in the period.',
   ),
   bonusEur: eur.describe('Savings bonuses tied to this lender’s mortgage, net of DIRT.'),
-  netCostEur: z.number().describe('Interest less cashback and bonuses over the period compared.'),
+  netCostEur: z
+    .number()
+    .describe(
+      'Over the first 5 years: interest on a 30-year term plus the valuation fee, less cashback paid within 5 years and any savings bonus. What pathways are ranked by.',
+    ),
+  cashbackAfterEur: eur.describe(
+    'Cashback paid after the 5 years if repayments are on time: listed, not ranked.',
+  ),
+  thirtyYearNetEur: z
+    .number()
+    .nullable()
+    .describe(
+      'The same over 30 years, if today’s follow-on rates held for 30 years. Secondary detail.',
+    ),
+  followOnAssumed: z
+    .boolean()
+    .describe(
+      'A fix shorter than 5 years with no stated follow-on rate: the fixed rate carried on, unconfirmed.',
+    ),
   vsCheapestEur: z.number().describe('Net cost less the cheapest pathway’s. 0 for the cheapest.'),
   drivers: z.string().describe('What makes this pathway differ, in a few words.'),
   conditions: z.array(z.string()),
@@ -1410,7 +1428,7 @@ export const homePathwaysSchema = z
     neededAtKeysEur: eur.describe('Deposit plus stamp duty and fees, less Help to Buy.'),
     keysOn: z.string().nullable(),
     comparedOver: z
-      .object({ basis: z.enum(['term', 'fixed_period']), years: z.number().int() })
+      .object({ basis: z.enum(['term', 'fixed_period', 'first_years']), years: z.number().int() })
       .describe('The period every pathway is costed over, the same for all.'),
     pathways: z.array(homePathwaySchema),
     leftOut: z.array(z.string()),

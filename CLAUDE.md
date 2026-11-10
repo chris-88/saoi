@@ -336,8 +336,10 @@ The engine behind the Saoi MCP tools, in `_shared/domain/market/` (pure; contrac
   compares lenders end to end: the price (given, or what the savings by the date support at 90%
   LTV, capped by 4 times income when given), the cash needed at the keys (deposit plus 1% stamp
   duty and a €3,000 legal and survey estimate, less Help to Buy for a new build), each lender's
-  cheapest first-time-buyer mortgage at that LTV over the same period (30 years where every
-  lender states a follow-on rate, else the most common fixed period), its cashback and linked
+  cheapest first-time-buyer mortgage at that LTV over the first 5 years (Chris, 2026-11-10:
+  interest on a 30-year term plus the valuation fee, a shorter fix moving to its follow-on rate,
+  less cashback paid within 5 years; later cashback is listed, not ranked; the 30-year figure is
+  secondary, "if today's follow-on rates held"), its cashback and linked
   savings bonus (`_shared/market/mortgage-incentives.ts`, with conditions, source and
   `confirmed`), ranked by cost, with the keys month beside it. A new build is taken as BER A
   (green rates, Help to Buy); otherwise standard rates and BER C where a lender prices by BER.
