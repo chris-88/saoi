@@ -511,7 +511,7 @@ export function marketRoutes(options: MarketRouteOptions) {
       ...presentation.slice(0, -1),
       saveLink === null
         ? 'A link to open this plan in the Saoi app could not be held just now; saoi_save_plan can save it.'
-        : `Save this plan to the Saoi app: ${saveLink.url} (held for 24 hours so it can be opened, then deleted unless opened).`,
+        : `This plan can be opened in the Saoi app: ${saveLink.url} (held for 24 hours, then deleted unless opened).`,
       ...(closing === undefined ? [] : [closing]),
     ]
   }

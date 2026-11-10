@@ -53,7 +53,7 @@ describe('alternatives in one call', () => {
     expect(keep?.changes).toEqual(['the car loan kept', 'a €6,000 emergency buffer'])
     expect(more?.differenceEur).toBeGreaterThan(4_000)
     expect(keep?.line).toMatch(
-      /^Keep €6,000 aside, keep the loan \(the car loan kept, a €6,000 emergency buffer\): €[\d,.]+ at November 2028, everything held; €[\d,.]+ (more|less) than the plan above\.$/,
+      /^Option “Keep €6,000 aside, keep the loan” \(the car loan kept, a €6,000 emergency buffer\): €[\d,.]+ at November 2028, everything held; €[\d,.]+ (more|less) than the plan above\.$/,
     )
     expect(() => buildPlanResponseSchema.parse(result)).not.toThrow()
   })
@@ -91,5 +91,38 @@ describe('alternatives in one call', () => {
     const text = [...result.whatIf.lines, result.next].join(' ')
     expect(text).not.toMatch(/call (saoi_build_plan )?again with/)
     expect(result.next).toMatch(/pass them as `alternatives` in one saoi_build_plan call/)
+  })
+
+  it('makes clearing and keeping comparable: each option equals the matching scenario', () => {
+    const both = plan({
+      alternatives: [
+        { name: 'Cleared', debtPlans: [{ debtId: 'car-loan', plan: 'clear' }] },
+        { name: 'Kept', debtPlans: [{ debtId: 'car-loan', plan: 'keep' }] },
+      ],
+    })
+    const scenario = both.debtScenarios[0]
+    expect(both.alternatives[0]?.position.total).toBeCloseTo(scenario?.cleared.netPosition ?? 0, 1)
+    expect(both.alternatives[1]?.position.total).toBeCloseTo(scenario?.kept.netPosition ?? 0, 1)
+    const line =
+      both.presentation.find((text) => text.startsWith('car loan, cleared or kept')) ?? ''
+    expect(line).toMatch(/of interest paid if it is kept/)
+    expect(line).toMatch(/€409\.71 a month repayment saved once it is cleared/)
+  })
+
+  it('puts no imperative at the start of any presentation line', () => {
+    const lines = plan({
+      alternatives: [{ name: 'Keep the loan', debtPlans: [{ debtId: 'car-loan', plan: 'keep' }] }],
+    }).presentation
+    for (const line of lines) {
+      expect(line).not.toMatch(
+        /^(Clear|Pay|Don’t|Don't|Do not|Lock|Move|Put|Set up|Open|Ask|Save|Keep|Switch|Get|Use|Take)\b/,
+      )
+    }
+  })
+
+  it('states Help to Buy as a sourced fact when the goal is a house', () => {
+    const line = plan({}).presentation.find((text) => text.startsWith('Help to Buy')) ?? ''
+    expect(line).toMatch(/€35,000 \(applications from 2026-10-07\)/)
+    expect(line).toMatch(/Source: Revenue, https:\/\/www\.revenue\.ie\/.*checked 2026-11-09/)
   })
 })
