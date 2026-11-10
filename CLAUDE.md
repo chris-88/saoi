@@ -355,7 +355,9 @@ The engine behind the Saoi MCP tools, in `_shared/domain/market/` (pure; contrac
   split uses one, the mortgage, the cashback) and says the current account can stay where it is.
   `nextQuestion` is worked out in `next-question.ts`: each unanswered input (income, new build
   or second-hand, price, a debt's repayment, the current account's bank) is run across a few
-  plausible answers, scored in euro by the spread in cost, position and keys month, and the
+  plausible answers, scored in euro on the goal (the spread in the price that can be bought, keys
+  months × monthly saving, what is held, and cost per €100,000 borrowed; never the absolute cost
+  of a bigger home, and not the price when the price is what is asked), and the
   largest is asked; the rest are `laterQuestions`. The presentation ends with that one question.
   `completeness` counts answered and assumed inputs; `saveCall` turns to "Ready to make this
   plan happen?" once, for a home, income and the kind of home are known, and lists what the app

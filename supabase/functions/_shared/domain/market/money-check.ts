@@ -59,7 +59,7 @@ export function moneyCheck(
     key: 'goal',
     question: 'What is the money for: a home, a car, or nothing in particular yet? And by when?',
     why: 'With a goal and a date, the plan saves towards it instead of the savings held with no date.',
-    spread: { keysMonths: 0, costEur: 0, priceEur: 0, totalEur: 0 },
+    spread: { keysMonths: 0, costEur: 0, costPer100kEur: 0, priceEur: 0, totalEur: 0 },
     scoreEur: 0,
   }
   const presentation =
