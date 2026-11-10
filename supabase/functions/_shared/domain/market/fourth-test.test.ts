@@ -82,8 +82,9 @@ describe('money held in a current account earns 0%, which is known', () => {
       goals: [home],
       emergencyBufferEur: 5_000,
     })
-    expect(unknown.moneyFound.annualEur).toBe(0)
-    expect(unknown.moneyFound.headline).toMatch(/No money found/)
+    // The savings account's rate is unknown, so none of its money counts as found; the car loan
+    // (modelled on an assumed even repayment) is the only part.
+    expect(unknown.moneyFound.parts.map((part) => part.kind)).toEqual(['debt_interest'])
   })
 })
 
@@ -141,7 +142,7 @@ describe('keeping a debt is modelled by keeping it', () => {
     )
     expect(result.position.line).toMatch(/less €[\d,]+ still owed on the car loan\.$/)
     expect(result.whatIf.lines.join(' ')).toMatch(
-      /What if the car loan were cleared from the lump sum instead \(call again with its plan: "clear"\)/,
+      /What if the car loan were cleared from the lump sum instead \(an alternative with its plan: "clear"\)/,
     )
     // The choice is an input, not part of the plan document.
     expect(JSON.stringify(result.plan.situation.debts)).not.toMatch(/"plan"/)
@@ -159,17 +160,36 @@ describe('keeping a debt is modelled by keeping it', () => {
     expect(result.plan.debts[0]?.action).toBe('pay_off_first')
   })
 
-  it('with no repayment given, counts today’s balance as owed rather than leaving the debt out', () => {
+  it('with no repayment given, assumes an even repayment over the horizon and compares clearing with keeping', () => {
     const result = plan({ situation: asked, goals: [home], emergencyBufferEur: 5_000 })
-    expect(result.position.owedIsCeiling).toBe(true)
-    expect(result.position.owed).toBe(9_000)
-    expect(result.position.line).toMatch(/today’s balance, the most it can be/)
-    const loanNote = result.moneyFound.notCounted.find((item) =>
-      /car loan cleared from savings/.test(item.label),
+    expect(result.assumedRepayments).toEqual([
+      expect.objectContaining({ debtId: 'car-loan', balance: 9_000, months: 24 }),
+    ])
+    const assumed = result.assumedRepayments[0]
+    // €9,000 at 9% APR repaid evenly over 24 months.
+    expect(assumed?.monthlyRepayment).toBeGreaterThan(405)
+    expect(assumed?.monthlyRepayment).toBeLessThan(415)
+    expect(assumed?.note).toMatch(
+      /^Assumed: the car loan’s €9,000 repaid evenly over 24 months .* with the actual repayment the figure is exact\.$/,
     )
-    expect(loanNote?.annualEur).toBeGreaterThan(600)
-    expect(loanNote?.why).toMatch(/not counted/)
-    expect(result.questions.join(' ')).toMatch(/monthly repayment or the months left/)
+    // Stated where it shows: the presentation (right after the position), the assumptions, `next`.
+    expect(result.presentation[2]).toBe(assumed?.note)
+    expect(result.plan.assumptions).toContain(assumed?.note)
+    expect(result.next).toMatch(/assume an even repayment over 24 months/)
+    expect(result.questions[0]).toMatch(/actual monthly repayment, or the months left/)
+    // Both ways worked out, and the saving counted in money found.
+    const scenario = result.debtScenarios[0]
+    expect(scenario?.chosen).toBe('cleared')
+    expect(scenario?.kept.debtAtHorizon).toBe(0)
+    expect(result.position.owedIsCeiling).toBe(false)
+    const part = result.moneyFound.parts.find((item) => item.kind === 'debt_interest')
+    expect(part?.annualEur).toBe(
+      Math.round(((scenario?.cleared.netPosition ?? 0) - (scenario?.kept.netPosition ?? 0)) / 2),
+    )
+    expect(result.moneyFound.headline).toMatch(/car loan cleared in this plan/)
+    expect(result.presentation.join(' ')).toMatch(/repaid by then/)
+    // What the customer said is kept as said: the plan's situation has no repayment invented.
+    expect(result.plan.situation.debts[0]?.monthsRemaining).toBeUndefined()
 
     const cleared = plan({
       situation: { ...asked, debts: [{ ...loan, plan: 'clear' }] },
@@ -179,6 +199,37 @@ describe('keeping a debt is modelled by keeping it', () => {
     expect(cleared.position.owed).toBe(0)
     expect(cleared.plan.debts[0]?.action).toBe('pay_off_first')
     expect(cleared.plan.recommendation.totals?.lumpSum).toBe(16_000)
+  })
+
+  it('with the repayment given, assumes nothing and works it out as before', () => {
+    const given = plan({
+      situation: { ...asked, debts: [{ ...loan, monthsRemaining: 36 }] },
+      goals: [home],
+      emergencyBufferEur: 5_000,
+    })
+    expect(given.assumedRepayments).toEqual([])
+    expect(given.presentation.join(' ')).not.toMatch(/Assumed:/)
+    expect(given.next).not.toMatch(/even repayment/)
+    expect(given.questions.join(' ')).not.toMatch(/monthly repayment/)
+    const scenario = given.debtScenarios[0]
+    // 36 months left: still owed at month 24 if kept.
+    expect(scenario?.kept.debtAtHorizon).toBeGreaterThan(3_000)
+    const byRepayment = plan({
+      situation: { ...asked, debts: [{ ...loan, monthlyRepayment: 286.19 }] },
+      goals: [home],
+      emergencyBufferEur: 5_000,
+    })
+    expect(byRepayment.assumedRepayments).toEqual([])
+  })
+
+  it('gives the money check the same figures as build_plan', () => {
+    const body = { situation: asked, goals: [home], emergencyBufferEur: 5_000 }
+    const direct = plan(body)
+    const checked = check(body).plan
+    expect(checked?.assumedRepayments).toEqual(direct.assumedRepayments)
+    expect(checked?.debtScenarios).toEqual(direct.debtScenarios)
+    expect(checked?.moneyFound).toEqual(direct.moneyFound)
+    expect(check(body).presentation.join(' ')).toMatch(/Assumed: the car loan’s €9,000/)
   })
 
   it('never words a what-if like a scenario', () => {

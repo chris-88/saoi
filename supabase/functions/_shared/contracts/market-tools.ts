@@ -1155,13 +1155,37 @@ export type DebtResponse = z.infer<typeof debtResponseSchema>
 export const DEFAULT_MIN_LOCK_GAIN_EUR = 100
 export const DEFAULT_MIN_LOCK_GAIN_PCT_PER_YEAR = 0.25
 
+/** One named variation of the situation, worked out in the same call as the main plan. */
+export const planAlternativeSchema = z
+  .object({
+    name: text(60).describe(
+      'A short name the customer would recognise: "Keep the car loan", "€6,000 aside".',
+    ),
+    emergencyBufferEur: eur.optional().describe('A different emergency buffer, in euro.'),
+    keepAccessible: z
+      .boolean()
+      .optional()
+      .describe('Everything in instant access (true), or terms allowed (false).'),
+    monthlySaving: eur.optional().describe('A different amount saved each month.'),
+    targetDate: monthOrDay.optional().describe('A different date for the main goal.'),
+    targetAmount: eur.optional().describe('A different target for the main goal.'),
+    debtPlans: z
+      .array(z.object({ debtId: z.string(), plan: z.enum(DEBT_PLAN_CHOICES) }))
+      .max(20)
+      .optional()
+      .describe('A different choice for a debt: `keep`, `clear` or `compare`, by its id.'),
+    homePrice: eur.optional().describe('A different home price, for Help to Buy.'),
+  })
+  .describe('What differs from the main request; everything not given is as in the main request.')
+export type PlanAlternative = z.infer<typeof planAlternativeSchema>
+
 export const buildPlanRequestSchema = z.object({
   situation: situationSchema,
   goals: z.array(goalSchema).min(1).max(8),
   emergencyBufferEur: eur
     .optional()
     .describe(
-      'An emergency buffer to hold first, in the best instant-access account, in euro. Wins over `emergencyBufferMonths` and over an `emergency_fund` goal’s `targetAmount`. 0 holds none. To try a different buffer, call again with a new figure.',
+      'An emergency buffer to hold first, in the best instant-access account, in euro. Wins over `emergencyBufferMonths` and over an `emergency_fund` goal’s `targetAmount`. 0 holds none. To compare a different buffer, pass it as an alternative.',
     ),
   emergencyBufferMonths: z
     .number()
@@ -1222,6 +1246,13 @@ export const buildPlanRequestSchema = z.object({
     .describe(
       'Income Tax and DIRT paid over the last four tax years (not USC or PRSI): the most Help to Buy can be.',
     ),
+  alternatives: z
+    .array(planAlternativeSchema)
+    .max(3)
+    .optional()
+    .describe(
+      'Up to three named variations to compare with the main plan in this same call (a different buffer, a debt kept or cleared, another monthly amount or date). Each comes back with its net figure. Use this to compare options rather than calling again.',
+    ),
 })
 export type BuildPlanRequest = z.infer<typeof buildPlanRequestSchema>
 
@@ -1264,7 +1295,42 @@ const positionSchema = z.object({
     .describe('YYYY-MM the main goal is reached, if within the figures.'),
 })
 
+export const assumedRepaymentSchema = z
+  .object({
+    debtId: z.string(),
+    label: z.string(),
+    balance: eur,
+    months: z.number().int().describe('Repaid evenly over this many months: the plan’s horizon.'),
+    monthlyRepayment: eur.describe('The level repayment that assumes, at the debt’s rate.'),
+    note: z.string().describe('The assumption in words, for the host to relay.'),
+  })
+  .describe(
+    'A debt given with a balance and rate but no repayment or months left, modelled as repaid in equal monthly instalments over the plan’s horizon (Chris, 2026-11-09). A conservative modelling assumption: the actual repayment gives the exact figure.',
+  )
+
+export const planAlternativeResultSchema = z.object({
+  name: z.string(),
+  changes: z.array(z.string()).describe('What differs from the main plan, in words.'),
+  position: planPositionSchema.describe(
+    'The alternative’s own position, everything held less what is still owed.',
+  ),
+  differenceEur: z
+    .number()
+    .describe('Its total less the main plan’s total, at the same date where the date is the same.'),
+  goalReachedOn: z.string().nullable(),
+  moneyFoundAnnualEur: z.number(),
+  line: z.string().describe('The comparison in one sentence, for the presentation and the card.'),
+})
+
 export const buildPlanResponseSchema = z.object({
+  alternatives: z
+    .array(planAlternativeResultSchema)
+    .describe(
+      'The variations asked for in `alternatives`, each worked out in this call. Empty when none were asked for.',
+    ),
+  assumedRepayments: z
+    .array(assumedRepaymentSchema)
+    .describe('Debts whose repayment was assumed. Empty when every repayment was given.'),
   presentation: z
     .array(z.string())
     .describe(
@@ -1274,7 +1340,7 @@ export const buildPlanResponseSchema = z.object({
     .array(z.string())
     .max(3)
     .describe(
-      'The two or three questions that would sharpen the plan (the same as saoi_money_check asks), for the host to ask in its own words. Call again with the answers.',
+      'The two or three questions that would sharpen the plan (the same as saoi_money_check asks), for the host to ask in its own words. Call again once the customer answers, in a later message.',
     ),
   position: planPositionSchema,
   saveLink: z
@@ -1407,7 +1473,7 @@ export const buildPlanResponseSchema = z.object({
       lines: z
         .array(z.string())
         .describe(
-          'The what-ifs in words, with their figures, for the host to relay. To try one, call saoi_build_plan again with the changed input; do not adjust the figures by hand.',
+          'The what-ifs in words, with their figures, for the host to relay. To compare one properly, pass it as an `alternative` in the same call; do not adjust the figures by hand.',
         ),
     })
     .describe('How the result moves when one input changes.'),
@@ -1449,7 +1515,7 @@ export const moneyCheckResponseSchema = z.object({
     .array(z.string())
     .max(3)
     .describe(
-      'The two or three questions that would unlock or sharpen the plan, for the host to ask in its own words. Call this tool again with the answers.',
+      'The two or three questions that would unlock or sharpen the plan, for the host to ask in its own words. Call this tool again once the customer answers, in a later message.',
     ),
   review: reviewResponseSchema,
   plan: buildPlanResponseSchema

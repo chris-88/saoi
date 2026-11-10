@@ -12,6 +12,19 @@ export function questionsFor(situation: Situation, goals: readonly Goal[]): stri
       'How much is held in savings or a current account now, and how much can be put aside each month?',
     )
   }
+  // Second: without it a loan's figures rest on an assumed even repayment (Chris, 2026-11-09).
+  const debts = situation.debts.filter((debt) => debt.kind !== 'mortgage')
+  if (
+    debts.some((debt) => debt.monthlyRepayment === undefined && debt.monthsRemaining === undefined)
+  ) {
+    out.push(
+      debts.some((debt) => debt.ratePct === undefined)
+        ? 'For each loan or card: the interest rate, and the monthly repayment or the months left? Without the repayment, an even repayment over the plan’s months is assumed.'
+        : 'For each loan or card: the actual monthly repayment, or the months left? Without it, an even repayment over the plan’s months is assumed.',
+    )
+  } else if (debts.some((debt) => debt.ratePct === undefined)) {
+    out.push('For each loan or card: the interest rate?')
+  }
   if (goals.length === 0) {
     out.push(
       'What is the money for: a home, a car, a buffer for emergencies, or nothing in particular yet? And by when?',
@@ -28,17 +41,6 @@ export function questionsFor(situation: Situation, goals: readonly Goal[]): stri
   if (situation.savings.some((item) => item.aerPct === undefined && !isCurrentAccount(item))) {
     out.push(
       'What do the savings earn now, if known? Without the rate, the money they could earn elsewhere is not counted.',
-    )
-  }
-  if (
-    situation.debts.some(
-      (debt) =>
-        debt.ratePct === undefined ||
-        (debt.monthlyRepayment === undefined && debt.monthsRemaining === undefined),
-    )
-  ) {
-    out.push(
-      'For each loan or card: the interest rate, and the monthly repayment or the months left?',
     )
   }
   if (monthlyOutgoings(situation) === null) {

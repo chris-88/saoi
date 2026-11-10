@@ -297,7 +297,9 @@ const moneyCheckRoute = createRoute({
     'finds (money found a year, with its sources), a plan across the Irish market when there is ' +
     'money to place, the two or three questions that would sharpen it, the presentation to lead ' +
     'with, and a link that holds the plan for 24 hours so it can be opened in the Saoi app (the ' +
-    'only thing stored). Call it again as the customer says more. ' +
+    'only thing stored). One call per reply: call it first, not alongside saoi_build_plan, and ' +
+    'pass up to three `alternatives` to compare options in the same call. Call it again only ' +
+    'when the customer says more about their situation in a later message. ' +
     INFORMATION,
   security: [],
   request: { body: jsonBody(moneyCheckRequestSchema.openapi('MoneyCheck')) },
@@ -329,8 +331,12 @@ const buildPlanRoute = createRoute({
     'month, each debt cleared or kept, the month a target is reached at this pace); for a ' +
     'house deposit, what it supports under the Central Bank limits. `position` is everything held ' +
     'at the end (towards the goal and the buffer, named) less what is still owed; the questions ' +
-    'that would sharpen the plan come with it, as in saoi_money_check. To change an assumption, ' +
-    'call again with the new inputs rather than adjusting the figures. Returns `plan` (a ' +
+    'that would sharpen the plan come with it, as in saoi_money_check. For a follow-up once ' +
+    'saoi_money_check has run; one call per reply, never alongside saoi_money_check. To compare ' +
+    'options (another buffer, a debt kept or cleared, another monthly amount or date), pass up to ' +
+    'three `alternatives` in the same call: each comes back with its own net figure. Call again ' +
+    'only when the customer changes their situation in a later message, never to adjust ' +
+    'figures. Returns `plan` (a ' +
     '`MarketPlan`, the body `POST /api/plans` takes: send it unchanged to save it behind a ' +
     'one-time link), the reasoning, every figure, and `next` for the host to relay. ' +
     INFORMATION,
