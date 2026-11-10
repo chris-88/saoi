@@ -261,7 +261,7 @@ describe('either entry point gives the same answer', () => {
     const built = plan(body)
     const checked = check(body)
     expect(built.questions.length).toBeGreaterThan(0)
-    expect(built.presentation.join(' ')).toMatch(/To sharpen this, the customer could say: \(1\)/)
+    expect(built.presentation.at(-1)).toMatch(/^Answer this one and the plan gets sharper: /)
     expect(checked.presentation).toEqual(built.presentation)
     expect(checked.questions).toEqual(built.questions)
     expect(checked.plan?.moneyFound.headline).toBe(built.moneyFound.headline)
