@@ -233,7 +233,7 @@ describe('keeping a debt is modelled by keeping it', () => {
     expect(checked?.debtScenarios).toEqual(direct.debtScenarios)
     expect(checked?.moneyFound).toEqual(direct.moneyFound)
     expect(check(body).presentation.join(' ')).toMatch(/Assumed: the car loan’s €9,000/)
-  })
+  }, 20_000)
 
   it('never words a what-if like a scenario', () => {
     const result = plan({

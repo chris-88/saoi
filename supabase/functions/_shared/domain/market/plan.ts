@@ -223,8 +223,10 @@ function workOutRunnersUp(
     if (out.length >= RUNNERS_UP) break
     const without: Market = {
       ...market,
+      // Mortgages play no part in the split, and leaving them out keeps the run quick.
       products: market.products.filter(
         (product) =>
+          product.category !== 'mortgage' &&
           product.id !== leaving.id &&
           !(product.provider === leaving.provider && leaving.name.startsWith(product.name)),
       ),
