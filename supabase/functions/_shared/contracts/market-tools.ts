@@ -224,6 +224,11 @@ export const mortgageTermsSchema = z.object({
   }),
   fees: z.record(z.string(), z.string()).describe('Fees as the source states them, verbatim.'),
   highValue: z.boolean().describe('A high-value-mortgage rate (larger loans only).'),
+  minLoanEur: eur
+    .nullable()
+    .describe(
+      'The smallest loan the rate is for, where the source states one ("borrowing €250,000 or more"). Null: not stated; for a high-value rate that means the threshold is unknown, not absent.',
+    ),
 })
 
 export const loanTermsSchema = z.object({
@@ -1362,6 +1367,12 @@ export const homePathwaySchema = z.object({
     .describe('True when every incentive counted was read from the lender’s own site.'),
   greenNote: z.string().nullable(),
   sources: z.array(z.string()),
+  lowestRatePct: pct.describe('The lowest initial rate among this lender’s eligible products.'),
+  considered: z
+    .array(
+      z.object({ productId: z.string(), name: z.string(), ratePct: pct, netCostEur: z.number() }),
+    )
+    .describe('This lender’s cheapest eligible products by net cost, the chosen one first.'),
   bundle: z
     .object({
       products: z.array(

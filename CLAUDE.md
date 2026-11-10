@@ -342,6 +342,12 @@ The engine behind the Saoi MCP tools, in `_shared/domain/market/` (pure; contrac
   `confirmed`), ranked by cost, with the keys month beside it. A new build is taken as BER A
   (green rates, Help to Buy); otherwise standard rates and BER C where a lender prices by BER.
   First-time buyer is assumed when no home is mentioned. Every assumption is stated in one line.
+  High-value rates count when the loan reaches the minimum the source states (`terms.minLoanEur`,
+  parsed from "borrowing €250,000 or more"); where it does not state one, the rate counts and the
+  pathway says to check it. Each lender's pick is the product with the lowest cost net of
+  cashback (`considered` lists the runners-up). The refresh ends with a data check
+  (`scripts/market/mortgage-check.ts`): each lender's lowest first-time-buyer rate, and a CHECK
+  where a reference pathway's pick is more than 0.25 points above the lender's lowest eligible rate.
   The BoI MortgageSaver bonus is paid after drawdown (its brochure), so it lowers cost, not the
   deposit; cashback is always cost.
 - **Bundles, the next question, the save call** (Chris, 2026-11-10): each pathway lists what

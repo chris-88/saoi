@@ -18,7 +18,7 @@ import type { Market } from './types.ts'
  */
 
 export const TERM_YEARS = 30
-const MAX_PATHWAYS = 6
+const MAX_PATHWAYS = 10
 
 export type PathwayInput = {
   readonly market: Market
@@ -175,7 +175,9 @@ export function homePathways(input: PathwayInput): HomePathways | null {
     if (!terms.buyerTypes.includes(buyer)) return []
     if ((terms.ltvMinPct ?? 0) > ltvPct + 1e-9 || (terms.ltvMaxPct ?? 100) < ltvPct - 1e-9)
       return []
-    if (terms.highValue || /higher value/i.test(product.name)) return []
+    // A rate for larger loans only: kept when the loan is at least its stated minimum. Where the
+    // source does not state the minimum, the rate is kept and the pathway says to check it.
+    if (terms.minLoanEur !== null && loan < terms.minLoanEur) return []
     // A new build is taken as BER A: green rates apply. Otherwise standard rates only, and where
     // a lender prices by BER, a BER C is assumed (stated, correctable).
     if (isGreen(product) && !input.newBuild) return []
@@ -291,6 +293,9 @@ export function homePathways(input: PathwayInput): HomePathways | null {
         return c === null ? [] : [c]
       })
       .sort((a, b) => a.interest - a.cashback - (b.interest - b.cashback))
+    // Per lender, the product that costs least net of cashback (the bonus is the same for all of
+    // its products): a rate with no cashback and one with 3% are only comparable once both are
+    // worked out.
     const top = options[0]
     const name =
       eligible.find((item) => item.product.provider === lender)?.product.providerName ?? lender
@@ -300,7 +305,7 @@ export function homePathways(input: PathwayInput): HomePathways | null {
       )
       return []
     }
-    return [{ lender, name, top, bonus }]
+    return [{ lender, name, top, bonus, options }]
   })
   if (best.length === 0) return null
 
@@ -309,8 +314,14 @@ export function homePathways(input: PathwayInput): HomePathways | null {
       ? `${String(TERM_YEARS)} years`
       : `the ${String(basis.years)}-year fixed period`
   const ranked = best
-    .map(({ lender, name, top, bonus }) => {
+    .map(({ lender, name, top, bonus, options }) => {
       const net = round2(top.interest - top.cashback - bonus.eur)
+      const minLoanUnknown = top.terms.highValue && top.terms.minLoanEur === null
+      const lowestRatePct = Math.min(
+        ...eligible
+          .filter((item) => item.product.provider === lender)
+          .map((item) => item.terms.initialRatePct),
+      )
       const rule = CASHBACK[lender]
       const cashbackConfirmed = top.cashback === 0 || rule?.confirmed === true
       const drivers = [
@@ -354,6 +365,13 @@ export function homePathways(input: PathwayInput): HomePathways | null {
         vsCheapestEur: 0,
         drivers: drivers.length === 0 ? 'the rate alone' : drivers.join(', '),
         conditions: [
+          ...(minLoanUnknown
+            ? [
+                `${top.product.name} is a higher-value rate for larger loans; the minimum loan is not stated in CCPC’s data, so check it with ${name}.`,
+              ]
+            : top.terms.minLoanEur !== null
+              ? [`${top.product.name} is for loans of ${euro(top.terms.minLoanEur)} or more.`]
+              : []),
           ...(rule === undefined || top.cashback === 0 ? [] : [rule.conditions]),
           ...bonus.conditions,
           ...(bonus.eur > 0
@@ -362,7 +380,14 @@ export function homePathways(input: PathwayInput): HomePathways | null {
               ]
             : []),
         ],
-        confirmed: cashbackConfirmed && (bonus.eur === 0 || bonus.confirmed),
+        confirmed: cashbackConfirmed && (bonus.eur === 0 || bonus.confirmed) && !minLoanUnknown,
+        lowestRatePct,
+        considered: options.slice(0, 3).map((option) => ({
+          productId: option.product.id,
+          name: option.product.name,
+          ratePct: option.terms.initialRatePct,
+          netCostEur: round2(option.interest - option.cashback - bonus.eur),
+        })),
         greenNote:
           greenAlternative === undefined ||
           greenAlternative === null ||

@@ -8,6 +8,7 @@ import { BUYING_COSTS, LINKED_SAVERS } from '../../market/mortgage-incentives.ts
 import { MARKET_FIXTURE } from './fixture.ts'
 import { moneyCheck } from './money-check.ts'
 import { normaliseMarket } from './normalise.ts'
+import { minLoanOf } from './normalise.ts'
 import { buildPlan } from './plan.ts'
 import type { MarketRecord } from './types.ts'
 
@@ -29,6 +30,7 @@ const mortgage = (
     ber?: string
   },
   cashback: { field: string; text: string },
+  prose?: string,
 ): MarketRecord => ({
   product: {
     provider,
@@ -50,6 +52,7 @@ const mortgage = (
       customerTypes: ['first_time_buyer'],
     },
     conditions: {
+      ...(prose === undefined ? {} : { prose: { 'Additional information': prose } }),
       details: {
         Cashback: cashback.field,
         'Cashback description': cashback.text,
@@ -86,6 +89,18 @@ const MORTGAGES: MarketRecord[] = [
     '5 Year Fixed BER A',
     { rateType: 'fixed', fixedYears: 5, initialRatePct: 3.9, followOnRatePct: 4.15, ber: 'A' },
     BOI_CASHBACK,
+  ),
+  // A high-value rate as CCPC states it: 4 years at 3.2%, no cashback, €250,000 or more.
+  mortgage(
+    'boi',
+    'mortgage.t5',
+    '4 Year Fixed HVM BER C',
+    { rateType: 'fixed', fixedYears: 4, initialRatePct: 3.2, followOnRatePct: 4.15, ber: 'C' },
+    {
+      field: 'No',
+      text: 'The High Value Mortgage fixed interest rates do not include Cashback',
+    },
+    'The High Value Mortgage fixed interest rates do not include Cashback. The High Value Mortgage fixed interest rates are available to you if you are buying or building a property to live in as your home or are switching your home mortgage loan to the Bank of Ireland Group from another mortgage lender, AND you are borrowing €250,000 or more.',
   ),
   mortgage(
     'avant_money',
@@ -152,15 +167,32 @@ describe('the Bank of Ireland route: first-time buyer, €350,000, €35,000 sav
   })
 
   it('counts BoI’s cashback (2% now, 1% after five years) and the MortgageSaver bonus as cost, not deposit', () => {
-    expect(boi?.mortgage.name).toBe('5 Year Fixed BER C')
-    expect(boi?.cashbackEur).toBe(9_450)
+    // At €315,000 the high-value rate (3.2%, no cashback) costs less over the term than the
+    // 5-year at 4% with 3% cashback; both are worked out, and the cashback one is next.
+    expect(boi?.mortgage.name).toBe('4 Year Fixed HVM BER C')
+    expect(boi?.cashbackEur).toBe(0)
+    expect(boi?.considered[1]?.name).toBe('5 Year Fixed BER C')
     expect(boi?.bonusEur).toBe(1_340)
+    expect(boi?.conditions.join(' ')).toMatch(/for loans of €250,000 or more/)
     expect(boi?.confirmed).toBe(true)
     expect(boi?.conditions.join(' ')).toMatch(
       /paid after drawdown, so it lowers the cost rather than the deposit needed/,
     )
     expect(boi?.keysOn).toBe(home?.keysOn)
-    expect(boi?.netCostEur).toBeCloseTo((boi?.interestEur ?? 0) - 9_450 - 1_340, 2)
+    expect(boi?.netCostEur).toBeCloseTo((boi?.interestEur ?? 0) - 1_340, 2)
+    // Below €250,000 the high-value rate is out, and the cashback counts: 2% now and 1% at year 5.
+    const smaller = plan({
+      situation: {
+        monthlySaving: 800,
+        savings: [{ label: 'Savings', balance: 35_000, aerPct: 1 }],
+        firstTimeBuyer: true,
+        income: { annualGross: 90_000 },
+      },
+      goals: [firstHome],
+      homePrice: 250_000,
+    }).home?.pathways.find((pathway) => pathway.lender === 'boi')
+    expect(smaller?.mortgage.name).toBe('5 Year Fixed BER C')
+    expect(smaller?.cashbackEur).toBe(6_750)
     expect(LINKED_SAVERS['boi']?.[0]?.paid).toBe('after_drawdown')
   })
 
@@ -267,7 +299,7 @@ describe('a pathway is a bundle with that lender', () => {
         income: { annualGross: 90_000 },
       },
       goals: [firstHome],
-      homePrice: 350_000,
+      homePrice: 250_000,
     })
     const boi = result.home?.pathways.find((pathway) => pathway.lender === 'boi')
     expect(boi?.bundle.products.map((product) => product.role)).toEqual(
@@ -372,5 +404,46 @@ describe('the save wording grows with the plan', () => {
       ]),
     )
     expect(ready.saveCall.appToday.join(' ')).not.toMatch(/partner|reminder|checklist|document/)
+  })
+})
+
+describe('high-value rates and the per-lender pick (after Chris spotted BoI at 3.1%)', () => {
+  const body = (homePrice: number) => ({
+    situation: {
+      monthlySaving: 800,
+      savings: [{ label: 'Savings', balance: 35_000, aerPct: 1 }],
+      firstTimeBuyer: true,
+      income: { annualGross: 120_000 },
+    },
+    goals: [firstHome],
+    homePrice,
+  })
+
+  it('reads the minimum loan from the source’s words', () => {
+    expect(minLoanOf('AND you are borrowing €250,000 or more. See www.bankofireland.com')).toBe(
+      250_000,
+    )
+    expect(minLoanOf('for loans of €300,000+ only')).toBe(300_000)
+    expect(minLoanOf('€5,000 cashback when you draw down €250,000+')).toBeNull()
+  })
+
+  it('weighs the high-value rate against the cashback rates when the loan qualifies, and drops it when not', () => {
+    const big = plan(body(350_000)).home?.pathways.find((p) => p.lender === 'boi')
+    expect(big?.considered.map((option) => option.name)).toContain('4 Year Fixed HVM BER C')
+    expect(big?.lowestRatePct).toBe(3.2)
+    const small = plan(body(250_000)).home?.pathways.find((p) => p.lender === 'boi')
+    // €225,000 is below the €250,000 the high-value rate needs.
+    expect(small?.considered.map((option) => option.name)).not.toContain('4 Year Fixed HVM BER C')
+  })
+
+  it('picks, for every lender, the product no other of its eligible products beats on net cost', () => {
+    for (const price of [250_000, 350_000]) {
+      for (const pathway of plan(body(price)).home?.pathways ?? []) {
+        expect(pathway.considered[0]?.productId).toBe(pathway.mortgage.productId)
+        for (const option of pathway.considered) {
+          expect(option.netCostEur).toBeGreaterThanOrEqual(pathway.netCostEur - 0.01)
+        }
+      }
+    }
   })
 })

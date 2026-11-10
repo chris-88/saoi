@@ -65,6 +65,7 @@ import {
   termBandSchema,
 } from './ccpc.ts'
 import { crossCheckBoi } from './crosscheck.ts'
+import { mortgageCheck } from './mortgage-check.ts'
 import { describeDiff, diffMarket } from './diff.ts'
 import type { MarketProvider } from './provider.ts'
 import { MARKET_PROVIDERS } from './providers.ts'
@@ -568,6 +569,15 @@ function report(groups: readonly Group[]): void {
       const parts = [...row.entries()].sort().map(([provider, n]) => `${provider} ${String(n)}`)
       console.log(`  ${category} ${String(total)}: ${parts.join(', ')}`)
     }
+  }
+
+  console.log('\nmortgages, a data check:')
+  for (const line of mortgageCheck(
+    groups.flatMap((group) => group.products),
+    new Date().toISOString().slice(0, 10),
+  )) {
+    if (line.includes('CHECK')) console.warn(line)
+    else console.log(line)
   }
 
   const bank = groups.find((g) => g.provider === 'boi' && g.source === 'bank')?.products

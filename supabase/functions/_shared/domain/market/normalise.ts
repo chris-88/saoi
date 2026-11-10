@@ -8,7 +8,7 @@ import type {
   UnknownField,
 } from '../../contracts/market-tools.ts'
 import { BANK_CCPC_PAIRS } from '../../market/bank-ccpc-pairs.ts'
-import { cashbackPctOf } from '../../market/cashback.ts'
+import { cashbackOffered, cashbackPctOf } from '../../market/cashback.ts'
 import { DEPOSIT_GUARANTEES } from '../../market/deposit-guarantees.ts'
 import type { DepositRates, MarketProduct } from '../../market/schema.ts'
 import type { Market, MarketRecord } from './types.ts'
@@ -378,7 +378,10 @@ function termsFor(products: readonly MarketProduct[], unknowns: UnknownField[]):
       const cashbackText = details['Cashback description'] ?? details['Cashback'] ?? null
       const cashbackPct =
         cashbackPctOf(details['Cashback description']) ?? cashbackPctOf(details['Cashback'])
-      const offered = rates.cashback ?? (cashbackPct === null ? null : true)
+      const offered =
+        rates.cashback ??
+        cashbackOffered(details['Cashback']) ??
+        (cashbackPct === null ? null : true)
       return {
         kind: 'mortgage',
         rateType: rates.rateType,
@@ -399,7 +402,8 @@ function termsFor(products: readonly MarketProduct[], unknowns: UnknownField[]):
         fees: Object.fromEntries(
           Object.entries(details).filter(([label]) => /fee|charge/i.test(label)),
         ),
-        highValue: /\bHVM\b|high value/i.test(head.providerProductName),
+        highValue: /\bHVM\b|high(?:er)? value/i.test(head.providerProductName),
+        minLoanEur: minLoanOf(textOf(head)),
       }
     }
     case 'loan': {
@@ -682,6 +686,17 @@ function eligibilityLine(eligibility: NonNullable<ProductView['eligibility']>): 
       : [`needs ${eligibility.needsAccountWithProvider}`]),
   ]
   return parts.join(', ')
+}
+
+/** "borrowing €250,000 or more", "loans of €250,000+": the smallest loan a rate is for. */
+export function minLoanOf(text: string): number | null {
+  const found =
+    /(?:borrowing|borrow|loans?\s+of|mortgages?\s+of)\s+(?:of\s+)?€\s?([\d,]+)\s*(?:\+|or\s+more|and\s+(?:above|over))/i.exec(
+      text,
+    )?.[1]
+  if (found === undefined) return null
+  const amount = Number(found.replaceAll(',', ''))
+  return Number.isFinite(amount) && amount > 0 ? amount : null
 }
 
 function checksFor(
