@@ -161,8 +161,36 @@ describe('public comparison routes', () => {
     const earnings = (await (await app.request('/api/market/about/earnings')).json()) as {
       text: string
     }
-    expect(earnings.text).toMatch(/never changes the ranking/)
+    expect(earnings.text).toMatch(/earns nothing today/)
+    expect(earnings.text).not.toMatch(/referral fees from providers/)
     expect(earnings.text).toMatch(/Competition and Consumer Protection Commission/)
+  })
+
+  it('answer the home calculator with figures, questions and the warnings, and no products', async () => {
+    const { app } = appWith()
+    const res = await app.request('/api/calc/home', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        depositSavedEur: 20_000,
+        monthlySavingEur: 1_000,
+        annualGrossIncomeEur: 90_000,
+        targetPriceEur: 350_000,
+      }),
+    })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as {
+      figures: { maxLoanEur: number; neededAtKeysEur: number }
+      questions: { key: string }[]
+      warnings: string[]
+      statement: string
+    }
+    expect(body.figures.maxLoanEur).toBe(360_000)
+    expect(body.figures.neededAtKeysEur).toBe(41_500)
+    expect(body.questions.map((q) => q.key)).toContain('targetDate')
+    expect(body.warnings).toHaveLength(3)
+    expect(body.statement).toMatch(/not regulated by the Central Bank of Ireland/)
+    expect(JSON.stringify(body)).not.toMatch(/"recommendation"/)
   })
 
   it('build the worked example’s plan, which the plan contract accepts', async () => {
@@ -189,7 +217,7 @@ describe('public comparison routes', () => {
     expect(JSON.stringify(drafts.held)).not.toContain(token)
     expect(drafts.sweeps.count).toBe(1)
     expect(body.presentation.join('\n')).toContain(
-      `This plan can be opened in the Saoi app: ${body.saveLink?.url ?? ''}`,
+      `Save this comparison to the Saoi app: ${body.saveLink?.url ?? ''}`,
     )
     expect(body.presentation.at(-1)).toMatch(/^Answer this one and the plan gets sharper: /)
     expect(body.presentation.at(-3)).toMatch(/the customer decides/)
@@ -249,7 +277,7 @@ describe('public comparison routes', () => {
     )
     expect(full.plan?.saveLink?.url).toMatch(/#\/plan\//)
     expect(full.presentation.join('\n')).toContain(
-      `This plan can be opened in the Saoi app: ${full.plan?.saveLink?.url ?? ''}`,
+      `Save this comparison to the Saoi app: ${full.plan?.saveLink?.url ?? ''}`,
     )
     expect(drafts.held).toHaveLength(1)
   })

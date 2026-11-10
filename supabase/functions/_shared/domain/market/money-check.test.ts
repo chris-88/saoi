@@ -51,7 +51,9 @@ describe('the money check, one call on whatever was said', () => {
       ],
     })
     expect(result.planGoalAssumed).toBeNull()
-    expect(result.presentation[0]).toMatch(/^Your home: keys around /)
+    expect(result.presentation[0]).toMatch(
+      /^At these figures, the deposit and buying costs are in place around /,
+    )
     expect(result.presentation).toContain(result.plan?.moneyFound.headline)
     expect(result.presentation.join(' ')).toMatch(/Help to Buy: depends, up to €35,000/)
     expect(result.questions.join(' ')).toMatch(/gross income/)

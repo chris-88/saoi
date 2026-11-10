@@ -4,6 +4,7 @@ import {
   buildPlanResponseSchema,
   moneyCheckRequestSchema,
 } from '../../contracts/market-tools.ts'
+import { adviceWordsIn, MORTGAGE_WARNINGS } from '../../market/disclosures.ts'
 import { BUYING_COSTS, LINKED_SAVERS } from '../../market/mortgage-incentives.ts'
 import { MARKET_FIXTURE } from './fixture.ts'
 import { moneyCheck } from './money-check.ts'
@@ -160,8 +161,10 @@ describe('the Bank of Ireland route: first-time buyer, €350,000, €35,000 sav
       neededAtKeysEur: 41_500,
     })
     expect(home?.keysOn).toMatch(/^202[67]-\d{2}$/)
-    expect(home?.headline).toMatch(/^Your home: keys around /)
-    expect(home?.assumptions[0]).toMatch(/^Assumed: first-time buyer; a 30-year mortgage/)
+    expect(home?.headline).toMatch(
+      /^At these figures, the deposit and buying costs are in place around /,
+    )
+    expect(home?.assumptions[0]).toMatch(/^Showing first-time-buyer rates; a 30-year mortgage/)
     expect(home?.assumptions[0]).toMatch(/stamp duty of €3,500 \(1%\) and €3,000 for legal fees/)
     expect(() => buildPlanResponseSchema.parse(result)).not.toThrow()
   })
@@ -171,7 +174,10 @@ describe('the Bank of Ireland route: first-time buyer, €350,000, €35,000 sav
     // 5-year at 4% with 3% cashback; both are worked out, and the cashback one is next.
     expect(boi?.mortgage.name).toBe('4 Year Fixed HVM BER C')
     expect(boi?.cashbackEur).toBe(0)
-    expect(boi?.considered[1]?.name).toBe('5 Year Fixed BER C')
+    // Every BoI option is shown, one per rate type and fixed period: the 5-year with cashback too.
+    expect(home?.pathways.filter((p) => p.lender === 'boi').map((p) => p.mortgage.name)).toContain(
+      '5 Year Fixed BER C',
+    )
     expect(boi?.bonusEur).toBe(1_340)
     expect(boi?.conditions.join(' ')).toMatch(/for loans of €250,000 or more/)
     expect(boi?.confirmed).toBe(true)
@@ -205,7 +211,13 @@ describe('the Bank of Ireland route: first-time buyer, €350,000, €35,000 sav
     expect(home?.pathways[0]?.vsCheapestEur).toBe(0)
     expect(home?.comparedOver).toEqual({ basis: 'first_years', years: 5 })
     expect(home?.pathways[1]?.line).toMatch(
-      /about €[\d,]+ more over the first 5 years than the cheapest/,
+      /€[\d,]+ over the first 5 years, €[\d,]+ more than the lowest shown/,
+    )
+    expect(home?.sortBy).toBe('five_year_cost')
+    expect(home?.warnings).toEqual([...MORTGAGE_WARNINGS])
+    // Every option, not one pick per lender: more options than lenders, and no cap.
+    expect(home?.pathways.length ?? 0).toBeGreaterThan(
+      new Set(home?.pathways.map((p) => p.lender)).size,
     )
     for (const pathway of home?.pathways ?? []) {
       // The 30-year figure stays as secondary detail, where follow-on rates are known.
@@ -222,9 +234,14 @@ describe('the Bank of Ireland route: first-time buyer, €350,000, €35,000 sav
   it('leads the presentation with the goal and the pathways, as options', () => {
     expect(result.presentation[0]).toBe(home?.headline)
     expect(result.presentation[1]).toBe(home?.assumptions[0])
-    expect(result.presentation[2]).toMatch(/^The .* path: .*; keys around [A-Z][a-z]+ \d{4}; /)
+    expect(result.presentation[2]).toBe(home?.sortedBy)
+    expect(result.presentation[3]).toMatch(
+      /^[A-Z][^:]+, (\d+-year fixed|variable): .*; deposit in place around [A-Z][a-z]+ \d{4}; /,
+    )
+    for (const warning of MORTGAGE_WARNINGS) expect(result.presentation).toContain(warning)
     for (const line of result.presentation) {
       expect(line).not.toMatch(/^(Clear|Pay|Take|Choose|Open|Switch|Get)\b/)
+      expect(adviceWordsIn(line)).toEqual([])
     }
   })
 
@@ -320,8 +337,10 @@ describe('a pathway is a bundle with that lender', () => {
     expect(boi?.bundle.products.find((p) => p.role === 'cashback')?.detail).toBe(
       '2% at drawdown and 1% after 5 years',
     )
-    expect(boi?.bundle.currentAccount).toBe('Your current account can stay where it is.')
-    expect(boi?.line).toMatch(/^The Bank of Ireland path: MortgageSaver \(/)
+    expect(boi?.bundle.currentAccount).toBe(
+      'None of these products is recorded as needing a current account with the lender.',
+    )
+    expect(boi?.line).toMatch(/^Bank of Ireland, \d+-year fixed: /)
     expect(boi?.line).not.toMatch(/bank with/i)
   })
 })
@@ -399,7 +418,7 @@ describe('the save wording grows with the plan', () => {
       goals: [{ ...firstHome, targetDate: '2028-11' }],
     })
     expect(early.saveCall.ready).toBe(false)
-    expect(early.saveCall.label).toBe('Save this plan')
+    expect(early.saveCall.label).toBe('Save this comparison')
     expect(early.completeness.assumed).toEqual(
       expect.arrayContaining(['gross income', 'new build or second-hand', 'first-time buyer']),
     )
@@ -418,7 +437,7 @@ describe('the save wording grows with the plan', () => {
     })
     expect(ready.saveCall).toMatchObject({
       ready: true,
-      label: 'Ready to make this plan happen? Save it to Saoi',
+      label: 'Save this comparison',
     })
     expect(ready.saveCall.coming).toEqual(
       expect.arrayContaining([
@@ -517,5 +536,72 @@ describe('the first five years', () => {
       /no follow-on rate is stated, so the fixed rate is carried on/,
     )
     expect(unknown?.thirtyYearNetEur).toBeNull()
+  })
+})
+
+describe('the customer sets the filters and the sort (decision 2026-11-10)', () => {
+  const body = (homePreferences: Record<string, unknown>) => ({
+    situation: {
+      monthlySaving: 800,
+      savings: [{ label: 'Savings', balance: 35_000, aerPct: 1 }],
+      firstTimeBuyer: true,
+      income: { annualGross: 90_000 },
+    },
+    goals: [firstHome],
+    homePrice: 350_000,
+    homePreferences,
+  })
+
+  it('shows only the customer’s bank when they ask to stay, and says so', () => {
+    const result = plan(body({ currentBank: 'Bank of Ireland', stayWithBank: true }))
+    const lenders = new Set(result.home?.pathways.map((p) => p.lender))
+    expect([...lenders]).toEqual(['boi'])
+    expect(result.home?.filters).toContain('Showing Bank of Ireland options, as you asked.')
+    expect(result.presentation).toContain('Showing Bank of Ireland options, as you asked.')
+  })
+
+  it('names the bank without filtering when the customer does not ask to stay', () => {
+    const result = plan(body({ currentBank: 'Bank of Ireland' }))
+    expect(new Set(result.home?.pathways.map((p) => p.lender)).size).toBeGreaterThan(1)
+    expect(result.home?.filters).toEqual([])
+  })
+
+  it('keeps fixed rates only when asked, and states the filter', () => {
+    const result = plan(body({ rateType: 'fixed' }))
+    expect(result.home?.pathways.every((p) => p.mortgage.rateType === 'fixed')).toBe(true)
+    expect(result.home?.filters).toContain('Showing fixed rates only, as you asked.')
+  })
+
+  it('sorts by the metric the customer picks', () => {
+    const monthly = plan(body({ sortBy: 'monthly_repayment' })).home
+    const repayments = monthly?.pathways.map((p) => p.mortgage.monthlyRepayment) ?? []
+    expect([...repayments].sort((a, b) => a - b)).toEqual(repayments)
+    expect(monthly?.sortedBy).toMatch(/sorted by monthly repayment, lowest first/)
+    const keys = plan(body({ sortBy: 'keys_date' })).home
+    const dates = keys?.pathways.map((p) => p.keysOn ?? '') ?? []
+    expect([...dates].sort()).toEqual(dates)
+    expect(keys?.sortBy).toBe('keys_date')
+  })
+
+  it('returns runners-up beside the worked combination, and no advice words anywhere', () => {
+    const result = plan(body({}))
+    expect(result.runnersUp.length).toBeGreaterThan(0)
+    for (const runnerUp of result.runnersUp) {
+      expect(runnerUp.line).toMatch(/^Next under the same rule, without /)
+      expect(result.presentation).toContain(runnerUp.line)
+    }
+    expect(result.presentation.join(' ')).toMatch(/Under the rule "most towards the goal by/)
+    for (const line of [
+      ...result.presentation,
+      result.saveCall.label,
+      ...(result.home?.pathways.map((p) => p.line) ?? []),
+    ]) {
+      expect(adviceWordsIn(line)).toEqual([])
+    }
+    expect(JSON.stringify(result.plan)).not.toMatch(/"recommendation"/)
+    expect(result.plan.combination.products.length).toBeGreaterThan(0)
+    expect(result.presentation.join(' ')).toMatch(
+      /Saoi is not regulated by the Central Bank of Ireland and does not give advice/,
+    )
   })
 })

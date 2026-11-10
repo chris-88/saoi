@@ -273,18 +273,19 @@ line in the refresh output. Shapes in `_shared/market/schema.ts`: `rates` is a u
 The engine behind the Saoi MCP tools, in `_shared/domain/market/` (pure; contracts in
 `contracts/market-tools.ts`), served by saoi-api without sign-in:
 
-| Route                                      | MCP tool                  | What                                               |
-| ------------------------------------------ | ------------------------- | -------------------------------------------------- |
-| `POST /api/market/search`                  | `saoi_search_products`    | rank one category for the caller's figures         |
-| `GET /api/market/products/{id}`            | `saoi_product`            | the view, rate history, the source's words         |
-| `GET /api/market/about/{ranking,earnings}` | resources                 | how Saoi ranks; how Saoi earns                     |
-| `POST /api/calc/review-situation`          | `saoi_review_situation`   | findings with euro figures, candidate goals        |
-| `POST /api/calc/savings-projection`        | `saoi_savings_projection` | month by month, net of DIRT                        |
-| `POST /api/calc/mortgage`                  | `saoi_mortgage`           | affordability (Central Bank limits) or switch      |
-| `POST /api/calc/debt`                      | `saoi_debt`               | cost, payoff order, overpay versus save, refinance |
-| `POST /api/calc/build-plan`                | `saoi_build_plan`         | a `MarketPlan` for `POST /api/plans`               |
-| `POST /api/calc/first-home`                | `saoi_first_home`         | Help to Buy, CB limits with it, green rates        |
-| `POST /api/calc/money-check`               | `saoi_money_check`        | the entry: review, plan or questions, link         |
+| Route                                      | MCP tool                  | What                                                    |
+| ------------------------------------------ | ------------------------- | ------------------------------------------------------- |
+| `POST /api/market/search`                  | `saoi_search_products`    | rank one category for the caller's figures              |
+| `GET /api/market/products/{id}`            | `saoi_product`            | the view, rate history, the source's words              |
+| `GET /api/market/about/{ranking,earnings}` | resources                 | how Saoi ranks; how Saoi earns                          |
+| `POST /api/calc/review-situation`          | `saoi_review_situation`   | findings with euro figures, candidate goals             |
+| `POST /api/calc/savings-projection`        | `saoi_savings_projection` | month by month, net of DIRT                             |
+| `POST /api/calc/mortgage`                  | `saoi_mortgage`           | affordability (Central Bank limits) or switch           |
+| `POST /api/calc/debt`                      | `saoi_debt`               | cost, payoff order, overpay versus save, refinance      |
+| `POST /api/calc/build-plan`                | `saoi_build_plan`         | a `MarketPlan` for `POST /api/plans`                    |
+| `POST /api/calc/first-home`                | `saoi_first_home`         | Help to Buy, CB limits with it, green rates             |
+| `POST /api/calc/home`                      | `saoi_home_calculator`    | the home calculator: limits, deposit, date; no products |
+| `POST /api/calc/money-check`               | `saoi_money_check`        | the entry: review, plan or questions, link              |
 
 - **Normalised** (`normalise.ts`): one view per product. CCPC's one-row-per-term fixed deposits
   fold into ladders; bank-direct rows (Bank of Ireland, bunq, MoCo) replace their CCPC twins by the pairing in
@@ -332,7 +333,19 @@ The engine behind the Saoi MCP tools, in `_shared/domain/market/` (pure; contrac
   given earns what CCPC's current-account table states (the provider's row, else 0% when every
   stated rate is 0%), with the basis in `moneyFound.basis` and a line in its headline. A savings
   account without a rate stays unknown.
-- **Pathways to a home** (`pathways.ts`, Chris 2026-11-10): for a house-deposit goal, `home`
+- **Compare, never pick** (decision `2026-11-10-saoi-compare-with-customer-filters`): no
+  result picks a product, lender or combination for the customer. `MarketPlan.combination`
+  (was `recommendation`; `upgradeStoredPlan` reads old stored plans) is the worked combination
+  under the stated rule, with `runnersUp` beside it; home options are every eligible option,
+  filtered by `homePreferences` (stay with my bank, fixed or variable, green) and sorted by
+  `sortBy` (`five_year_cost`, `keys_date`, `monthly_repayment`), each filter stated
+  ("Showing Bank of Ireland options, as you asked."). Every result closes with the statement
+  in `_shared/market/disclosures.ts` (not regulated by the Central Bank of Ireland, no advice);
+  mortgage results carry the three statutory warnings; `adviceWordsIn` is the test for wording.
+  The home calculator (`home-calculator.ts`, `POST /api/calc/home`) returns the limits, the
+  cash at the keys and the month it is saved, the missing inputs as questions, and `rules` so
+  the MCP calculator card recomputes as sliders move.
+- **Options for a home** (`pathways.ts`, Chris 2026-11-10): for a house-deposit goal, `home`
   compares lenders end to end: the price (given, or what the savings by the date support at 90%
   LTV, capped by 4 times income when given), the cash needed at the keys (deposit plus 1% stamp
   duty and a €3,000 legal and survey estimate, less Help to Buy for a new build), each lender's
@@ -346,24 +359,25 @@ The engine behind the Saoi MCP tools, in `_shared/domain/market/` (pure; contrac
   First-time buyer is assumed when no home is mentioned. Every assumption is stated in one line.
   High-value rates count when the loan reaches the minimum the source states (`terms.minLoanEur`,
   parsed from "borrowing €250,000 or more"); where it does not state one, the rate counts and the
-  pathway says to check it. Each lender's pick is the product with the lowest cost net of
-  cashback (`considered` lists the runners-up). The refresh ends with a data check
+  option says to check it. Each lender's option per rate type and fixed period is its product
+  with the lowest cost net of cashback (`considered` lists the runners-up). The refresh ends with a data check
   (`scripts/market/mortgage-check.ts`): each lender's lowest first-time-buyer rate, and a CHECK
   where a reference pathway's pick is more than 0.25 points above the lender's lowest eligible rate.
   The BoI MortgageSaver bonus is paid after drawdown (its brochure), so it lowers cost, not the
   deposit; cashback is always cost.
 - **Bundles, the next question, the save call** (Chris, 2026-11-10): each pathway lists what
   would be held with that lender (`bundle`: its linked saver, its own regular saver where the
-  split uses one, the mortgage, the cashback) and says the current account can stay where it is.
+  split uses one, the mortgage, the cashback) and states that none is recorded as needing a
+  current account with the lender.
   `nextQuestion` is worked out in `next-question.ts`: each unanswered input (income, new build
   or second-hand, price, a debt's repayment, the current account's bank) is run across a few
   plausible answers, scored in euro on the goal (the spread in the price that can be bought, keys
   months × monthly saving, what is held, and cost per €100,000 borrowed; never the absolute cost
   of a bigger home, and not the price when the price is what is asked), and the
   largest is asked; the rest are `laterQuestions`. The presentation ends with that one question.
-  `completeness` counts answered and assumed inputs; `saveCall` turns to "Ready to make this
-  plan happen?" once, for a home, income and the kind of home are known, and lists what the app
-  does today and what is coming (never offered as available).
+  `completeness` counts answered and assumed inputs; `saveCall` is always "Save this comparison"
+  (`ready` once, for a home, income and the kind of home are known) and lists what the app does
+  today and what is coming (never offered as available).
 - **Money found** (`money-found.ts`): review and plan results lead with `moneyFound`, one euro a
   year in parts (idle cash against the best confirmed instant-access rate after DIRT, debt
   interest not paid less what the money would earn, a mortgage switch at a band reaching 90% LTV,

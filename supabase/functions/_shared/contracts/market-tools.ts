@@ -1186,6 +1186,53 @@ export const planAlternativeSchema = z
   .describe('What differs from the main request; everything not given is as in the main request.')
 export type PlanAlternative = z.infer<typeof planAlternativeSchema>
 
+/** What the home options can be sorted by. The customer picks; Saoi never picks one option. */
+export const HOME_SORTS = ['five_year_cost', 'keys_date', 'monthly_repayment'] as const
+export type HomeSort = (typeof HOME_SORTS)[number]
+
+export const homePreferencesSchema = z
+  .object({
+    currentBank: z
+      .string()
+      .trim()
+      .min(1)
+      .max(60)
+      .optional()
+      .describe('Who the customer banks with now, as they said it: "Bank of Ireland", "AIB".'),
+    stayWithBank: z
+      .boolean()
+      .optional()
+      .describe(
+        'True: show only `currentBank`’s options, because the customer asked to stay with their bank. A filter they chose, and the result says so.',
+      ),
+    rateType: z
+      .enum(['fixed', 'variable', 'either'])
+      .optional()
+      .describe('Fixed or variable rates only, as the customer chose. Default either.'),
+    green: z
+      .boolean()
+      .optional()
+      .describe(
+        'True: the home is BER B3 or better, so green rates count. A new build is taken as BER A either way.',
+      ),
+    openToCurrentAccountSwitch: z
+      .boolean()
+      .optional()
+      .describe(
+        'False: leave out options that need a current account with the lender. Default true.',
+      ),
+    sortBy: z
+      .enum(HOME_SORTS)
+      .optional()
+      .describe(
+        'What the options are sorted by, as the customer chose: `five_year_cost` (default: interest and fees less cashback and bonuses over the first 5 years), `keys_date` (soonest first), `monthly_repayment` (lowest first).',
+      ),
+  })
+  .describe(
+    'For a home: the customer’s own filters and sort order. Each is a choice the customer made; the result states every filter applied.',
+  )
+export type HomePreferences = z.infer<typeof homePreferencesSchema>
+
 export const buildPlanRequestSchema = z.object({
   situation: situationSchema,
   goals: z.array(goalSchema).min(1).max(8),
@@ -1253,6 +1300,7 @@ export const buildPlanRequestSchema = z.object({
     .describe(
       'Income Tax and DIRT paid over the last four tax years (not USC or PRSI): the most Help to Buy can be.',
     ),
+  homePreferences: homePreferencesSchema.optional(),
   alternatives: z
     .array(planAlternativeSchema)
     .max(3)
@@ -1335,7 +1383,7 @@ export const planAlternativeResultSchema = z.object({
 })
 
 // ---------------------------------------------------------------------------------------------
-// Pathways to a home: the goal assembled end to end per lender (Chris, 2026-11-10)
+// A home: every eligible option, filtered and sorted as the customer chose (Chris, 2026-11-10)
 // ---------------------------------------------------------------------------------------------
 
 export const homePathwaySchema = z.object({
@@ -1344,6 +1392,7 @@ export const homePathwaySchema = z.object({
   mortgage: z.object({
     productId: z.string(),
     name: z.string(),
+    rateType: z.enum(['fixed', 'variable']).nullable(),
     ratePct: pct,
     fixedYears: z.number().int().nullable(),
     followOnRatePct: pct.nullable(),
@@ -1377,8 +1426,10 @@ export const homePathwaySchema = z.object({
     .describe(
       'A fix shorter than 5 years with no stated follow-on rate: the fixed rate carried on, unconfirmed.',
     ),
-  vsCheapestEur: z.number().describe('Net cost less the cheapest pathway’s. 0 for the cheapest.'),
-  drivers: z.string().describe('What makes this pathway differ, in a few words.'),
+  vsCheapestEur: z
+    .number()
+    .describe('Net cost less the lowest net cost shown. 0 for the lowest; a fact, not a pick.'),
+  drivers: z.string().describe('What makes this option differ, in a few words.'),
   conditions: z.array(z.string()),
   confirmed: z
     .boolean()
@@ -1390,7 +1441,9 @@ export const homePathwaySchema = z.object({
     .array(
       z.object({ productId: z.string(), name: z.string(), ratePct: pct, netCostEur: z.number() }),
     )
-    .describe('This lender’s cheapest eligible products by net cost, the chosen one first.'),
+    .describe(
+      'Runners-up: this lender’s other eligible products of the same rate type and fixed period, by net cost, this one first.',
+    ),
   bundle: z
     .object({
       products: z.array(
@@ -1402,19 +1455,19 @@ export const homePathwaySchema = z.object({
       ),
       currentAccount: z
         .string()
-        .describe(
-          'Whether the current account can stay where it is, or a product needs one with the lender.',
-        ),
+        .describe('Whether any product here needs a current account with the lender, as a fact.'),
     })
-    .describe(
-      'What the customer would hold with this lender on this path, and what stays where it is.',
-    ),
-  line: z.string().describe('The pathway in one sentence, as an option with its figures.'),
+    .describe('What would be held with this lender for this option, and what stays where it is.'),
+  line: z.string().describe('The option in one sentence, with its figures.'),
 })
 
 export const homePathwaysSchema = z
   .object({
-    headline: z.string().describe('"Your home: keys around <month>".'),
+    headline: z
+      .string()
+      .describe(
+        '"At these figures, the deposit and buying costs are in place around <month>": a date, not an outcome.',
+      ),
     assumptions: z.array(z.string()).describe('Each one stated and correctable.'),
     price: eur,
     priceFrom: z.enum(['given', 'savings']),
@@ -1430,13 +1483,138 @@ export const homePathwaysSchema = z
     comparedOver: z
       .object({ basis: z.enum(['term', 'fixed_period', 'first_years']), years: z.number().int() })
       .describe('The period every pathway is costed over, the same for all.'),
-    pathways: z.array(homePathwaySchema),
+    sortBy: z.enum(HOME_SORTS).describe('What `pathways` is sorted by, as the customer chose.'),
+    sortedBy: z.string().describe('The sort order in words, for the presentation.'),
+    filters: z
+      .array(z.string())
+      .describe(
+        'Each filter applied, in words, naming the customer’s own choices ("Showing Bank of Ireland options, as you asked.").',
+      ),
+    pathways: z
+      .array(homePathwaySchema)
+      .describe(
+        'Every eligible option that fits the filters (each lender’s cheapest product per rate type and fixed period), sorted by `sortBy`. No single pick.',
+      ),
     leftOut: z.array(z.string()),
+    warnings: z
+      .array(z.string())
+      .describe('The statutory mortgage warnings, shown with every mortgage result.'),
   })
   .describe(
-    'For a home: the goal assembled per lender (savings, Help to Buy, the mortgage, cashback, linked bonuses), compared on the keys date and the cost over the same period. Options with figures, ranked by cost.',
+    'For a home: every eligible option (the savings to the keys, Help to Buy, the mortgage, cashback, linked bonuses), filtered by the customer’s choices and sorted by the metric they pick. A comparison, not a recommendation.',
   )
 export type HomePathways = z.infer<typeof homePathwaysSchema>
+
+// ---------------------------------------------------------------------------------------------
+// The home calculator: the front door for buying a home (Chris, 2026-11-10)
+// ---------------------------------------------------------------------------------------------
+
+export const homeCalculatorRequestSchema = z
+  .object({
+    depositSavedEur: eur.optional().describe('What is saved towards the deposit today.'),
+    monthlySavingEur: eur.optional().describe('What can be put aside each month.'),
+    annualGrossIncomeEur: eur
+      .optional()
+      .describe('Gross income a year, before tax: the first (or only) applicant.'),
+    secondIncomeEur: eur
+      .optional()
+      .describe('A second applicant’s gross income a year, for a joint mortgage.'),
+    targetPriceEur: eur.optional().describe('The price in mind for the home.'),
+    monthlyDebtRepaymentsEur: eur
+      .optional()
+      .describe('Existing loan and card repayments a month (not rent).'),
+    targetDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}(-\d{2})?$/, 'expected YYYY-MM or YYYY-MM-DD')
+      .optional()
+      .describe('When the customer would like the keys: "YYYY-MM".'),
+    firstTimeBuyer: z.boolean().optional().describe('Default true.'),
+    propertyKind: z
+      .enum(PROPERTY_KINDS)
+      .optional()
+      .describe('`new_build`, `self_build` or `second_hand`. Help to Buy is for the first two.'),
+    taxPaidLastFourYearsEur: eur
+      .optional()
+      .describe(
+        'Income Tax and DIRT paid over the last four tax years: the most Help to Buy can be.',
+      ),
+  })
+  .extend(homePreferencesSchema.shape)
+  .describe(
+    'Whatever the customer has said about buying a home, however partial. Every field is optional; what is missing comes back as a plain question.',
+  )
+export type HomeCalculatorRequest = z.infer<typeof homeCalculatorRequestSchema>
+
+export const HOME_INPUT_KEYS = [
+  'depositSavedEur',
+  'monthlySavingEur',
+  'annualGrossIncomeEur',
+  'targetPriceEur',
+  'targetDate',
+  'firstTimeBuyer',
+  'propertyKind',
+  'currentBank',
+  'rateType',
+] as const
+
+export const homeCalculatorResponseSchema = z.object({
+  inputs: homeCalculatorRequestSchema.describe(
+    'The inputs as received, for the calculator card to start from.',
+  ),
+  rules: z
+    .object({
+      loanToIncome: z
+        .number()
+        .describe('Times gross income: 4 for first-time buyers, 3.5 for others.'),
+      maxLtvPct: z.number(),
+      stampDutyPct: z.number(),
+      legalAndSurveyEur: eur.describe('Legal fees and a survey: an estimate.'),
+      helpToBuy: z.object({ shareOfPrice: z.number(), capEur: eur, maxPriceEur: eur }),
+      firstTimeBuyer: z.object({ loanToIncome: z.number(), maxLtvPct: z.number() }),
+      otherBuyer: z.object({ loanToIncome: z.number(), maxLtvPct: z.number() }),
+      sources: z.array(z.string()),
+    })
+    .describe('The rules the figures use, so the card can recompute them as inputs move.'),
+  figures: z.object({
+    incomeEur: eur.nullable().describe('Gross income counted: both applicants together.'),
+    maxLoanEur: eur
+      .nullable()
+      .describe('What the Central Bank income limit allows. Null: no income given.'),
+    priceEur: eur.nullable(),
+    priceFrom: z
+      .enum(['given', 'limits'])
+      .nullable()
+      .describe(
+        '`given`, or `limits`: the most the deposit by the date and the income limit allow.',
+      ),
+    loanEur: eur.nullable(),
+    ltvPct: z.number().nullable(),
+    depositNeededEur: eur.nullable(),
+    stampDutyEur: eur.nullable(),
+    legalAndSurveyEur: eur,
+    helpToBuyEur: eur,
+    neededAtKeysEur: eur.nullable().describe('Deposit plus stamp duty and fees, less Help to Buy.'),
+    depositReachedOn: z
+      .string()
+      .nullable()
+      .describe('YYYY-MM the money needed at the keys is saved, at this pace, before interest.'),
+    targetDateMet: z.boolean().nullable(),
+    monthlyCommitmentsNote: z.string().nullable(),
+  }),
+  lines: z.array(z.string()).describe('The figures in words, as options and facts.'),
+  questions: z
+    .array(z.object({ key: z.enum(HOME_INPUT_KEYS), question: z.string() }))
+    .describe('The inputs not given yet, as plain questions, most useful first.'),
+  next: z
+    .string()
+    .describe(
+      'How to see the options: the card’s "Show my options" button, or saoi_build_plan with these inputs.',
+    ),
+  presentation: z.array(z.string()).describe('Present to the customer, in this order.'),
+  warnings: z.array(z.string()).describe('The statutory mortgage warnings.'),
+  statement: z.string().describe('Saoi is not regulated and does not give advice.'),
+})
+export type HomeCalculatorResponse = z.infer<typeof homeCalculatorResponseSchema>
 
 export const QUESTION_KEYS = [
   'income',
@@ -1482,7 +1660,23 @@ export const saveCallSchema = z.object({
   coming: z.array(z.string()).describe('Not built yet: never offered as available.'),
 })
 
+export const planRunnerUpSchema = z.object({
+  without: z.string().describe('The product left out to find this split: "AIB Online Saver".'),
+  split: z.string().describe('The split, in words.'),
+  towardsGoalEur: eur.describe('Towards the main goal at the same date, after DIRT.'),
+  differenceEur: z
+    .number()
+    .describe('Towards the goal less the worked combination’s, at the same date (negative: less).'),
+  goalReachedOn: z.string().nullable(),
+  line: z.string().describe('The runner-up in one sentence, with what differs.'),
+})
+
 export const buildPlanResponseSchema = z.object({
+  runnersUp: z
+    .array(planRunnerUpSchema)
+    .describe(
+      'The next splits under the same rule, each worked out without one product of the first: shown beside it, so there is no single answer.',
+    ),
   nextQuestion: planQuestionSchema
     .nullable()
     .describe(

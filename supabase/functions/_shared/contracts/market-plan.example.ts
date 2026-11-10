@@ -53,7 +53,7 @@ export function exampleMarketPlan(at: Date = new Date('2026-11-09T12:30:00Z')): 
         priority: 2,
       },
     ],
-    recommendation: {
+    combination: {
       products: [
         {
           role: 'regular_saver',

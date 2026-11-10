@@ -12,6 +12,7 @@ import { firstHome } from './first-home.ts'
 import { withHeldRates } from './held-rates.ts'
 import { moneyFoundForReview } from './money-found.ts'
 import { savingsCandidates } from './search.ts'
+import { RESULT_STATEMENT } from '../../market/disclosures.ts'
 import { DIRT_RATE, monthsUntil, round2 } from './simulate.ts'
 import type { AsOf, Market } from './types.ts'
 
@@ -242,7 +243,7 @@ export function review(market: Market, request: ReviewRequest, asOf: AsOf): Revi
           'Some savings had no rate given, so what they earn now is not compared; with the rate, the figures can include them.',
         ]
       : []),
-    'These are figures for the inputs given; the customer decides what matters. With goals chosen, saoi_build_plan works out a plan and returns a link to open it in the Saoi app.',
+    `These are figures for the inputs given; the customer decides what matters. With goals chosen, saoi_build_plan compares the options and returns a link to open the comparison in the Saoi app. ${RESULT_STATEMENT}`,
   ]
   return {
     presentation,

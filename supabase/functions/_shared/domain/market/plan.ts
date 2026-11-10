@@ -26,9 +26,11 @@ import { monthlyOutgoings } from './review.ts'
 import { guaranteeFlag, SAVINGS_ASSUMPTIONS, UNCONFIRMED_RATE } from './search.ts'
 import { addMonths, monthsUntil, round2, simulateDeposit } from './simulate.ts'
 import type { AsOf, Market } from './types.ts'
+import { CLOSING_LINE } from '../../market/disclosures.ts'
 
 /**
- * The fastest combination for someone's goals, across the whole market: `savings/arrange.ts`
+ * A worked combination for someone's goals under the ranking rule they chose (most towards the
+ * goal by its date), across the whole market, with the runners-up beside it: `savings/arrange.ts`
  * generalised, returned as a `MarketPlan` (`contracts/market-plan.ts`) ready for
  * `POST /api/plans`.
  *
@@ -168,10 +170,12 @@ export function buildPlan(
     (variant) => buildMain(market, variant, asOf, createdAt),
     asOf,
   )
+  const runnersUp = workOutRunnersUp(market, base, main, asOf, createdAt)
   const closing = main.presentation.at(-1)
   return {
     ...main,
     alternatives,
+    runnersUp,
     nextQuestion,
     laterQuestions,
     questions:
@@ -180,6 +184,7 @@ export function buildPlan(
         : [nextQuestion, ...laterQuestions].slice(0, 3).map((item) => item.question),
     presentation: [
       ...main.presentation.slice(0, -1),
+      ...runnersUp.map((runnerUp) => runnerUp.line),
       ...alternatives.map((alternative) => alternative.line),
       ...(closing === undefined ? [] : [closing]),
       // The presentation ends with the one question: the host asks it, one per reply.
@@ -187,6 +192,70 @@ export function buildPlan(
     ],
   }
 }
+
+/** How many runners-up are worked out beside the combination. */
+const RUNNERS_UP = 2
+
+/**
+ * The next splits under the same rule (the regulatory boundary note, section 4: the top
+ * combination with at least two runners-up and what differs, so no single answer is relayed).
+ * Each is the same request worked out without one product of the first split, largest first.
+ */
+function workOutRunnersUp(
+  market: Market,
+  request: Omit<BuildPlanRequest, 'alternatives'>,
+  main: BuildPlanResponse,
+  asOf: AsOf,
+  createdAt: string,
+): BuildPlanResponse['runnersUp'] {
+  const placed = main.plan.combination.products
+    .filter((product) => product.role !== 'emergency_fund')
+    .map((product) => ({
+      id: market.viewOfRow.get(product.productId) ?? product.productId,
+      provider: product.provider,
+      name: product.productName,
+      weight: (product.amount ?? 0) + (product.monthlyAmount ?? 0) * 12,
+    }))
+    .sort((a, b) => b.weight - a.weight)
+  const seen = new Set<string>()
+  const out: BuildPlanResponse['runnersUp'] = []
+  for (const leaving of placed) {
+    if (out.length >= RUNNERS_UP) break
+    const without: Market = {
+      ...market,
+      // Mortgages play no part in the split, and leaving them out keeps the run quick.
+      products: market.products.filter(
+        (product) =>
+          product.category !== 'mortgage' &&
+          product.id !== leaving.id &&
+          !(product.provider === leaving.provider && leaving.name.startsWith(product.name)),
+      ),
+    }
+    const variant = buildMain(without, request, asOf, createdAt)
+    const split = variant.presentation.find((line) => line.startsWith(SPLIT_PREFIX))
+    if (split === undefined) continue
+    const text = split.replace(/^.*?this split comes first: /, '').replace(/\.$/, '')
+    if (seen.has(text)) continue
+    seen.add(text)
+    const difference = round2(variant.position.towardsGoal - main.position.towardsGoal)
+    const reached = variant.goalReachedOn
+    out.push({
+      without: leaving.name,
+      split: text,
+      towardsGoalEur: round2(variant.position.towardsGoal),
+      differenceEur: difference,
+      goalReachedOn: reached,
+      line: `Next under the same rule, without ${leaving.name}: ${text}; ${euro(round2(variant.position.towardsGoal))} towards the goal at ${monthName(variant.position.at)}${difference === 0 ? ', the same' : `, ${euro(Math.abs(difference))} ${difference > 0 ? 'more' : 'less'}`}${reached === null ? '' : `, target reached ${monthName(reached)}`}.`,
+    })
+  }
+  return out
+}
+
+/** How many home options the presentation names; the rest are in the result and on the card. */
+const HOME_LINES = 6
+
+/** The split line's lead: the rule it is the arithmetic of. */
+export const SPLIT_PREFIX = 'Under the rule "most towards the goal by'
 
 export const NEXT_QUESTION_PREFIX = 'Answer this one and the plan gets sharper:'
 
@@ -245,10 +314,10 @@ function saveCallFor(
     : completenessOf(request, situation).assumed.length === 0
   return {
     ready,
-    label: ready ? 'Ready to make this plan happen? Save it to Saoi' : 'Save this plan',
+    label: 'Save this comparison',
     note: 'Held for 24 hours behind a single-use link, then deleted unless opened.',
     appToday: [
-      'keeps the plan',
+      'keeps the comparison',
       'Saoirse, Saoi’s assistant, talks it through',
       'signing in keeps it across devices',
     ],
@@ -814,7 +883,7 @@ function buildMain(
     ),
     situation: planSituation(situation),
     goals: ordered.map((goal) => ({ ...goal })),
-    recommendation: {
+    combination: {
       products: products.slice(0, 12),
       totals: { monthly: monthlyTotal, lumpSum: lumpTotal, netInterest: interestTotal },
     },
@@ -912,7 +981,7 @@ function buildMain(
     }
   }
 
-  // ---- Pathways to a home ------------------------------------------------------------------------
+  // ---- The options for a home ------------------------------------------------------------------------
   const home =
     main?.kind === 'house_deposit'
       ? homePathways({
@@ -935,6 +1004,7 @@ function buildMain(
             name: displayName(line.product),
             monthly: line.monthly,
           })),
+          preferences: request.homePreferences,
         })
       : null
 
@@ -969,6 +1039,7 @@ function buildMain(
 
   return {
     alternatives: [],
+    runnersUp: [],
     // Filled by `buildPlan` from the sensitivity runs; empty for the runs themselves.
     nextQuestion: null,
     laterQuestions: [],
@@ -1477,8 +1548,16 @@ function planPresentation(input: {
       ? []
       : [
           input.home.headline,
+          ...input.home.filters,
           ...input.home.assumptions,
-          ...input.home.pathways.slice(0, 3).map((pathway) => pathway.line),
+          input.home.sortedBy,
+          ...input.home.pathways.slice(0, HOME_LINES).map((pathway) => pathway.line),
+          ...(input.home.pathways.length > HOME_LINES
+            ? [
+                `${String(input.home.pathways.length - HOME_LINES)} more options fit, in the same order, in \`home.pathways\` and on the card.`,
+              ]
+            : []),
+          ...input.home.warnings,
         ]),
     input.moneyFound.headline,
     input.position,
@@ -1487,7 +1566,7 @@ function planPresentation(input: {
   for (const scenario of input.scenarios) {
     const better = scenario.cleared >= scenario.kept ? 'cleared' : 'kept'
     out.push(
-      `${scenario.label}, cleared or kept (both worked out in this call, each everything held less what is still owed at ${input.when}): cleared from savings now, ${euro(scenario.cleared)}; kept, ${euro(scenario.kept)} (${scenario.keptOwed > 0 ? `${euro(scenario.keptOwed)} still owed then` : 'repaid by then'}). ${better === 'cleared' ? 'Clearing it' : 'Keeping it'} leaves ${euro(round2(Math.abs(scenario.cleared - scenario.kept)))} more, with everything counted: ${scenario.interestIfKept === null ? 'the interest kept' : `about ${euro(scenario.interestIfKept)} of interest paid if it is kept`}, the interest the same savings would earn if it is cleared, and ${scenario.repayment === null ? 'its repayment' : `its ${euro(scenario.repayment)} a month repayment`} saved once it is cleared. This plan has it ${scenario.chosen}.`,
+      `${scenario.label}, cleared or kept (both worked out in this call, each everything held less what is still owed at ${input.when}): cleared from savings now, ${euro(scenario.cleared)}; kept, ${euro(scenario.kept)} (${scenario.keptOwed > 0 ? `${euro(scenario.keptOwed)} still owed then` : 'repaid by then'}). ${better === 'cleared' ? 'Clearing it' : 'Keeping it'} leaves ${euro(round2(Math.abs(scenario.cleared - scenario.kept)))} more, with everything counted: ${scenario.interestIfKept === null ? 'the interest kept' : `about ${euro(scenario.interestIfKept)} of interest paid if it is kept`}, the interest the same savings would earn if it is cleared, and ${scenario.repayment === null ? 'its repayment' : `its ${euro(scenario.repayment)} a month repayment`} saved once it is cleared. The split below is worked out with it ${scenario.chosen}.`,
     )
   }
   if (input.mainLabel !== null && input.targetAmount !== undefined) {
@@ -1506,14 +1585,14 @@ function planPresentation(input: {
     .join('; ')
   if (placed !== '') {
     out.push(
-      `The split this plan uses: ${placed}${input.buffer > 0 ? `, the first ${euro(input.buffer)} as an emergency buffer kept apart` : ''}.`,
+      `${SPLIT_PREFIX} ${input.when}", this split comes first: ${placed}${input.buffer > 0 ? `, the first ${euro(input.buffer)} as an emergency buffer kept apart` : ''}.`,
     )
   }
   if (input.liquidity.decision === 'instant_access' && input.liquidity.gainEur !== null) {
     out.push(
       input.liquidity.gainEur <= 0
-        ? `Everything stays in instant access: no fixed term pays more by ${input.when}.`
-        : `Everything stays in instant access: a fixed term would add only ${euro(input.liquidity.gainEur)} by ${input.when}.`,
+        ? `No fixed term pays more by ${input.when}; this combination uses instant access.`
+        : `A fixed term would add ${euro(input.liquidity.gainEur)} by ${input.when} and lock the money until then; this combination uses instant access.`,
     )
   } else if (input.liquidity.decision === 'locked' && input.liquidity.gainEur !== null) {
     out.push(
@@ -1526,7 +1605,7 @@ function planPresentation(input: {
     )
   }
   if (input.helpToBuy !== null) out.push(input.helpToBuy.note)
-  out.push('These are options with their figures, for the inputs given; the customer decides.')
+  out.push(CLOSING_LINE)
   return out
 }
 

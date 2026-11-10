@@ -1,6 +1,11 @@
 import { z } from 'zod'
 import type { Card } from '../contracts/cards.ts'
-import { marketPlanSchema, type MarketPlan, type PlanProduct } from '../contracts/market-plan.ts'
+import {
+  marketPlanSchema,
+  upgradeStoredPlan,
+  type MarketPlan,
+  type PlanProduct,
+} from '../contracts/market-plan.ts'
 import { factCatalogue, type FactKey } from '../domain/facts.ts'
 import type { Db } from './case-repository.ts'
 
@@ -151,7 +156,7 @@ export function savedPlanCard(claimed: ClaimedPlan): Card {
     title: plan.title,
     summary: plan.situation.summary,
     goals: plan.goals.map((goal) => ({ label: goal.label, target: goalTarget(goal) })),
-    products: plan.recommendation.products.map((product) => ({
+    products: plan.combination.products.map((product) => ({
       name: product.productName,
       providerName: product.providerName,
       role: ROLE_LABELS[product.role],
@@ -168,7 +173,7 @@ export function savedPlanCard(claimed: ClaimedPlan): Card {
     assumptions: [...plan.assumptions],
     attributions: [
       ...new Set(
-        plan.recommendation.products
+        plan.combination.products
           .map((product) => product.attribution)
           .filter((line): line is string => line !== undefined),
       ),
@@ -186,7 +191,7 @@ export function savedPlanCard(claimed: ClaimedPlan): Card {
  */
 export function savedPlanDigestLines(claimed: ClaimedPlan): string[] {
   const { plan } = claimed
-  const first = plan.recommendation.products[0]
+  const first = plan.combination.products[0]
   const firstDebt = debtLines(plan)[0]
   return [
     `Title: ${plan.title}`,
@@ -198,7 +203,7 @@ export function savedPlanDigestLines(claimed: ClaimedPlan): string[] {
         return target === null ? goal.label : `${goal.label} (${target})`
       })
       .join('; ')}`,
-    ...plan.recommendation.products.map((product, index) => {
+    ...plan.combination.products.map((product, index) => {
       const amounts = amountsOf(product)
       return (
         `Step ${String(index + 1)}: ${ROLE_LABELS[product.role]}, ${product.productName} with ${product.providerName}` +
@@ -321,7 +326,7 @@ export async function loadClaimedPlans(db: Db, caseId: string): Promise<ClaimedP
     .array(claimedRow)
     .parse(result.data ?? [])
     .flatMap((row) => {
-      const plan = marketPlanSchema.safeParse(row.document)
+      const plan = marketPlanSchema.safeParse(upgradeStoredPlan(row.document))
       return plan.success ? [{ id: row.id, plan: plan.data }] : []
     })
 }

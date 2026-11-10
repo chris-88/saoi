@@ -1,4 +1,5 @@
 import type { About, AboutTopic } from '../../contracts/market-tools.ts'
+import { CORE_STATEMENT } from '../../market/disclosures.ts'
 import { CCPC_ATTRIBUTION } from '../../market/schema.ts'
 
 /**
@@ -11,7 +12,8 @@ const RANKING = `# How Saoi ranks
 
 Saoi compares Irish savings, deposit, mortgage, loan, credit card and current account products
 against the figures the customer gives: their amounts, their dates, their debts. It supplies
-facts and arithmetic. It does not give advice, and nothing it returns says what anyone should do.
+facts and arithmetic. It does not give advice, and nothing it returns says what anyone should do
+or picks a product for them. Saoi is not regulated by the Central Bank of Ireland.
 
 ## The objective is stated, and can be changed
 
@@ -24,7 +26,9 @@ Every result names what it was ranked by, with the inputs used.
 - **Credit cards:** the least interest on the balance over twelve months.
 - **Current accounts:** the lowest yearly fee.
 
-The top five are shown unless more are asked for. Saoi's own earnings play no part in the order.
+The top five are shown unless more are asked for. For a home, every eligible option that fits
+the customer's own filters is shown, sorted by the cost over the first five years, the keys date
+or the monthly repayment, as they choose. Saoi earns nothing from any provider.
 
 ## How the figures are worked out
 
@@ -77,23 +81,23 @@ with the provider.
 
 const EARNINGS = `# How Saoi earns
 
-Saoi is free to use. Nothing about a customer is stored except a plan they build: it is held
-for 24 hours behind a single-use link so they can open it in the Saoi app, then deleted unless
-opened.
+Saoi is free, and it earns nothing today. It takes no commission, referral fee or payment for
+leads from any provider, and no provider pays to be shown or to be placed higher. Links to a
+provider go to the provider's own page, with nothing tracked that earns a fee.
 
-## Referral fees, disclosed, never used in ranking
+Nothing about a customer is stored except a comparison they choose to save: it is held for 24
+hours behind a single-use link so they can open it in the Saoi app, then deleted unless opened.
 
-Saoi intends to earn referral fees from providers when a customer opens a product through Saoi,
-the way a broker does. Where Saoi earns a fee for a product, it says so beside that product.
+## How the order is decided
 
-A fee never changes the ranking, the order, which products are shown, or any figure. Products
-Saoi earns nothing from are compared in exactly the same way, and are often at the top.
+Every result is sorted by a metric the customer picks or can change (the most interest after
+DIRT, the lowest cost over the first five years, the soonest keys date, the lowest monthly
+repayment), and says which. Saoi shows every option that fits the customer's own filters; it
+does not pick one for them.
 
-## Information, not advice
+## Not advice, and not regulated
 
-Saoi compares products and does the arithmetic for the inputs a customer gives. It is not
-regulated financial advice, and it does not tell anyone what to do. Rates change; the provider's
-own terms are what count.
+${CORE_STATEMENT}
 
 ## The data
 
@@ -106,6 +110,6 @@ Bank of Ireland's savings and deposit figures are read from Bank of Ireland's ow
 `
 
 export const ABOUT: Readonly<Record<AboutTopic, About>> = {
-  ranking: { topic: 'ranking', title: 'How Saoi ranks', text: RANKING, updatedOn: '2026-11-09' },
-  earnings: { topic: 'earnings', title: 'How Saoi earns', text: EARNINGS, updatedOn: '2026-11-09' },
+  ranking: { topic: 'ranking', title: 'How Saoi ranks', text: RANKING, updatedOn: '2026-11-10' },
+  earnings: { topic: 'earnings', title: 'How Saoi earns', text: EARNINGS, updatedOn: '2026-11-10' },
 }

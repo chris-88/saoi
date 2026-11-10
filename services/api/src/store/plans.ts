@@ -202,7 +202,7 @@ export function supabasePlanStore(db: Db): PlanStore {
         payload: {
           planId,
           title: plan.title,
-          products: plan.recommendation.products.length,
+          products: plan.combination.products.length,
           facts: fresh.length,
         },
       })

@@ -1,4 +1,11 @@
-import type { HomePathways, MortgageTerms, ProductView } from '../../contracts/market-tools.ts'
+import type {
+  HomePathways,
+  HomePreferences,
+  HomeSort,
+  MortgageTerms,
+  ProductView,
+} from '../../contracts/market-tools.ts'
+import { MORTGAGE_WARNINGS } from '../../market/disclosures.ts'
 import { HELP_TO_BUY, MORTGAGE_MEASURES } from '../../market/first-home-rules.ts'
 import { BUYING_COSTS, CASHBACK, LINKED_SAVERS } from '../../market/mortgage-incentives.ts'
 import { euro, mortgageFigures } from './figures.ts'
@@ -7,18 +14,51 @@ import { DIRT_RATE, round2 } from './simulate.ts'
 import type { Market } from './types.ts'
 
 /**
- * Pathways to a home (Chris, 2026-11-10): the goal compared end to end per lender, not product
- * by product. Each pathway is the savings path to the keys, Help to Buy where it applies, that
- * lender's mortgage at the resulting loan-to-value over 30 years, its cashback, and any savings
- * bonus tied to its mortgage. They are compared on two axes, side by side: the month the keys
- * are in reach, and the cost of the home over the same period for every lender.
+ * The options for a home (Chris, 2026-11-10): every eligible lender's options compared end to
+ * end. Each option is the savings to the keys, Help to Buy where it applies, one of the lender's
+ * mortgages at the resulting loan-to-value (its cheapest per rate type and fixed period, with the
+ * runners-up listed), its cashback, and any savings bonus tied to it. They are filtered by the
+ * customer's own choices (stay with my bank, fixed or variable, a green home) and sorted by the
+ * metric the customer picks: cost over the first 5 years, the keys date or the monthly
+ * repayment. A comparison: no option is picked for the customer (decision
+ * `2026-11-10-saoi-compare-with-customer-filters`).
  *
  * Every assumption is stated and correctable. Only figures from the data are used: an incentive
  * not in `market/mortgage-incentives.ts` or the lender's own CCPC row is not invented.
  */
 
 export const TERM_YEARS = 30
-const MAX_PATHWAYS = 10
+
+/** Names a customer might use for a lender, folded to letters and digits. */
+const BANK_ALIASES: Readonly<Record<string, string>> = {
+  bankofireland: 'boi',
+  boi: 'boi',
+  allied: 'aib',
+  alliedirishbanks: 'aib',
+  aib: 'aib',
+  permanenttsb: 'ptsb',
+  ptsb: 'ptsb',
+  avant: 'avant_money',
+  avantmoney: 'avant_money',
+  creditunion: 'credit_union_mortgages',
+}
+const fold = (text: string): string => text.toLowerCase().replace(/[^a-z0-9]/g, '')
+
+/** Whether a lender is the bank the customer named. */
+export function isBank(named: string, provider: string, providerName: string): boolean {
+  const asked = fold(named)
+  if (asked === '') return false
+  if (BANK_ALIASES[asked] === provider) return true
+  const id = fold(provider)
+  const name = fold(providerName)
+  return asked === id || name === asked || name.startsWith(asked) || asked.startsWith(name)
+}
+
+export const SORT_WORDS: Readonly<Record<HomeSort, string>> = {
+  five_year_cost: 'cost over the first 5 years, lowest first',
+  keys_date: 'keys date, soonest first',
+  monthly_repayment: 'monthly repayment, lowest first',
+}
 
 export type PathwayInput = {
   readonly market: Market
@@ -38,6 +78,8 @@ export type PathwayInput = {
   readonly monthName: (yyyyMm: string) => string
   /** The savings plan's monthly lines, to show the lender's own regular saver in its bundle. */
   readonly savers: readonly { provider: string; name: string; monthly: number }[]
+  /** The customer's own filters and sort order. */
+  readonly preferences?: HomePreferences | undefined
 }
 
 type Candidate = {
@@ -132,7 +174,11 @@ function bundleFor(
           : euro(pathway.cashbackEur),
     })
   }
-  return { products, currentAccount: 'Your current account can stay where it is.' }
+  return {
+    products,
+    currentAccount:
+      'None of these products is recorded as needing a current account with the lender.',
+  }
 }
 
 export function homePathways(input: PathwayInput): HomePathways | null {
@@ -188,11 +234,19 @@ export function homePathways(input: PathwayInput): HomePathways | null {
 
   // ---- Each lender's mortgages at that loan-to-value -----------------------------------------
   const buyer = input.firstTimeBuyer ? 'first_time_buyer' : 'mover'
-  const assumedBer = input.newBuild ? 'A1' : 'C1'
+  const prefs = input.preferences ?? {}
+  const green = input.newBuild || prefs.green === true
+  const assumedBer = input.newBuild ? 'A1' : prefs.green === true ? 'B3' : 'C1'
   const isGreen = (product: ProductView): boolean => /green|eco/i.test(product.name)
+  const rateType = prefs.rateType ?? 'either'
+  const onlyBank =
+    prefs.stayWithBank === true && prefs.currentBank !== undefined ? prefs.currentBank : null
+  const filters: string[] = []
   const eligible = input.market.products.flatMap((product) => {
     const terms = product.terms
     if (terms.kind !== 'mortgage') return []
+    if (onlyBank !== null && !isBank(onlyBank, product.provider, product.providerName)) return []
+    if (rateType !== 'either' && terms.rateType !== rateType) return []
     if (!terms.buyerTypes.includes(buyer)) return []
     if ((terms.ltvMinPct ?? 0) > ltvPct + 1e-9 || (terms.ltvMaxPct ?? 100) < ltvPct - 1e-9)
       return []
@@ -201,7 +255,7 @@ export function homePathways(input: PathwayInput): HomePathways | null {
     if (terms.minLoanEur !== null && loan < terms.minLoanEur) return []
     // A new build is taken as BER A: green rates apply. Otherwise standard rates only, and where
     // a lender prices by BER, a BER C is assumed (stated, correctable).
-    if (isGreen(product) && !input.newBuild) return []
+    if (isGreen(product) && !green) return []
     if (terms.ber !== null && !berMatches(terms.ber, assumedBer)) return []
     return [{ product, terms }]
   })
@@ -297,28 +351,46 @@ export function homePathways(input: PathwayInput): HomePathways | null {
   }
 
   const leftOut: string[] = []
+  const kindOf = (terms: MortgageTerms): string =>
+    terms.rateType === 'fixed' ? `fixed-${String(terms.fixedYears ?? 0)}` : 'variable'
   const best = lenders.flatMap((lender) => {
     const bonus = bonusFor(lender)
-    const options = eligible
+    const all = eligible
       .filter((item) => item.product.provider === lender)
       .flatMap((item) => {
         const c = cost(item)
         return c === null ? [] : [c]
       })
       .sort((a, b) => a.interest - a.cashback - (b.interest - b.cashback))
-    // Per lender, the product that costs least net of cashback (the bonus is the same for all of
-    // its products): a rate with no cashback and one with 3% are only comparable once both are
-    // worked out.
-    const top = options[0]
     const name =
       eligible.find((item) => item.product.provider === lender)?.product.providerName ?? lender
-    if (top === undefined) {
-      leftOut.push(`${name}: no first-time-buyer rate at ${String(ltvPct)}% loan-to-value.`)
+    if (all.length === 0) {
+      leftOut.push(`${name}: no eligible rate at ${String(ltvPct)}% loan-to-value.`)
       return []
     }
-    return [{ lender, name, top, bonus, options }]
+    // Every option the lender has: its cheapest product (net of cashback) per rate type and
+    // fixed period, with the rest of that kind as runners-up. A rate with no cashback and one
+    // with 3% are only comparable once both are worked out.
+    const kinds = [...new Set(all.map((option) => kindOf(option.terms)))]
+    return kinds.flatMap((kind) => {
+      const options = all.filter((option) => kindOf(option.terms) === kind)
+      const top = options[0]
+      return top === undefined ? [] : [{ lender, name, top, bonus, options }]
+    })
   })
   if (best.length === 0) return null
+  const sortBy: HomeSort = prefs.sortBy ?? 'five_year_cost'
+  if (onlyBank !== null) {
+    const shown = best[0]?.name ?? onlyBank
+    filters.push(`Showing ${shown} options, as you asked.`)
+  }
+  if (rateType !== 'either') filters.push(`Showing ${rateType} rates only, as you asked.`)
+  if (prefs.green === true && !input.newBuild)
+    filters.push('Green rates included: the home is taken as BER B3 or better, as you said.')
+  if (prefs.openToCurrentAccountSwitch === false)
+    filters.push(
+      'Leaving out options that need a current account with the lender, as you asked: none of these is recorded as needing one.',
+    )
 
   const period = `the first ${String(HORIZON_YEARS)} years`
   const ranked = best
@@ -365,6 +437,7 @@ export function homePathways(input: PathwayInput): HomePathways | null {
         mortgage: {
           productId: top.product.id,
           name: top.product.name,
+          rateType: top.terms.rateType,
           ratePct: top.terms.initialRatePct,
           fixedYears: fixedYearsOf(top.terms),
           followOnRatePct: top.terms.followOnRatePct,
@@ -438,37 +511,49 @@ export function homePathways(input: PathwayInput): HomePathways | null {
         line: '',
       }
     })
-    .sort((a, b) => a.netCostEur - b.netCostEur)
-  const cheapest = ranked[0]?.netCostEur ?? 0
-  const pathways = ranked.slice(0, MAX_PATHWAYS).map((pathway, index) => {
+    .sort((a, b) => {
+      const byCost = a.netCostEur - b.netCostEur
+      const byMonthly = a.mortgage.monthlyRepayment - b.mortgage.monthlyRepayment
+      const byKeys = (a.keysOn ?? '9999-99').localeCompare(b.keysOn ?? '9999-99')
+      if (sortBy === 'monthly_repayment') return byMonthly || byCost
+      if (sortBy === 'keys_date') return byKeys || byCost
+      return byCost || byMonthly
+    })
+  const cheapest = Math.min(...ranked.map((pathway) => pathway.netCostEur))
+  const pathways = ranked.map((pathway) => {
     const vs = round2(pathway.netCostEur - cheapest)
     const when =
       keysOn === null
-        ? 'keys not reached within the figures'
-        : `keys around ${input.monthName(keysOn)}`
+        ? 'deposit not reached within the figures'
+        : `deposit in place around ${input.monthName(keysOn)}`
     const costLine =
-      index === 0
-        ? `the lowest cost over ${period}`
-        : `about ${euro(Math.round(vs))} more over ${period} than the cheapest`
+      vs <= 0
+        ? `${euro(Math.round(pathway.netCostEur))} over ${period}, the lowest shown`
+        : `${euro(Math.round(pathway.netCostEur))} over ${period}, ${euro(Math.round(vs))} more than the lowest shown`
     const bundle = bundleFor(pathway.lender, pathway, input)
-    const held = bundle.products.map((product) => `${product.name} (${product.detail})`).join(', ')
+    const kind =
+      pathway.mortgage.rateType === 'fixed' && pathway.mortgage.fixedYears !== null
+        ? `${String(pathway.mortgage.fixedYears)}-year fixed`
+        : 'variable'
     return {
       ...pathway,
       vsCheapestEur: vs,
       bundle,
-      line: `The ${pathway.lenderName} path: ${held}; ${bundle.currentAccount.charAt(0).toLowerCase()}${bundle.currentAccount.slice(1).replace(/\.$/, '')}; ${when}; ${costLine}${pathway.confirmed ? '' : ' (incentives from CCPC’s tables, not confirmed on the lender’s site)'}.`,
+      line: `${pathway.lenderName}, ${kind}: ${pathway.mortgage.name} at ${String(pathway.mortgage.ratePct)}%, ${euro(pathway.mortgage.monthlyRepayment)} a month; ${when}; ${costLine}${pathway.drivers === 'the rate alone' ? '' : ` (${pathway.drivers})`}${pathway.confirmed ? '' : ' (incentives from CCPC’s tables, not confirmed on the lender’s site)'}.`,
     }
   })
 
   const assumptions = [
-    `Assumed: ${input.firstTimeBuyer ? 'first-time buyer' : 'not a first-time buyer'}${input.firstTimeBuyerStated ? '' : ' (no home owned was mentioned)'}`,
+    `Showing ${input.firstTimeBuyer ? 'first-time-buyer' : 'second-and-later-buyer'} rates${input.firstTimeBuyerStated ? '' : ' (no home owned was mentioned; say if not)'}`,
     `a ${String(TERM_YEARS)}-year mortgage with a ${euro(deposit)} deposit (${String(round2(100 - ltvPct))}%)`,
     input.homePrice !== undefined
       ? `a ${euro(price)} home, as given`
       : `a ${euro(price)} home: what the savings by ${input.monthName(input.goalDate)} support at ${String(measures.maxLtvPct)}% loan-to-value${bindingLimit === 'income' ? `, capped by ${String(measures.loanToIncome)} times income` : bindingLimit === 'income_not_given' ? `, assuming income allows a ${euro(loan)} loan (${String(measures.loanToIncome)} times income would need ${euro(Math.ceil(loan / measures.loanToIncome))} a year)` : ''}`,
     input.newBuild
       ? `a new build, taken as BER A (green rates apply), with Help to Buy of ${euro(helpToBuy)}${input.taxPaid === undefined ? ' (up to; limited by Income Tax and DIRT paid, not given)' : ''}`
-      : 'not a new build, so no Help to Buy and standard rates (a BER C where a lender prices by BER)',
+      : prefs.green === true
+        ? 'not a new build, so no Help to Buy; green rates for a BER B3 or better home'
+        : 'not a new build, so no Help to Buy and standard rates (a BER C where a lender prices by BER)',
     `stamp duty of ${euro(stampDuty)} (1%) and ${euro(BUYING_COSTS.legalAndSurveyEur)} for legal fees and a survey (an estimate)`,
     `costs compared over ${period} for every lender: interest on a ${String(TERM_YEARS)}-year term plus the valuation fee, less cashback paid within ${String(HORIZON_YEARS)} years and any savings bonus; a shorter fix moves to its stated follow-on rate for the rest of the ${String(HORIZON_YEARS)} years`,
   ].join('; ')
@@ -476,8 +561,8 @@ export function homePathways(input: PathwayInput): HomePathways | null {
   return {
     headline:
       keysOn === null
-        ? 'Your home: the keys are not reached within the figures.'
-        : `Your home: keys around ${input.monthName(keysOn)}.`,
+        ? 'At these figures, the deposit and buying costs are not reached within the figures.'
+        : `At these figures, the deposit and buying costs are in place around ${input.monthName(keysOn)}.`,
     assumptions: [`${assumptions}.`],
     price,
     priceFrom: input.homePrice === undefined ? 'savings' : 'given',
@@ -491,7 +576,11 @@ export function homePathways(input: PathwayInput): HomePathways | null {
     neededAtKeysEur: needed,
     keysOn,
     comparedOver: basis,
+    sortBy,
+    sortedBy: `${String(pathways.length)} option${pathways.length === 1 ? '' : 's'} that fit${pathways.length === 1 ? 's' : ''}, sorted by ${SORT_WORDS[sortBy]} (another order can be chosen).`,
+    filters,
     pathways,
     leftOut,
+    warnings: [...MORTGAGE_WARNINGS],
   }
 }

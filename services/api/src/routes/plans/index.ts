@@ -5,6 +5,7 @@ import {
   SAVE_PLAN_MAX_BYTES,
   marketPlanSchema,
   savePlanBodySchema,
+  upgradeStoredPlan,
   savePlanResponseSchema,
   type MarketPlan,
 } from '@shared/contracts/market-plan.ts'
@@ -186,7 +187,7 @@ export function planRoutes(options: PlanRouteOptions) {
     c.get('log').info('plan saved', {
       requestId: c.get('requestId'),
       client: body.client ?? null,
-      products: body.plan.recommendation.products.length,
+      products: body.plan.combination.products.length,
     })
 
     return c.json({ claimUrl: `${base}/#/plan/${token}`, expiresAt }, 201)
@@ -222,7 +223,7 @@ export function planRoutes(options: PlanRouteOptions) {
     if (stored.claimedAt !== null) return c.json(await reopen(stored), 200)
     if (Date.parse(stored.expiresAt) <= now()) throw new ApiError('expired', EXPIRED)
 
-    const parsed = marketPlanSchema.safeParse(stored.document)
+    const parsed = marketPlanSchema.safeParse(upgradeStoredPlan(stored.document))
     if (!parsed.success) {
       throw new ApiError('internal', 'This plan could not be read.', { cause: parsed.error })
     }

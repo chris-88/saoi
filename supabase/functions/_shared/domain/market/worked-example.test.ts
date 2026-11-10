@@ -226,11 +226,11 @@ describe('worked example: build_plan', () => {
   })
 
   it('places what is left within the caps, and saves the freed repayment', () => {
-    const totals = result.plan.recommendation.totals
+    const totals = result.plan.combination.totals
     expect(totals?.lumpSum).toBeCloseTo(16_000, 0)
     expect(totals?.monthly).toBeCloseTo(1_080, 0)
-    expect(result.plan.recommendation.products.length).toBeLessThanOrEqual(5)
-    for (const product of result.plan.recommendation.products) {
+    expect(result.plan.combination.products.length).toBeLessThanOrEqual(5)
+    for (const product of result.plan.combination.products) {
       expect(product.goalIds).toEqual(['deposit'])
       expect(product.checks.length).toBeGreaterThan(0)
     }
@@ -258,7 +258,7 @@ describe('worked example: build_plan', () => {
       AS_OF,
       CREATED,
     )
-    const fund = open.plan.recommendation.products.find((p) => p.role === 'emergency_fund')
+    const fund = open.plan.combination.products.find((p) => p.role === 'emergency_fund')
     // Three months of €2,550 outgoings.
     expect(fund?.amount).toBeCloseTo(7_650, 0)
     expect(open.plan.assumptions.join(' ')).toMatch(/nothing is locked/)
@@ -297,7 +297,7 @@ describe('build_plan: what the first Claude test showed (2026-11-09)', () => {
       CREATED,
     )
   const locks = (result: ReturnType<typeof plan>) =>
-    result.plan.recommendation.products.filter((p) => /\(\d+ months\)/.test(p.productName))
+    result.plan.combination.products.filter((p) => /\(\d+ months\)/.test(p.productName))
 
   it('keeps the money in instant access when a term earns less than the thresholds, with both figures', () => {
     const result = plan()
@@ -323,7 +323,7 @@ describe('build_plan: what the first Claude test showed (2026-11-09)', () => {
     expect(result.reasoning.join(' ')).toMatch(
       /The €284\.73 a month the Car loan took is saved instead .* €1,084\.73 a month goes into the accounts below/,
     )
-    expect(result.plan.recommendation.totals?.monthly).toBeCloseTo(1_084.73, 2)
+    expect(result.plan.combination.totals?.monthly).toBeCloseTo(1_084.73, 2)
   })
 
   it('gives what-ifs and the offer to save', () => {
@@ -344,7 +344,7 @@ describe('build_plan: what the first Claude test showed (2026-11-09)', () => {
 
   it('holds a €6,000 buffer apart and keeps everything accessible when asked', () => {
     const result = plan({ emergencyBufferEur: 6_000, keepAccessible: true })
-    const buffer = result.plan.recommendation.products.find((p) => p.role === 'emergency_fund')
+    const buffer = result.plan.combination.products.find((p) => p.role === 'emergency_fund')
     expect(buffer?.amount).toBe(6_000)
     const bufferGoal = result.plan.goals.find((g) => g.kind === 'emergency_fund')
     expect(bufferGoal).toMatchObject({ targetAmount: 6_000, label: 'Emergency buffer' })
@@ -352,7 +352,7 @@ describe('build_plan: what the first Claude test showed (2026-11-09)', () => {
     expect(result.liquidity.decision).toBe('instant_access')
     expect(result.liquidity.lockedNetPosition).toBeNull()
     expect(locks(result)).toEqual([])
-    expect(result.plan.recommendation.totals?.lumpSum).toBeCloseTo(16_000, 0)
+    expect(result.plan.combination.totals?.lumpSum).toBeCloseTo(16_000, 0)
     expect(() => marketPlanSchema.parse(result.plan)).not.toThrow()
   })
 
@@ -367,13 +367,11 @@ describe('build_plan: what the first Claude test showed (2026-11-09)', () => {
       AS_OF,
       CREATED,
     )
-    expect(
-      sized.plan.recommendation.products.find((p) => p.role === 'emergency_fund')?.amount,
-    ).toBe(6_000)
-    const unsized = plan({ emergencyBufferMonths: 3 })
-    expect(unsized.plan.recommendation.products.some((p) => p.role === 'emergency_fund')).toBe(
-      false,
+    expect(sized.plan.combination.products.find((p) => p.role === 'emergency_fund')?.amount).toBe(
+      6_000,
     )
+    const unsized = plan({ emergencyBufferMonths: 3 })
+    expect(unsized.plan.combination.products.some((p) => p.role === 'emergency_fund')).toBe(false)
     expect(unsized.reasoning.join(' ')).toMatch(/outgoings were not given/)
   })
 
@@ -399,7 +397,7 @@ describe('build_plan: what the first Claude test showed (2026-11-09)', () => {
 
   it('shows each product’s deposit guarantee, with its source', () => {
     const result = plan()
-    for (const product of result.plan.recommendation.products) {
+    for (const product of result.plan.combination.products) {
       expect(product.depositGuarantee?.scheme).toBeTruthy()
       expect(product.depositGuarantee?.sourceUrl).toMatch(/^https:\/\//)
     }
@@ -440,7 +438,7 @@ describe('what the host reads first (after the second Claude test)', () => {
 
   it('leads with money found, then one net figure per scenario, and no orders', () => {
     // A home goal leads with its pathways; money found follows them.
-    const lead = result.home === null ? 0 : 2 + Math.min(3, result.home.pathways.length)
+    const lead = result.presentation.indexOf(result.moneyFound.headline)
     expect(result.presentation[lead]).toBe(result.moneyFound.headline)
     const scenario = result.debtScenarios[0]
     expect(scenario).toBeDefined()

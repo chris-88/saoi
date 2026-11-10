@@ -13,9 +13,11 @@ import { z } from 'zod'
  *   (income, outgoings, what they can save, savings held, debts). Every figure is what they
  *   said; nothing here is worked out.
  * - `goals`: what they are trying to do, each with an id the products point back at.
- * - `recommendation`: the combination of products, each with its provider, the market data
- *   source it was read from (`bank` or `ccpc`), Saoi's product id, the amounts placed and saved
- *   monthly, what the engine projects, and every field the data does not give (`unknowns`).
+ * - `combination`: the worked combination of products under the ranking rule the customer chose
+ *   (not a pick for them), each with its provider, the market data source it was read from
+ *   (`bank` or `ccpc`), Saoi's product id, the amounts placed and saved monthly, what the engine
+ *   projects, and every field the data does not give (`unknowns`). Plans stored before
+ *   2026-11-10 call it `recommendation`; `upgradeStoredPlan` renames it on the way in.
  * - `debts`: the order to pay debts down in, and why.
  * - `ranking` and `assumptions`: the objective the products were ranked by, stated, and what
  *   the figures assume (DIRT at 33%, rates held, the horizon). Information, not advice.
@@ -238,7 +240,8 @@ export const marketPlanSchema = z
     title: text(120),
     situation: planSituationSchema,
     goals: z.array(planGoalSchema).min(1).max(8),
-    recommendation: z.object({
+    /** The worked combination for the stated ranking rule: arithmetic, not a pick. */
+    combination: z.object({
       products: z.array(planProductSchema).max(12),
       /** What the whole combination asks of them. */
       totals: z
@@ -279,12 +282,12 @@ export const marketPlanSchema = z
   .superRefine((plan, ctx) => {
     // A product or a payoff step pointing at something the plan does not hold is a broken plan.
     const goals = new Set(plan.goals.map((goal) => goal.id))
-    plan.recommendation.products.forEach((product, index) => {
+    plan.combination.products.forEach((product, index) => {
       for (const goalId of product.goalIds) {
         if (!goals.has(goalId)) {
           ctx.addIssue({
             code: 'custom',
-            path: ['recommendation', 'products', index, 'goalIds'],
+            path: ['combination', 'products', index, 'goalIds'],
             message: `no goal with id ${goalId}`,
           })
         }
@@ -303,6 +306,19 @@ export const marketPlanSchema = z
   })
 
 export type MarketPlan = z.infer<typeof marketPlanSchema>
+
+/**
+ * A stored or posted plan from before 2026-11-10 carries `recommendation` where the contract now
+ * says `combination` (the decision `2026-11-10-saoi-compare-with-customer-filters`). Renames it
+ * before parsing; anything else passes through untouched.
+ */
+export function upgradeStoredPlan(document: unknown): unknown {
+  if (typeof document !== 'object' || document === null || Array.isArray(document)) return document
+  const record = document as Record<string, unknown>
+  if (record['combination'] !== undefined || record['recommendation'] === undefined) return document
+  const { recommendation, ...rest } = record
+  return { ...rest, combination: recommendation }
+}
 export type PlanProduct = z.infer<typeof planProductSchema>
 export type PlanGoal = z.infer<typeof planGoalSchema>
 export type PlanDebt = z.infer<typeof planDebtSchema>
