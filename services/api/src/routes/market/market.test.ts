@@ -13,6 +13,8 @@ import { MARKET_FIXTURE } from '@shared/domain/market/fixture.ts'
 import { createTokenVerifier } from '../../middleware/auth.ts'
 import { cachedMarketStore } from '../../store/market.ts'
 import { SECRET, fakePartners, fakeSessions, fakeStore, fakeUploads } from '../../testing.ts'
+import type { CalculatorRun } from '@shared/domain/market/run-bands.ts'
+import type { CalculatorRunStore } from '../../store/calculator-runs.ts'
 import type { PlanStore } from '../../store/plans.ts'
 import { hashPlanToken, PLAN_LINK_TTL_MS } from '../plans/index.ts'
 import { MARKET_MAX_BODY_BYTES, dublinDate } from './index.ts'
@@ -51,6 +53,7 @@ function appWith(
     loads?: { count: number }
     drafts?: ReturnType<typeof fakeDrafts>
     draftBurst?: { max: number; windowMs: number }
+    runs?: CalculatorRunStore
   } = {},
 ) {
   const loads = options.loads ?? { count: 0 }
@@ -71,6 +74,7 @@ function appWith(
         { now: () => NOW },
       ),
       now: () => NOW,
+      ...(options.runs === undefined ? {} : { runs: options.runs }),
       ...(options.burst === undefined ? {} : { burst: options.burst }),
       ...(options.drafts === undefined
         ? {}
@@ -191,6 +195,68 @@ describe('public comparison routes', () => {
     expect(body.warnings).toHaveLength(3)
     expect(body.statement).toMatch(/not regulated by the Central Bank of Ireland/)
     expect(JSON.stringify(body)).not.toMatch(/"recommendation"/)
+  })
+
+  it('record one anonymous, banded row per home-calculator run, with no figures', async () => {
+    const recorded: CalculatorRun[] = []
+    const runs: CalculatorRunStore = {
+      record: (run) => {
+        recorded.push(run)
+        return Promise.resolve()
+      },
+    }
+    const { app } = appWith({ runs })
+    const res = await post(app, '/api/calc/home', {
+      depositSavedEur: 30_000,
+      monthlySavingEur: 1_000,
+      annualGrossIncomeEur: 60_000,
+      secondIncomeEur: 40_000,
+      targetPriceEur: 400_000,
+      targetDate: '2028-06',
+      monthlyRentEur: 1_800,
+      county: 'fingal',
+    })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { routes: { id: string }[] }
+    expect(body.routes).toHaveLength(6)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(recorded).toEqual([
+      {
+        ran_on: dublinDate(NOW),
+        kind: 'home',
+        income_band: '100-150k',
+        gap_months_band: '13-24',
+        target_met: true,
+        county: 'fingal',
+        rent_band: '1500-2000',
+        property_kind: null,
+        first_time_buyer: null,
+      },
+    ])
+    expect(JSON.stringify(recorded)).not.toMatch(/30000|1000|60000|40000|400000|1800|203\.0\.113/)
+  })
+
+  it('answer the home calculator even when the run cannot be recorded', async () => {
+    const { app } = appWith({ runs: { record: () => Promise.reject(new Error('database down')) } })
+    const res = await post(app, '/api/calc/home', { annualGrossIncomeEur: 70_000 })
+    expect(res.status).toBe(200)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  })
+
+  it('record nothing for build-plan', async () => {
+    const recorded: CalculatorRun[] = []
+    const { app } = appWith({
+      runs: {
+        record: (run) => {
+          recorded.push(run)
+          return Promise.resolve()
+        },
+      },
+    })
+    const res = await post(app, '/api/calc/build-plan', { situation, goals })
+    expect(res.status).toBe(200)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(recorded).toEqual([])
   })
 
   it('build the worked example’s plan, which the plan contract accepts', async () => {

@@ -35,11 +35,13 @@ import { buildPlan } from '@shared/domain/market/plan.ts'
 import { productDetail } from '@shared/domain/market/product.ts'
 import { project } from '@shared/domain/market/projection.ts'
 import { review } from '@shared/domain/market/review.ts'
+import { homeCalculatorRun } from '@shared/domain/market/run-bands.ts'
 import { MarketInputError, search } from '@shared/domain/market/search.ts'
 import type { Market } from '@shared/domain/market/types.ts'
 import type { AppEnv } from '../../context.ts'
 import { ApiError, errorBody } from '../../errors.ts'
 import { clientAddress, rateLimit } from '../../middleware/rateLimit.ts'
+import type { CalculatorRunStore } from '../../store/calculator-runs.ts'
 import type { MarketStore } from '../../store/market.ts'
 import type { PlanStore } from '../../store/plans.ts'
 import {
@@ -68,6 +70,11 @@ export type MarketRouteOptions = {
   readonly burst?: { readonly max: number; readonly windowMs: number }
   /** For tests: the clock the date of the figures is read from. */
   readonly now?: () => number
+  /**
+   * Where `POST /api/calc/home` records one anonymous, banded row per run (`calculator_runs`),
+   * after responding. Without it, nothing is recorded.
+   */
+  readonly runs?: CalculatorRunStore
   /**
    * Where `build-plan` holds each plan as a 24-hour draft behind a single-use link. Without it,
    * plans carry no link (`saveLink: null`).
@@ -103,7 +110,7 @@ const publicErrors = {
 const INFORMATION =
   'Information, not advice: results are ranked by a stated objective, for the inputs given, and never pick a product for the customer. ' +
   'Saoi is not regulated by the Central Bank of Ireland. ' +
-  'Unauthenticated. Nothing sent is stored, except that a plan is held for 24 hours behind a single-use link so it can be opened in the Saoi app, then deleted unless opened.'
+  'Unauthenticated. Nothing sent is stored, except that a plan is held for 24 hours behind a single-use link so it can be opened in the Saoi app, then deleted unless opened, and the home calculator keeps one anonymous, banded record per run (no figures, no identifiers).'
 
 const jsonBody = <T extends z.ZodType>(schema: T) => ({
   required: true,
@@ -278,8 +285,11 @@ const firstHomeRoute = createRoute({
     'times, loan to value 90%, the 15% allowances, the exemptions) with Help to Buy counted ' +
     'towards the deposit; for a price, the deposit needed, the shortfall and whether the loan is ' +
     'within the income limit; green rates from the market data (no rule sets them; lenders do); ' +
-    'the First Home shared equity scheme only as far as it is confirmed; and the mortgages that ' +
-    'fit, ranked by total cost. Every rule carries its source page and the day it was read. ' +
+    'every route to a home (`routes`: the First Home Scheme, the Local Authority Home Loan, ' +
+    'affordable purchase, the vacant property grant beside second-hand and new build), three ' +
+    'shown after the limits, never a pick; rent set beside the repayments when given ' +
+    '(`rentVsRepayment`); and the mortgages that fit, ranked by total cost. Every rule carries ' +
+    'its source page and the day it was read. ' +
     INFORMATION,
   security: [],
   request: { body: jsonBody(firstHomeRequestSchema.openapi('FirstHome')) },
@@ -298,13 +308,21 @@ const homeCalculatorRoute = createRoute({
     'For a customer who raises buying a home. Takes whatever they have said, however partial ' +
     '(deposit saved, monthly saving, gross income and a second income, the price in mind, ' +
     'existing repayments, the date they would like the keys, first-time buyer, new build or ' +
-    'second-hand, their bank and whether to stay with it, fixed or variable, a green home, ' +
-    'open to switching current account) and returns the figures that move with them: what the ' +
-    'Central Bank limits allow, the deposit and cash needed at the keys, the month that is saved ' +
-    'at this pace, and the inputs still missing as plain questions. `rules` lets a calculator ' +
-    'card recompute the figures as sliders move. No products: the options, every eligible one ' +
-    'filtered and sorted as the customer chooses, come from build-plan with a house_deposit goal ' +
-    'and `homePreferences`. ' +
+    'second-hand, the county, rent paid a month, their bank and whether to stay with it, fixed ' +
+    'or variable, a green home, open to switching current account) and returns the figures that ' +
+    'move with them: what the Central Bank limits allow, the deposit and cash needed at the ' +
+    'keys, the month that is saved at this pace, and the inputs still missing as plain ' +
+    'questions. On a new build with tax paid not given, the headline leaves Help to Buy out ' +
+    '(`helpToBuyConditional`). `routes` lists every route to a home (second-hand, new build ' +
+    'with Help to Buy, the First Home Scheme, the Local Authority Home Loan, affordable ' +
+    'purchase, the vacant property grant), each potential, needing one detail, or not ' +
+    'applicable, with its line, conditions and dated sources: show three right after the ' +
+    'headline, then "More routes: N", never a pick. `rules` lets a calculator card recompute ' +
+    'the figures as sliders move. No products: the options, every eligible one filtered and ' +
+    'sorted as the customer chooses, come from build-plan with a house_deposit goal and ' +
+    '`homePreferences`. Each run is recorded anonymously as bands (income, months to the keys, ' +
+    'whether the date is met, county and rent band if given, kind of home, first-time buyer): ' +
+    'no figures, no identifiers, the day only. ' +
     INFORMATION,
   security: [],
   request: { body: jsonBody(homeCalculatorRequestSchema.openapi('HomeCalculator')) },
@@ -476,14 +494,31 @@ export function marketRoutes(options: MarketRouteOptions) {
     return c.json(await calculate(() => debts(loaded, body, dublinDate(now()))), 200)
   })
 
-  routes.openapi(homeCalculatorRoute, (c) =>
-    c.json(homeCalculator(c.req.valid('json'), dublinDate(now())), 200),
-  )
+  routes.openapi(homeCalculatorRoute, (c) => {
+    const body = c.req.valid('json')
+    const asOf = dublinDate(now())
+    const result = homeCalculator(body, asOf)
+    const runs = options.runs
+    if (runs !== undefined) {
+      // Fire and forget, after the response is built: a failed record never fails the request.
+      setTimeout(() => {
+        void Promise.resolve()
+          .then(() => runs.record(homeCalculatorRun(body, result, asOf)))
+          .catch((error: unknown) => {
+            c.get('log').warn('calculator run not recorded', {
+              requestId: c.get('requestId'),
+              error: error instanceof Error ? error.message : 'unknown',
+            })
+          })
+      }, 0)
+    }
+    return c.json(result, 200)
+  })
 
   routes.openapi(firstHomeRoute, async (c) => {
     const body = c.req.valid('json')
     const loaded = await market()
-    return c.json(await calculate(() => firstHome(loaded, body)), 200)
+    return c.json(await calculate(() => firstHome(loaded, body, dublinDate(now()))), 200)
   })
 
   // Drafts: a fixed window per address, held in this process like the other limits.
