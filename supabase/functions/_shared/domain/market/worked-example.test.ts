@@ -439,7 +439,9 @@ describe('what the host reads first (after the second Claude test)', () => {
   const DIRECTIVE = /(^|[.:;]\s+)(Clear|Pay off|Set up|Move|Ask|Open|Put|Get)\b/m
 
   it('leads with money found, then one net figure per scenario, and no orders', () => {
-    expect(result.presentation[0]).toBe(result.moneyFound.headline)
+    // A home goal leads with its pathways; money found follows them.
+    const lead = result.home === null ? 0 : 2 + Math.min(3, result.home.pathways.length)
+    expect(result.presentation[lead]).toBe(result.moneyFound.headline)
     const scenario = result.debtScenarios[0]
     expect(scenario).toBeDefined()
     if (scenario === undefined) return

@@ -51,9 +51,11 @@ describe('the money check, one call on whatever was said', () => {
       ],
     })
     expect(result.planGoalAssumed).toBeNull()
-    expect(result.presentation[0]).toBe(result.plan?.moneyFound.headline)
+    expect(result.presentation[0]).toMatch(/^Your home: keys around /)
+    expect(result.presentation).toContain(result.plan?.moneyFound.headline)
     expect(result.presentation.join(' ')).toMatch(/Help to Buy: depends, up to €35,000/)
-    expect(result.questions.join(' ')).toMatch(/first home/)
+    expect(result.questions.join(' ')).toMatch(/gross income/)
+    expect(result.questions.join(' ')).not.toMatch(/Is this a first home/)
     expect(result.presentation.at(-1)).toMatch(/the customer decides/)
     expect(() => moneyCheckResponseSchema.parse(result)).not.toThrow()
   })

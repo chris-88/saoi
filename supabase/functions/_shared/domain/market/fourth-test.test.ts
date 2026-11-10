@@ -103,7 +103,9 @@ describe('the net position says what it includes', () => {
       /^€[\d,]+ in all at November 2028: €[\d,]+ towards the house deposit and €[\d,]+ emergency buffer \(no debts given\)\.$/,
     )
     expect(position.line).not.toMatch(/net/)
-    expect(result.presentation[1]).toBe(position.line)
+    // A home goal leads with the pathways; the old order follows them.
+    const lead = result.home === null ? 0 : 2 + Math.min(3, result.home.pathways.length)
+    expect(result.presentation[lead + 1]).toBe(position.line)
     // The plan document carries it, and the app's card shows the assumptions in order.
     expect(result.plan.position?.line).toBe(position.line)
     expect(result.plan.assumptions[0]).toBe(position.line)
@@ -173,7 +175,8 @@ describe('keeping a debt is modelled by keeping it', () => {
       /^Assumed: the car loan’s €9,000 repaid evenly over 24 months .* with the actual repayment the figure is exact\.$/,
     )
     // Stated where it shows: the presentation (right after the position), the assumptions, `next`.
-    expect(result.presentation[2]).toBe(assumed?.note)
+    const lead = result.home === null ? 0 : 2 + Math.min(3, result.home.pathways.length)
+    expect(result.presentation[lead + 2]).toBe(assumed?.note)
     expect(result.plan.assumptions).toContain(assumed?.note)
     expect(result.next).toMatch(/assume an even repayment over 24 months/)
     expect(result.questions[0]).toMatch(/actual monthly repayment, or the months left/)
@@ -208,7 +211,7 @@ describe('keeping a debt is modelled by keeping it', () => {
       emergencyBufferEur: 5_000,
     })
     expect(given.assumedRepayments).toEqual([])
-    expect(given.presentation.join(' ')).not.toMatch(/Assumed:/)
+    expect(given.presentation.join(' ')).not.toMatch(/Assumed: the car loan/)
     expect(given.next).not.toMatch(/even repayment/)
     expect(given.questions.join(' ')).not.toMatch(/monthly repayment/)
     const scenario = given.debtScenarios[0]

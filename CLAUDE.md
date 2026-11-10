@@ -332,6 +332,18 @@ The engine behind the Saoi MCP tools, in `_shared/domain/market/` (pure; contrac
   given earns what CCPC's current-account table states (the provider's row, else 0% when every
   stated rate is 0%), with the basis in `moneyFound.basis` and a line in its headline. A savings
   account without a rate stays unknown.
+- **Pathways to a home** (`pathways.ts`, Chris 2026-11-10): for a house-deposit goal, `home`
+  compares lenders end to end: the price (given, or what the savings by the date support at 90%
+  LTV, capped by 4 times income when given), the cash needed at the keys (deposit plus 1% stamp
+  duty and a €3,000 legal and survey estimate, less Help to Buy for a new build), each lender's
+  cheapest first-time-buyer mortgage at that LTV over the same period (30 years where every
+  lender states a follow-on rate, else the most common fixed period), its cashback and linked
+  savings bonus (`_shared/market/mortgage-incentives.ts`, with conditions, source and
+  `confirmed`), ranked by cost, with the keys month beside it. A new build is taken as BER A
+  (green rates, Help to Buy); otherwise standard rates and BER C where a lender prices by BER.
+  First-time buyer is assumed when no home is mentioned. Every assumption is stated in one line.
+  The BoI MortgageSaver bonus is paid after drawdown (its brochure), so it lowers cost, not the
+  deposit; cashback is always cost.
 - **Money found** (`money-found.ts`): review and plan results lead with `moneyFound`, one euro a
   year in parts (idle cash against the best confirmed instant-access rate after DIRT, debt
   interest not paid less what the money would earn, a mortgage switch at a band reaching 90% LTV,
