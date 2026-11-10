@@ -12,8 +12,11 @@ import { monthsUntil, round2 } from './simulate.ts'
  * and the spread in the keys month, the cost of the home and the position is measured. The
  * largest spread is asked first; the rest follow in order.
  *
- * The score is in euro: the spread in cost over the period compared, plus the spread in what is
- * held at the end, plus the keys spread in months times what is saved a month.
+ * The score is in euro and measures the goal, not the size of the home (Chris, 2026-11-10): the
+ * spread in the price that can be bought, plus the keys spread in months times what is saved a
+ * month, plus the spread in what is held at the end, plus the spread in cost per €100,000
+ * borrowed. The absolute cost of the home is reported but not scored: a bigger home costs more,
+ * which says nothing about the answer.
  */
 
 type Run = (request: Omit<BuildPlanRequest, 'alternatives'>) => BuildPlanResponse
@@ -22,11 +25,21 @@ type Base = Omit<BuildPlanRequest, 'alternatives'>
 const INCOMES = [45_000, 70_000, 100_000] as const
 const DEBT_MONTHS = [12, 36, 60] as const
 
-type Measure = { keys: string | null; cost: number | null; price: number | null; total: number }
+type Measure = {
+  keys: string | null
+  cost: number | null
+  costPer100k: number | null
+  price: number | null
+  total: number
+}
 
 const measure = (result: BuildPlanResponse): Measure => ({
   keys: result.home?.keysOn ?? result.goalReachedOn,
   cost: result.home?.pathways[0]?.netCostEur ?? null,
+  costPer100k:
+    result.home === null || result.home.loan <= 0 || result.home.pathways[0] === undefined
+      ? null
+      : (result.home.pathways[0].netCostEur / result.home.loan) * 100_000,
   price: result.home?.price ?? null,
   total: result.position.total,
 })
@@ -67,10 +80,17 @@ export function rankQuestions(
         asOf,
       ),
       costEur: round2(spreadOf(measures.map((m) => m.cost))),
+      costPer100kEur: round2(spreadOf(measures.map((m) => m.costPer100k))),
       priceEur: round2(spreadOf(measures.map((m) => m.price))),
       totalEur: round2(spreadOf(measures.map((m) => m.total))),
     }
-    const value = round2(spread.costEur + spread.totalEur + spread.keysMonths * monthly)
+    // Asking the price itself: its spread is the question, not its effect, so it is not scored.
+    const value = round2(
+      (key === 'home_price' ? 0 : spread.priceEur) +
+        spread.keysMonths * monthly +
+        spread.totalEur +
+        spread.costPer100kEur,
+    )
     candidates.push({ key, question, why: why(spread), spread, scoreEur: value })
   }
 
@@ -82,7 +102,7 @@ export function rankQuestions(
         run({ ...base, situation: { ...situation, income: { ...situation.income, annualGross } } }),
       ),
       (s) =>
-        `Income decides how much can be borrowed: from ${euro(INCOMES[0])} to ${euro(INCOMES[2])} a year it moves the price that can be bought by up to ${euro(Math.round(s.priceEur))} and the cost of the home by up to ${euro(Math.round(s.costEur))}.`,
+        `Income decides how much can be borrowed: from ${euro(INCOMES[0])} to ${euro(INCOMES[2])} a year it moves the price that can be bought by up to ${euro(Math.round(s.priceEur))}.`,
     )
   }
   if (home && base.propertyKind === undefined) {
@@ -91,7 +111,19 @@ export function rankQuestions(
       'Is the home a new build, or second-hand?',
       (['new_build', 'second_hand'] as const).map((propertyKind) => run({ ...base, propertyKind })),
       (s) =>
-        `A new build brings Help to Buy and green rates: it moves the cost of the home by up to ${euro(Math.round(s.costEur))}${s.keysMonths > 0 ? ` and the keys by ${String(s.keysMonths)} months` : ''}.`,
+        `A new build brings Help to Buy and green rates: it moves ${
+          [
+            s.keysMonths > 0 ? `the keys by ${String(s.keysMonths)} months` : '',
+            s.priceEur > 0
+              ? `the price that can be bought by up to ${euro(Math.round(s.priceEur))}`
+              : '',
+            s.costPer100kEur > 0
+              ? `the cost per €100,000 borrowed by up to ${euro(Math.round(s.costPer100kEur))}`
+              : '',
+          ]
+            .filter((part) => part !== '')
+            .join(', ') || 'nothing in these figures'
+        }.`,
     )
   }
   if (home && base.homePrice === undefined && main.home !== null) {
@@ -103,7 +135,7 @@ export function rankQuestions(
         run({ ...base, homePrice: Math.round((price * factor) / 1_000) * 1_000 }),
       ),
       (s) =>
-        `The price sets the keys date and the loan: 15% either side of ${euro(price)} moves the keys by ${String(s.keysMonths)} months and the cost by up to ${euro(Math.round(s.costEur))}.`,
+        `The price sets the keys date and the loan: 15% either side of ${euro(price)} moves the keys by ${String(s.keysMonths)} months.`,
     )
   }
   const assumed = main.assumedRepayments.map((item) => item.debtId)
@@ -123,7 +155,7 @@ export function rankQuestions(
         }),
       ),
       (s) =>
-        `The repayment decides what clearing the loan saves: between 12 and 60 months left it moves what is held at the end by up to ${euro(Math.round(s.totalEur))}${home ? ` and the cost of the home by up to ${euro(Math.round(s.costEur))}` : ''}.`,
+        `The repayment decides what clearing the loan saves: between 12 and 60 months left it moves what is held at the end by up to ${euro(Math.round(s.totalEur))}${home && s.priceEur > 0 ? ` and the price that can be bought by up to ${euro(Math.round(s.priceEur))}` : ''}.`,
     )
   }
   if (home) {
@@ -131,7 +163,7 @@ export function rankQuestions(
       key: 'current_account_bank',
       question: 'Which bank holds the current account?',
       why: 'Some products need an account with the same bank; none of those in these pathways does, so it changes no figure here.',
-      spread: { keysMonths: 0, costEur: 0, priceEur: 0, totalEur: 0 },
+      spread: { keysMonths: 0, costEur: 0, costPer100kEur: 0, priceEur: 0, totalEur: 0 },
       scoreEur: 0,
     })
   }

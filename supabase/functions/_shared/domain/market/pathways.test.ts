@@ -337,6 +337,18 @@ describe('the next question is the one that moves the plan most', () => {
     expect([...scores].sort((a, b) => b - a)).toEqual(scores)
     expect(unanswered.nextQuestion?.scoreEur).toBeGreaterThan(0)
     expect(all.find((q) => q.key === 'current_account_bank')?.scoreEur).toBe(0)
+    // Scored on the goal: price, keys months × monthly saving, what is held, cost per €100,000
+    // borrowed. Never the absolute cost of a bigger home.
+    for (const q of all) {
+      expect(q.scoreEur).toBeCloseTo(
+        (q.key === 'home_price' ? 0 : q.spread.priceEur) +
+          q.spread.keysMonths * 800 +
+          q.spread.totalEur +
+          q.spread.costPer100kEur,
+        1,
+      )
+      expect(q.why).not.toMatch(/cost of the home/)
+    }
     expect(all.find((q) => q.key === 'income')?.why).toMatch(
       /moves the price that can be bought by up to €[\d,]+/,
     )

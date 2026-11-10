@@ -1436,7 +1436,8 @@ export const planQuestionSchema = z.object({
   spread: z
     .object({
       keysMonths: z.number(),
-      costEur: z.number(),
+      costEur: z.number().describe('Reported, not scored: a bigger home costs more.'),
+      costPer100kEur: z.number().describe('The spread in cost per €100,000 borrowed: scored.'),
       priceEur: z.number(),
       totalEur: z.number(),
     })
