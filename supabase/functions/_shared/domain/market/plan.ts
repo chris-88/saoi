@@ -234,7 +234,7 @@ function workOutRunnersUp(
     const variant = buildMain(without, request, asOf, createdAt)
     const split = variant.presentation.find((line) => line.startsWith(SPLIT_PREFIX))
     if (split === undefined) continue
-    const text = split.replace(/^.*?this split comes first: /, '').replace(/\.$/, '')
+    const text = split.replace(/^.*?\): /, '').replace(/\.$/, '')
     if (seen.has(text)) continue
     seen.add(text)
     const difference = round2(variant.position.towardsGoal - main.position.towardsGoal)
@@ -245,7 +245,7 @@ function workOutRunnersUp(
       towardsGoalEur: round2(variant.position.towardsGoal),
       differenceEur: difference,
       goalReachedOn: reached,
-      line: `Next under the same rule, without ${leaving.name}: ${text}; ${euro(round2(variant.position.towardsGoal))} towards the goal at ${monthName(variant.position.at)}${difference === 0 ? ', the same' : `, ${euro(Math.abs(difference))} ${difference > 0 ? 'more' : 'less'}`}${reached === null ? '' : `, target reached ${monthName(reached)}`}.`,
+      line: `Another split, without ${leaving.name}: ${text}; ${euro(round2(variant.position.towardsGoal))} towards the goal at ${monthName(variant.position.at)}${difference === 0 ? ', the same' : `, ${euro(Math.abs(difference))} ${difference > 0 ? 'more' : 'less'}`}${reached === null ? '' : `, target reached ${monthName(reached)}`}.`,
     })
   }
   return out
@@ -255,7 +255,7 @@ function workOutRunnersUp(
 const HOME_LINES = 6
 
 /** The split line's lead: the rule it is the arithmetic of. */
-export const SPLIT_PREFIX = 'Under the rule "most towards the goal by'
+export const SPLIT_PREFIX = 'One worked split, for the most towards the goal by'
 
 export const NEXT_QUESTION_PREFIX = 'Answer this one and the plan gets sharper:'
 
@@ -1585,7 +1585,7 @@ function planPresentation(input: {
     .join('; ')
   if (placed !== '') {
     out.push(
-      `${SPLIT_PREFIX} ${input.when}", this split comes first: ${placed}${input.buffer > 0 ? `, the first ${euro(input.buffer)} as an emergency buffer kept apart` : ''}.`,
+      `${SPLIT_PREFIX} ${input.when} (a fixed term only where it adds enough): ${placed}${input.buffer > 0 ? `, the first ${euro(input.buffer)} as an emergency buffer kept apart` : ''}.`,
     )
   }
   if (input.liquidity.decision === 'instant_access' && input.liquidity.gainEur !== null) {

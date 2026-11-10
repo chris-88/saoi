@@ -1675,7 +1675,7 @@ export const buildPlanResponseSchema = z.object({
   runnersUp: z
     .array(planRunnerUpSchema)
     .describe(
-      'The next splits under the same rule, each worked out without one product of the first: shown beside it, so there is no single answer.',
+      'Other splits, each worked out without one product of the first, with how much more or less each holds towards the goal: shown beside it, so there is no single answer.',
     ),
   nextQuestion: planQuestionSchema
     .nullable()

@@ -15,6 +15,8 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['src/**/*.test.ts'],
+    // Build-plan routes run the engine several times a test (runners-up, questions); CI is slower.
+    testTimeout: 20_000,
     // One zod instance for the shared schemas and the OpenAPI layer, or `.openapi()` is missing.
     server: { deps: { inline: [/@hono\/zod-openapi/, /@asteasolutions/] } },
   },

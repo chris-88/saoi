@@ -587,10 +587,12 @@ describe('the customer sets the filters and the sort (decision 2026-11-10)', () 
     const result = plan(body({}))
     expect(result.runnersUp.length).toBeGreaterThan(0)
     for (const runnerUp of result.runnersUp) {
-      expect(runnerUp.line).toMatch(/^Next under the same rule, without /)
+      expect(runnerUp.line).toMatch(/^Another split, without /)
       expect(result.presentation).toContain(runnerUp.line)
     }
-    expect(result.presentation.join(' ')).toMatch(/Under the rule "most towards the goal by/)
+    expect(result.presentation.join(' ')).toMatch(
+      /One worked split, for the most towards the goal by [A-Z][a-z]+ \d{4} \(a fixed term only where it adds enough\): /,
+    )
     for (const line of [
       ...result.presentation,
       result.saveCall.label,
