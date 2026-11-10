@@ -720,7 +720,7 @@ function buildMain(
           ? `Locking ${lockedNames} leaves ${euro(gainEur)} more (${gainPct.toFixed(2)}% a year on the money locked): ${both}. That clears the ${euro(thresholdEur)} and ${String(thresholdPct)}% a year a lock has to earn, so the term is used; the money cannot be reached before it ends.`
           : gainEur <= 0
             ? `Locking ${lockedNames} would leave no more than instant access (${both}), so the money stays in instant access and can be reached at any time.`
-            : `Locking ${lockedNames} would leave only ${euro(gainEur)} more (${gainPct.toFixed(2)}% a year on the money locked): ${both}. A lock has to earn at least ${euro(thresholdEur)} and ${String(thresholdPct)}% a year, so the money stays in instant access and can be reached at any time.`,
+            : `Locking ${lockedNames} would leave ${euro(gainEur)} more (${gainPct.toFixed(2)}% a year on the money locked): ${both}. A lock has to earn at least ${euro(thresholdEur)} and ${String(thresholdPct)}% a year, so this combination uses instant access, where the money can be reached at any time.`,
         lockedNetPosition: locked.netPosition,
         instantNetPosition: instant.netPosition,
         gainEur,
