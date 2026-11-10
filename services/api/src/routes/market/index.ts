@@ -11,6 +11,8 @@ import {
   debtResponseSchema,
   firstHomeRequestSchema,
   firstHomeResponseSchema,
+  homeCalculatorRequestSchema,
+  homeCalculatorResponseSchema,
   moneyCheckRequestSchema,
   moneyCheckResponseSchema,
   mortgageRequestSchema,
@@ -26,6 +28,7 @@ import {
 import { ABOUT } from '@shared/domain/market/about.ts'
 import { debts } from '@shared/domain/market/debt.ts'
 import { firstHome } from '@shared/domain/market/first-home.ts'
+import { homeCalculator } from '@shared/domain/market/home-calculator.ts'
 import { moneyCheck } from '@shared/domain/market/money-check.ts'
 import { affordability, switchMortgage } from '@shared/domain/market/mortgage.ts'
 import { buildPlan } from '@shared/domain/market/plan.ts'
@@ -97,7 +100,8 @@ const publicErrors = {
 }
 
 const INFORMATION =
-  'Information, not advice: results are ranked by a stated objective, for the inputs given. ' +
+  'Information, not advice: results are ranked by a stated objective, for the inputs given, and never pick a product for the customer. ' +
+  'Saoi is not regulated by the Central Bank of Ireland. ' +
   'Unauthenticated. Nothing sent is stored, except that a plan is held for 24 hours behind a single-use link so it can be opened in the Saoi app, then deleted unless opened.'
 
 const jsonBody = <T extends z.ZodType>(schema: T) => ({
@@ -284,6 +288,31 @@ const firstHomeRoute = createRoute({
   },
 })
 
+const homeCalculatorRoute = createRoute({
+  method: 'post',
+  path: '/api/calc/home',
+  tags: ['calc'],
+  summary: 'The home calculator: what the limits allow, the deposit, and when it is saved',
+  description:
+    'For a customer who raises buying a home. Takes whatever they have said, however partial ' +
+    '(deposit saved, monthly saving, gross income and a second income, the price in mind, ' +
+    'existing repayments, the date they would like the keys, first-time buyer, new build or ' +
+    'second-hand, their bank and whether to stay with it, fixed or variable, a green home, ' +
+    'open to switching current account) and returns the figures that move with them: what the ' +
+    'Central Bank limits allow, the deposit and cash needed at the keys, the month that is saved ' +
+    'at this pace, and the inputs still missing as plain questions. `rules` lets a calculator ' +
+    'card recompute the figures as sliders move. No products: the options, every eligible one ' +
+    'filtered and sorted as the customer chooses, come from build-plan with a house_deposit goal ' +
+    'and `homePreferences`. ' +
+    INFORMATION,
+  security: [],
+  request: { body: jsonBody(homeCalculatorRequestSchema.openapi('HomeCalculator')) },
+  responses: {
+    ...ok('The figures.', homeCalculatorResponseSchema.openapi('HomeCalculatorResult')),
+    ...publicErrors,
+  },
+})
+
 const moneyCheckRoute = createRoute({
   method: 'post',
   path: '/api/calc/money-check',
@@ -313,12 +342,13 @@ const buildPlanRoute = createRoute({
   method: 'post',
   path: '/api/calc/build-plan',
   tags: ['calc'],
-  summary: 'The fastest combination of products for the customer’s goals, as a plan',
+  summary:
+    'Compare the options for the customer’s goals: a worked combination under the rule they chose, with runners-up, and for a home every eligible option, filtered and sorted',
   description:
     'Given a situation and chosen goals: an emergency buffer (`emergencyBufferEur`, ' +
     '`emergencyBufferMonths` of outgoings, or an emergency_fund goal) in the best instant ' +
     'access, kept apart; each debt as `debts[].plan` says: `compare` (default) works it out ' +
-    'cleared and kept, with both figures, and takes the one leaving more; `keep` keeps it, still ' +
+    'cleared and kept, with both figures, the combination worked out with the larger; `keep` keeps it, still ' +
     'owed; `clear` clears it from savings (a cleared debt’s repayment is saved). To model keeping ' +
     'a debt, send it with `plan: "keep"`: never drop it from the call. Money in a current ' +
     'account (`access: "current_account"`) counts as earning what CCPC states current accounts ' +
@@ -329,7 +359,11 @@ const buildPlanRoute = createRoute({
     '`goalDateCertain: false` keep everything in instant access; at most €100,000 per ' +
     'provider); projected to the date the main goal is reached; what-ifs (an extra €100 a ' +
     'month, each debt cleared or kept, the month a target is reached at this pace); for a ' +
-    'house deposit, what it supports under the Central Bank limits. `position` is everything held ' +
+    'house deposit, what it supports under the Central Bank limits and every eligible mortgage option ' +
+    '(each lender’s cheapest per rate type and fixed period), filtered by `homePreferences` (stay ' +
+    'with my bank, fixed or variable, green) and sorted by the metric the customer picks; the ' +
+    'filters applied are stated. `runnersUp` are the next splits under the same rule. No single ' +
+    'option is picked for the customer. `position` is everything held ' +
     'at the end (towards the goal and the buffer, named) less what is still owed; the questions ' +
     'that would sharpen the plan come with it, as in saoi_money_check. For a follow-up once ' +
     'saoi_money_check has run; one call per reply, never alongside saoi_money_check. To compare ' +
@@ -441,6 +475,10 @@ export function marketRoutes(options: MarketRouteOptions) {
     return c.json(await calculate(() => debts(loaded, body, dublinDate(now()))), 200)
   })
 
+  routes.openapi(homeCalculatorRoute, (c) =>
+    c.json(homeCalculator(c.req.valid('json'), dublinDate(now())), 200),
+  )
+
   routes.openapi(firstHomeRoute, async (c) => {
     const body = c.req.valid('json')
     const loaded = await market()
@@ -505,16 +543,13 @@ export function marketRoutes(options: MarketRouteOptions) {
   const withLink = (
     presentation: readonly string[],
     saveLink: { url: string } | null,
-    ready = false,
   ): string[] => {
     const closing = presentation.at(-1)
     return [
       ...presentation.slice(0, -1),
       saveLink === null
-        ? 'A link to open this plan in the Saoi app could not be held just now; saoi_save_plan can save it.'
-        : ready
-          ? `Ready to make this plan happen? It can be saved to Saoi: ${saveLink.url} (held for 24 hours, then deleted unless opened).`
-          : `This plan can be opened in the Saoi app: ${saveLink.url} (held for 24 hours, then deleted unless opened).`,
+        ? 'A link to open this comparison in the Saoi app could not be held just now; saoi_save_plan can save it.'
+        : `Save this comparison to the Saoi app: ${saveLink.url} (held for 24 hours, then deleted unless opened).`,
       ...(closing === undefined ? [] : [closing]),
     ]
   }
@@ -530,7 +565,7 @@ export function marketRoutes(options: MarketRouteOptions) {
     return c.json(
       {
         ...result,
-        presentation: withLink(result.presentation, saveLink, result.saveCall.ready),
+        presentation: withLink(result.presentation, saveLink),
         saveLink,
       },
       200,
@@ -549,10 +584,10 @@ export function marketRoutes(options: MarketRouteOptions) {
     return c.json(
       {
         ...result,
-        presentation: withLink(result.presentation, saveLink, result.plan.saveCall.ready),
+        presentation: withLink(result.presentation, saveLink),
         plan: {
           ...result.plan,
-          presentation: withLink(result.plan.presentation, saveLink, result.plan.saveCall.ready),
+          presentation: withLink(result.plan.presentation, saveLink),
           saveLink,
         },
       },

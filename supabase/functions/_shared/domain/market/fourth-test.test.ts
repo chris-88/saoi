@@ -104,7 +104,7 @@ describe('the net position says what it includes', () => {
     )
     expect(position.line).not.toMatch(/net/)
     // A home goal leads with the pathways; the old order follows them.
-    const lead = result.home === null ? 0 : 2 + Math.min(3, result.home.pathways.length)
+    const lead = result.presentation.indexOf(result.moneyFound.headline)
     expect(result.presentation[lead + 1]).toBe(position.line)
     // The plan document carries it, and the app's card shows the assumptions in order.
     expect(result.plan.position?.line).toBe(position.line)
@@ -175,7 +175,7 @@ describe('keeping a debt is modelled by keeping it', () => {
       /^Assumed: the car loan’s €9,000 repaid evenly over 24 months .* with the actual repayment the figure is exact\.$/,
     )
     // Stated where it shows: the presentation (right after the position), the assumptions, `next`.
-    const lead = result.home === null ? 0 : 2 + Math.min(3, result.home.pathways.length)
+    const lead = result.presentation.indexOf(result.moneyFound.headline)
     expect(result.presentation[lead + 2]).toBe(assumed?.note)
     expect(result.plan.assumptions).toContain(assumed?.note)
     expect(result.next).toMatch(/assume an even repayment over 24 months/)
@@ -201,7 +201,7 @@ describe('keeping a debt is modelled by keeping it', () => {
     })
     expect(cleared.position.owed).toBe(0)
     expect(cleared.plan.debts[0]?.action).toBe('pay_off_first')
-    expect(cleared.plan.recommendation.totals?.lumpSum).toBe(16_000)
+    expect(cleared.plan.combination.totals?.lumpSum).toBe(16_000)
   })
 
   it('with the repayment given, assumes nothing and works it out as before', () => {
@@ -251,7 +251,7 @@ describe('keeping a debt is modelled by keeping it', () => {
     const scenarioLine = result.presentation.find((line) =>
       line.startsWith('car loan, cleared or kept'),
     )
-    expect(scenarioLine).toMatch(/This plan has it cleared\.$/)
+    expect(scenarioLine).toMatch(/The split below is worked out with it cleared\.$/)
   })
 })
 

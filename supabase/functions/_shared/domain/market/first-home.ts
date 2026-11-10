@@ -5,6 +5,7 @@ import {
   HELP_TO_BUY,
   MORTGAGE_MEASURES,
 } from '../../market/first-home-rules.ts'
+import { MORTGAGE_WARNINGS, RESULT_STATEMENT } from '../../market/disclosures.ts'
 import { euro } from './figures.ts'
 import { affordability } from './mortgage.ts'
 import { round2 } from './simulate.ts'
@@ -219,7 +220,8 @@ export function firstHome(market: Market, request: FirstHomeRequest): FirstHomeR
         ]
       : []),
     'The First Home shared equity scheme could not be confirmed from a primary page, so it is not included.',
-    'These are the published rules and the figures for the inputs given; the customer decides.',
+    ...MORTGAGE_WARNINGS,
+    `These are the published rules and the figures for the inputs given; the customer decides. ${RESULT_STATEMENT}`,
   ]
 
   return {

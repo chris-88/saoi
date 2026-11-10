@@ -33,13 +33,21 @@ type Measure = {
   total: number
 }
 
+/** The lowest net cost among the options shown, whatever order the customer sorted them in. */
+const lowestCost = (result: BuildPlanResponse): number | null =>
+  result.home === null || result.home.pathways.length === 0
+    ? null
+    : Math.min(...result.home.pathways.map((pathway) => pathway.netCostEur))
+
 const measure = (result: BuildPlanResponse): Measure => ({
   keys: result.home?.keysOn ?? result.goalReachedOn,
-  cost: result.home?.pathways[0]?.netCostEur ?? null,
-  costPer100k:
-    result.home === null || result.home.loan <= 0 || result.home.pathways[0] === undefined
+  cost: lowestCost(result),
+  costPer100k: (() => {
+    const cost = lowestCost(result)
+    return result.home === null || result.home.loan <= 0 || cost === null
       ? null
-      : (result.home.pathways[0].netCostEur / result.home.loan) * 100_000,
+      : (cost / result.home.loan) * 100_000
+  })(),
   price: result.home?.price ?? null,
   total: result.position.total,
 })
@@ -162,7 +170,7 @@ export function rankQuestions(
     candidates.push({
       key: 'current_account_bank',
       question: 'Which bank holds the current account?',
-      why: 'Some products need an account with the same bank; none of those in these pathways does, so it changes no figure here.',
+      why: 'Some products need an account with the same bank; none of the options shown does, so it changes no figure here.',
       spread: { keysMonths: 0, costEur: 0, costPer100kEur: 0, priceEur: 0, totalEur: 0 },
       scoreEur: 0,
     })
