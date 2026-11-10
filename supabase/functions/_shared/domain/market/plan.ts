@@ -206,7 +206,7 @@ function withComparison(plan: MarketPlan, home: BuildPlanResponse['home']): Mark
       sortBy: home.sortBy,
       sortedBy: clip(home.sortedBy, 200),
       filters: home.filters.slice(0, 6).map((filter) => clip(filter, 200)),
-      options: home.pathways.slice(0, 80).map((option) => ({
+      options: home.pathways.slice(0, 80).map((option, index) => ({
         lender: clip(option.lenderName, 80),
         kind:
           option.mortgage.rateType === 'fixed' && option.mortgage.fixedYears !== null
@@ -218,6 +218,9 @@ function withComparison(plan: MarketPlan, home: BuildPlanResponse['home']): Mark
         fiveYearCostEur: option.netCostEur,
         keysOn: option.keysOn,
         confirmed: option.confirmed,
+        // The first ten carry their conditions, so a question about them is answered in full;
+        // the plan stays well inside the 64 KiB it is saved under.
+        conditions: index < 10 ? option.conditions.slice(0, 4).map((line) => clip(line, 400)) : [],
       })),
     },
   }

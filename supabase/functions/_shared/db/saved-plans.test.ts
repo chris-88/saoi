@@ -104,6 +104,7 @@ describe('what the model is told', () => {
       fiveYearCostEur: 49338.1,
       keysOn: '2028-07',
       confirmed: true,
+      conditions: ['4 Year Fixed HVM BER C is for loans of €250,000 or more.'],
     }
     const claimed = {
       id: PLAN_ID,
@@ -124,6 +125,7 @@ describe('what the model is told', () => {
     expect(lines.join('\n')).toMatch(/Home comparison: 4 mortgage options for a €350,000 home/)
     // Every option is in the digest, so a follow-up about any of them can be answered.
     expect(lines.filter((line) => line.startsWith('Option '))).toHaveLength(4)
+    expect(lines.join('\n')).toMatch(/Conditions: 4 Year Fixed HVM BER C is for loans of €250,000 or more\./)
     const card = savedPlanCard(claimed)
     expect(card.type === 'saved_plan' && card.comparison?.total).toBe(4)
     expect(card.type === 'saved_plan' && card.comparison?.options[0]?.monthly).toBe('€1,362/mo')

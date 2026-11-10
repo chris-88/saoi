@@ -298,6 +298,8 @@ export const marketPlanSchema = z
               fiveYearCostEur: z.number().min(-100_000_000).max(100_000_000),
               keysOn: monthOrDay.nullable(),
               confirmed: z.boolean(),
+              /** The lender's conditions as the comparison stated them (loan size, bonus terms). */
+              conditions: z.array(text(400)).max(4).default([]),
             }),
           )
           .max(80),
