@@ -1577,8 +1577,17 @@ export const homePathwaysSchema = z
     depositEur: eur,
     stampDutyEur: eur,
     legalAndSurveyEur: eur,
-    helpToBuyEur: eur,
-    neededAtKeysEur: eur.describe('Deposit plus stamp duty and fees, less Help to Buy.'),
+    helpToBuyEur: eur.describe(
+      'Help to Buy at this price. With `helpToBuyConditional`, what it could be, not counted in the figures.',
+    ),
+    helpToBuyConditional: z
+      .boolean()
+      .describe(
+        'True for a new build when tax paid was not given: the options and their keys months are without Help to Buy, as the home calculator’s headline is; the `new_build_help_to_buy` route carries the keys date if tax paid covers it. With tax paid given, Help to Buy is counted.',
+      ),
+    neededAtKeysEur: eur.describe(
+      'Deposit plus stamp duty and fees, less Help to Buy when it is counted.',
+    ),
     keysOn: z.string().nullable(),
     comparedOver: z
       .object({ basis: z.enum(['term', 'fixed_period', 'first_years']), years: z.number().int() })

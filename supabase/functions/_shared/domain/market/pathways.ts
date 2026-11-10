@@ -113,12 +113,20 @@ function valuationFeeOf(fees: Readonly<Record<string, string>>): number {
   return 0
 }
 
-/** Help to Buy at a price, for a first-time buyer's new build: up to the cap, or the tax given. */
-function helpToBuyAt(price: number, input: PathwayInput): number {
+/** What Help to Buy could be at a price, for a first-time buyer's new build, before tax paid. */
+function helpToBuyUpTo(price: number, input: PathwayInput): number {
   if (!input.firstTimeBuyer || !input.newBuild || price > HELP_TO_BUY.maxPriceEur) return 0
-  return round2(
-    Math.min(price * HELP_TO_BUY.shareOfPrice, HELP_TO_BUY.capEur, input.taxPaid ?? Infinity),
-  )
+  return round2(Math.min(price * HELP_TO_BUY.shareOfPrice, HELP_TO_BUY.capEur))
+}
+
+/**
+ * Help to Buy counted towards the cash at the keys: only when tax paid, which limits it, was
+ * given (the home calculator's rule, `helpToBuyConditional`). Without it the options and their
+ * keys months leave it out, and the result says what it could be.
+ */
+function helpToBuyAt(price: number, input: PathwayInput): number {
+  if (input.taxPaid === undefined) return 0
+  return round2(Math.min(helpToBuyUpTo(price, input), input.taxPaid))
 }
 
 const cashOnTop = (price: number): number =>
@@ -216,6 +224,8 @@ export function homePathways(input: PathwayInput): HomePathways | null {
   if (price <= 0) return null
 
   const helpToBuy = helpToBuyAt(price, input)
+  const helpToBuyConditional = input.taxPaid === undefined && helpToBuyUpTo(price, input) > 0
+  const helpToBuyShown = helpToBuyConditional ? helpToBuyUpTo(price, input) : helpToBuy
   const loanCap = Math.min(price * ltv, maxLoan ?? Infinity)
   const deposit = round2(price - loanCap)
   const loan = round2(price - deposit)
@@ -550,7 +560,9 @@ export function homePathways(input: PathwayInput): HomePathways | null {
       ? `a ${euro(price)} home, as given`
       : `a ${euro(price)} home: what the savings by ${input.monthName(input.goalDate)} support at ${String(measures.maxLtvPct)}% loan-to-value${bindingLimit === 'income' ? `, capped by ${String(measures.loanToIncome)} times income` : bindingLimit === 'income_not_given' ? `, assuming income allows a ${euro(loan)} loan (${String(measures.loanToIncome)} times income would need ${euro(Math.ceil(loan / measures.loanToIncome))} a year)` : ''}`,
     input.newBuild
-      ? `a new build, taken as BER A (green rates apply), with Help to Buy of ${euro(helpToBuy)}${input.taxPaid === undefined ? ' (up to; limited by Income Tax and DIRT paid, not given)' : ''}`
+      ? helpToBuyConditional
+        ? `a new build, taken as BER A (green rates apply); Help to Buy is not counted in these figures: up to ${euro(helpToBuyShown)}, it is limited by the Income Tax and DIRT paid over the last four tax years, not given`
+        : `a new build, taken as BER A (green rates apply), with Help to Buy of ${euro(helpToBuy)}`
       : prefs.green === true
         ? 'not a new build, so no Help to Buy; green rates for a BER B3 or better home'
         : 'not a new build, so no Help to Buy and standard rates (a BER C where a lender prices by BER)',
@@ -572,7 +584,8 @@ export function homePathways(input: PathwayInput): HomePathways | null {
     depositEur: deposit,
     stampDutyEur: stampDuty,
     legalAndSurveyEur: BUYING_COSTS.legalAndSurveyEur,
-    helpToBuyEur: helpToBuy,
+    helpToBuyEur: helpToBuyShown,
+    helpToBuyConditional,
     neededAtKeysEur: needed,
     keysOn,
     comparedOver: basis,

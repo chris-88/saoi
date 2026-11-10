@@ -262,11 +262,80 @@ describe('the Bank of Ireland route: first-time buyer, €350,000, €35,000 sav
       homePrice: 350_000,
       propertyKind: 'new_build',
     })
+    // Tax paid not given: Help to Buy is what it could be, and not counted (the calculator's rule).
     expect(built.home?.helpToBuyEur).toBe(35_000)
+    expect(built.home?.helpToBuyConditional).toBe(true)
     expect(built.home?.pathways.find((p) => p.lender === 'boi')?.mortgage.name).toBe(
       '5 Year Fixed BER A',
     )
     expect(built.home?.assumptions[0]).toMatch(/a new build, taken as BER A/)
+    expect(built.home?.assumptions[0]).toMatch(
+      /Help to Buy is not counted in these figures: up to €35,000/,
+    )
+  })
+
+  describe('a new build with tax paid not given (the calculator’s Help to Buy rule)', () => {
+    // €41,500 needed at the keys without Help to Buy: six months away at €2,000 a month, with
+    // €1,500 still to find after five, more than interest on the savings path earns, so the
+    // month is the calculator's (which is before interest). Counting Help to Buy would make it
+    // next month.
+    const situation = {
+      monthlySaving: 2_000,
+      savings: [{ label: 'Savings', balance: 30_000 }],
+      firstTimeBuyer: true,
+      income: { annualGross: 90_000 },
+    }
+    const goal = { ...firstHome, targetDate: '2029-11' }
+    const without = plan({
+      situation,
+      goals: [goal],
+      homePrice: 350_000,
+      propertyKind: 'new_build',
+    })
+    const withTax = plan({
+      situation,
+      goals: [goal],
+      homePrice: 350_000,
+      propertyKind: 'new_build',
+      taxPaidLastFourYearsEur: 40_000,
+    })
+    const calculator = homeCalculator(
+      {
+        depositSavedEur: 30_000,
+        monthlySavingEur: 2_000,
+        annualGrossIncomeEur: 90_000,
+        targetPriceEur: 350_000,
+        firstTimeBuyer: true,
+        propertyKind: 'new_build',
+      },
+      AS_OF,
+    )
+
+    it('gives every option the calculator’s keys month, without Help to Buy', () => {
+      expect(calculator.figures.helpToBuyConditional).toBe(true)
+      expect(without.home?.helpToBuyConditional).toBe(true)
+      expect(without.home?.neededAtKeysEur).toBe(calculator.figures.neededAtKeysEur)
+      expect(without.home?.keysOn).toBe(calculator.figures.depositReachedOn)
+      for (const option of without.home?.pathways ?? []) {
+        expect(option.keysOn).toBe(calculator.figures.depositReachedOn)
+      }
+    })
+
+    it('puts the conditional date on the new-build route', () => {
+      const route = without.routes.find((item) => item.id === 'new_build_help_to_buy')
+      const calculated = calculator.routes.find((item) => item.id === 'new_build_help_to_buy')
+      expect(route?.keysOn).not.toBeNull()
+      expect(route?.keysOn).toBe(calculated?.keysOn)
+      expect((route?.keysOn ?? '') < (without.home?.keysOn ?? '')).toBe(true)
+      expect(route?.line).toBe(calculated?.line)
+    })
+
+    it('counts Help to Buy as before once tax paid is given', () => {
+      expect(withTax.home?.helpToBuyConditional).toBe(false)
+      expect(withTax.home?.helpToBuyEur).toBe(35_000)
+      expect(withTax.home?.neededAtKeysEur).toBe((without.home?.neededAtKeysEur ?? 0) - 35_000)
+      expect((withTax.home?.keysOn ?? '') < (without.home?.keysOn ?? '')).toBe(true)
+    })
   })
 })
 

@@ -402,6 +402,9 @@ The engine behind the Saoi MCP tools, in `_shared/domain/market/` (pure; contrac
   citizensinformation.ie refused automated reads; the grant's build year is unconfirmed). On a
   new build with tax paid not given, the calculator's headline leaves Help to Buy out
   (`helpToBuyConditional`) and the new-build route carries the keys date if tax paid covers it.
+  Build-plan's home options take the same rule: with tax paid unknown, the options and their
+  keys months leave Help to Buy out, `home.helpToBuyConditional` is true and `helpToBuyEur` is
+  what it could be; with tax paid given it is counted.
   The first-time-buyer default is named in `assumed`. Rent a month (`monthlyRentEur`) is an
   optional input that changes no figure: first-home sets it beside the options' repayments
   (`rentVsRepayment`), and the calculator asks it last, marked `optional`. Build-plan with a
