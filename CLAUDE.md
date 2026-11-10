@@ -344,6 +344,16 @@ The engine behind the Saoi MCP tools, in `_shared/domain/market/` (pure; contrac
   First-time buyer is assumed when no home is mentioned. Every assumption is stated in one line.
   The BoI MortgageSaver bonus is paid after drawdown (its brochure), so it lowers cost, not the
   deposit; cashback is always cost.
+- **Bundles, the next question, the save call** (Chris, 2026-11-10): each pathway lists what
+  would be held with that lender (`bundle`: its linked saver, its own regular saver where the
+  split uses one, the mortgage, the cashback) and says the current account can stay where it is.
+  `nextQuestion` is worked out in `next-question.ts`: each unanswered input (income, new build
+  or second-hand, price, a debt's repayment, the current account's bank) is run across a few
+  plausible answers, scored in euro by the spread in cost, position and keys month, and the
+  largest is asked; the rest are `laterQuestions`. The presentation ends with that one question.
+  `completeness` counts answered and assumed inputs; `saveCall` turns to "Ready to make this
+  plan happen?" once, for a home, income and the kind of home are known, and lists what the app
+  does today and what is coming (never offered as available).
 - **Money found** (`money-found.ts`): review and plan results lead with `moneyFound`, one euro a
   year in parts (idle cash against the best confirmed instant-access rate after DIRT, debt
   interest not paid less what the money would earn, a mortgage switch at a band reaching 90% LTV,

@@ -449,7 +449,7 @@ describe('what the host reads first (after the second Claude test)', () => {
     expect(text).toContain(`kept, ${euro(scenario.kept.netPosition)}`)
     expect(text).toMatch(/everything held less what is still owed/)
     expect(text).not.toMatch(DIRECTIVE)
-    expect(result.presentation.at(-1)).toMatch(/the customer decides/)
+    expect(result.presentation.at(-2)).toMatch(/the customer decides/)
   })
 
   it('never shows a gross pot without what is still owed beside it', () => {

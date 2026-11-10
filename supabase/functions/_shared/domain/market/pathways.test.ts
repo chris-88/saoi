@@ -178,9 +178,7 @@ describe('the Bank of Ireland route: first-time buyer, €350,000, €35,000 sav
   it('leads the presentation with the goal and the pathways, as options', () => {
     expect(result.presentation[0]).toBe(home?.headline)
     expect(result.presentation[1]).toBe(home?.assumptions[0])
-    expect(result.presentation[2]).toMatch(
-      /^With .*: keys around .*; .* at [\d.]+% \(€[\d,.]+ a month\)/,
-    )
+    expect(result.presentation[2]).toMatch(/^The .* path: .*; keys around [A-Z][a-z]+ \d{4}; /)
     for (const line of result.presentation) {
       expect(line).not.toMatch(/^(Clear|Pay|Take|Choose|Open|Switch|Get)\b/)
     }
@@ -223,7 +221,7 @@ describe('when the price or the income is not given', () => {
     // The savings by the date cover the deposit and the buying costs.
     expect(home?.neededAtKeysEur).toBeLessThanOrEqual(result.position.towardsGoal + 0.5)
     expect(result.questions.join(' ')).toMatch(/gross income/)
-    expect(result.questions.join(' ')).toMatch(/Roughly what price, and is it a new build/)
+    expect(result.nextQuestion?.key).toBeDefined()
   })
 
   it('caps the price by four times income when income binds, and says so', () => {
@@ -256,5 +254,123 @@ describe('when the price or the income is not given', () => {
       goals: [{ id: 'car', kind: 'save_for_purchase', label: 'A car', targetDate: '2027-11' }],
     })
     expect(result.home).toBeNull()
+  })
+})
+
+describe('a pathway is a bundle with that lender', () => {
+  it('lists the linked saver, the mortgage and the cashback, and leaves the current account where it is', () => {
+    const result = plan({
+      situation: {
+        monthlySaving: 800,
+        savings: [{ label: 'Savings', balance: 35_000, aerPct: 1 }],
+        firstTimeBuyer: true,
+        income: { annualGross: 90_000 },
+      },
+      goals: [firstHome],
+      homePrice: 350_000,
+    })
+    const boi = result.home?.pathways.find((pathway) => pathway.lender === 'boi')
+    expect(boi?.bundle.products.map((product) => product.role)).toEqual(
+      expect.arrayContaining(['linked_saver', 'mortgage', 'cashback']),
+    )
+    expect(boi?.bundle.products.find((p) => p.role === 'cashback')?.detail).toBe(
+      '2% at drawdown and 1% after 5 years',
+    )
+    expect(boi?.bundle.currentAccount).toBe('Your current account can stay where it is.')
+    expect(boi?.line).toMatch(/^The Bank of Ireland path: MortgageSaver \(/)
+    expect(boi?.line).not.toMatch(/bank with/i)
+  })
+})
+
+describe('the next question is the one that moves the plan most', () => {
+  const unanswered = plan({
+    situation: {
+      monthlySaving: 800,
+      savings: [{ label: 'current account', balance: 25_000 }],
+      debts: [
+        { id: 'car-loan', kind: 'car_finance', label: 'car loan', balance: 9_000, ratePct: 9 },
+      ],
+    },
+    goals: [{ ...firstHome, targetDate: '2028-11' }],
+  })
+
+  it('ranks every unanswered input by the spread its answers make, largest first', () => {
+    const all = [unanswered.nextQuestion, ...unanswered.laterQuestions].flatMap((q) =>
+      q === null ? [] : [q],
+    )
+    expect(all.map((q) => q.key).sort()).toEqual(
+      ['current_account_bank', 'debt_repayment', 'home_price', 'income', 'property_kind'].sort(),
+    )
+    const scores = all.map((q) => q.scoreEur)
+    expect([...scores].sort((a, b) => b - a)).toEqual(scores)
+    expect(unanswered.nextQuestion?.scoreEur).toBeGreaterThan(0)
+    expect(all.find((q) => q.key === 'current_account_bank')?.scoreEur).toBe(0)
+    expect(all.find((q) => q.key === 'income')?.why).toMatch(
+      /moves the price that can be bought by up to €[\d,]+/,
+    )
+  })
+
+  it('ends the presentation with that one question only', () => {
+    expect(unanswered.presentation.at(-1)).toBe(
+      `Answer this one and the plan gets sharper: ${unanswered.nextQuestion?.question ?? ''} ${unanswered.nextQuestion?.why ?? ''}`,
+    )
+    expect(unanswered.presentation.join(' ')).not.toMatch(/To sharpen this/)
+  })
+
+  it('asks nothing about what was answered', () => {
+    const answered = plan({
+      situation: {
+        monthlySaving: 800,
+        savings: [{ label: 'current account', balance: 25_000 }],
+        income: { annualGross: 70_000 },
+        firstTimeBuyer: true,
+      },
+      goals: [{ ...firstHome, targetDate: '2028-11' }],
+      propertyKind: 'second_hand',
+      homePrice: 300_000,
+    })
+    const keys = [answered.nextQuestion, ...answered.laterQuestions].map((q) => q?.key)
+    expect(keys).not.toContain('income')
+    expect(keys).not.toContain('property_kind')
+    expect(keys).not.toContain('home_price')
+  })
+})
+
+describe('the save wording grows with the plan', () => {
+  it('says "Save this plan" while key inputs are assumed, and counts what was answered', () => {
+    const early = plan({
+      situation: { monthlySaving: 800, savings: [{ label: 'current account', balance: 25_000 }] },
+      goals: [{ ...firstHome, targetDate: '2028-11' }],
+    })
+    expect(early.saveCall.ready).toBe(false)
+    expect(early.saveCall.label).toBe('Save this plan')
+    expect(early.completeness.assumed).toEqual(
+      expect.arrayContaining(['gross income', 'new build or second-hand', 'first-time buyer']),
+    )
+    expect(early.completeness.line).toMatch(/^Plan based on \d of \d answers\.$/)
+  })
+
+  it('invites saving once income and the kind of home are known, and marks unbuilt features as coming', () => {
+    const ready = plan({
+      situation: {
+        monthlySaving: 800,
+        savings: [{ label: 'current account', balance: 25_000 }],
+        income: { annualGross: 70_000 },
+      },
+      goals: [{ ...firstHome, targetDate: '2028-11' }],
+      propertyKind: 'second_hand',
+    })
+    expect(ready.saveCall).toMatchObject({
+      ready: true,
+      label: 'Ready to make this plan happen? Save it to Saoi',
+    })
+    expect(ready.saveCall.coming).toEqual(
+      expect.arrayContaining([
+        'a partner joining the plan',
+        'application checklists',
+        'a document store',
+      ]),
+    )
+    expect(ready.saveCall.appToday.join(' ')).not.toMatch(/partner|reminder|checklist|document/)
   })
 })

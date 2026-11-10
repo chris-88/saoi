@@ -36,6 +36,8 @@ export type PathwayInput = {
   readonly reachedOn: (amount: number) => string | null
   readonly monthlySaving: number
   readonly monthName: (yyyyMm: string) => string
+  /** The savings plan's monthly lines, to show the lender's own regular saver in its bundle. */
+  readonly savers: readonly { provider: string; name: string; monthly: number }[]
 }
 
 type Candidate = {
@@ -58,6 +60,59 @@ function helpToBuyAt(price: number, input: PathwayInput): number {
 
 const cashOnTop = (price: number): number =>
   (price * BUYING_COSTS.stampDutyPct) / 100 + BUYING_COSTS.legalAndSurveyEur
+
+type Bundle = HomePathways['pathways'][number]['bundle']
+
+/**
+ * What the customer would hold with the lender on this path: its mortgage-linked saver, its own
+ * regular saver where the savings plan uses one, the mortgage, the cashback. Information, not a
+ * recommendation to move banks: the current account stays where it is unless a product counted
+ * here needs one with the lender (none of those recorded does today).
+ */
+function bundleFor(
+  lender: string,
+  pathway: {
+    mortgage: { name: string; ratePct: number; monthlyRepayment: number }
+    bonusEur: number
+    cashbackEur: number
+  },
+  input: PathwayInput,
+): Bundle {
+  const products: Bundle['products'] = []
+  if (pathway.bonusEur > 0) {
+    for (const saver of LINKED_SAVERS[lender] ?? []) {
+      products.push({
+        role: 'linked_saver',
+        name: saver.name,
+        detail: `€${String(saver.minMonthlyEur)} or more a month for ${String(saver.minMonths)} months, ${euro(saver.bonusEur)} bonus less DIRT after drawdown`,
+      })
+    }
+  }
+  for (const saver of input.savers.filter((line) => line.provider === lender && line.monthly > 0)) {
+    products.push({
+      role: 'regular_saver',
+      name: saver.name,
+      detail: `${euro(saver.monthly)} a month`,
+    })
+  }
+  products.push({
+    role: 'mortgage',
+    name: pathway.mortgage.name,
+    detail: `${String(pathway.mortgage.ratePct)}%, ${euro(pathway.mortgage.monthlyRepayment)} a month`,
+  })
+  const rule = CASHBACK[lender]
+  if (pathway.cashbackEur > 0) {
+    products.push({
+      role: 'cashback',
+      name: 'Cashback',
+      detail:
+        rule?.laterPct !== null && rule?.laterPct !== undefined
+          ? `${String(rule.upfrontPct ?? 0)}% at drawdown and ${String(rule.laterPct)}% after ${String(rule.laterAfterYears ?? 5)} years`
+          : euro(pathway.cashbackEur),
+    })
+  }
+  return { products, currentAccount: 'Your current account can stay where it is.' }
+}
 
 export function homePathways(input: PathwayInput): HomePathways | null {
   const measures = input.firstTimeBuyer
@@ -336,10 +391,13 @@ export function homePathways(input: PathwayInput): HomePathways | null {
       index === 0
         ? `the lowest cost over ${period}`
         : `about ${euro(Math.round(vs))} more over ${period} than the lowest`
+    const bundle = bundleFor(pathway.lender, pathway, input)
+    const held = bundle.products.map((product) => `${product.name} (${product.detail})`).join(', ')
     return {
       ...pathway,
       vsCheapestEur: vs,
-      line: `With ${pathway.lenderName}: ${when}; ${pathway.mortgage.name} at ${String(pathway.mortgage.ratePct)}% (${euro(pathway.mortgage.monthlyRepayment)} a month), ${pathway.drivers === 'the rate alone' ? 'no cashback or bonus' : pathway.drivers}; ${costLine}${pathway.confirmed ? '' : ' (incentives from CCPC’s tables, not confirmed on the lender’s site)'}.`,
+      bundle,
+      line: `The ${pathway.lenderName} path: ${held}; ${bundle.currentAccount.charAt(0).toLowerCase()}${bundle.currentAccount.slice(1).replace(/\.$/, '')}; ${when}; ${costLine}${pathway.confirmed ? '' : ' (incentives from CCPC’s tables, not confirmed on the lender’s site)'}.`,
     }
   })
 

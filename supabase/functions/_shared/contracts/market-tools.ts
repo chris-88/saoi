@@ -1362,6 +1362,24 @@ export const homePathwaySchema = z.object({
     .describe('True when every incentive counted was read from the lender’s own site.'),
   greenNote: z.string().nullable(),
   sources: z.array(z.string()),
+  bundle: z
+    .object({
+      products: z.array(
+        z.object({
+          role: z.enum(['linked_saver', 'regular_saver', 'mortgage', 'cashback']),
+          name: z.string(),
+          detail: z.string(),
+        }),
+      ),
+      currentAccount: z
+        .string()
+        .describe(
+          'Whether the current account can stay where it is, or a product needs one with the lender.',
+        ),
+    })
+    .describe(
+      'What the customer would hold with this lender on this path, and what stays where it is.',
+    ),
   line: z.string().describe('The pathway in one sentence, as an option with its figures.'),
 })
 
@@ -1391,7 +1409,58 @@ export const homePathwaysSchema = z
   )
 export type HomePathways = z.infer<typeof homePathwaysSchema>
 
+export const QUESTION_KEYS = [
+  'income',
+  'property_kind',
+  'home_price',
+  'debt_repayment',
+  'current_account_bank',
+  'goal',
+] as const
+
+export const planQuestionSchema = z.object({
+  key: z.enum(QUESTION_KEYS),
+  question: z.string().describe('For the host to ask, in its own words.'),
+  why: z.string().describe('What the answer changes, with the figures from the runs.'),
+  spread: z
+    .object({
+      keysMonths: z.number(),
+      costEur: z.number(),
+      priceEur: z.number(),
+      totalEur: z.number(),
+    })
+    .describe('How far the plan moved across a few plausible answers.'),
+  scoreEur: z.number().describe('The spread in euro, the order questions are asked in.'),
+})
+export type PlanQuestion = z.infer<typeof planQuestionSchema>
+
+export const planCompletenessSchema = z.object({
+  answered: z.array(z.string()),
+  assumed: z.array(z.string()),
+  line: z.string().describe('"Plan based on 4 of 6 answers".'),
+})
+
+export const saveCallSchema = z.object({
+  ready: z
+    .boolean()
+    .describe(
+      'True once the inputs that move the plan most are answered (for a home: income and new or second-hand).',
+    ),
+  label: z.string(),
+  note: z.string(),
+  appToday: z.array(z.string()).describe('What the Saoi app does with the plan today.'),
+  coming: z.array(z.string()).describe('Not built yet: never offered as available.'),
+})
+
 export const buildPlanResponseSchema = z.object({
+  nextQuestion: planQuestionSchema
+    .nullable()
+    .describe(
+      'The one question whose answer would change the plan most. Ask this one, and only this one, in the reply.',
+    ),
+  laterQuestions: z.array(planQuestionSchema).describe('The rest, in order, for later replies.'),
+  completeness: planCompletenessSchema,
+  saveCall: saveCallSchema,
   home: homePathwaysSchema
     .nullable()
     .describe('Pathways to a home, when the main goal is a house deposit. Null otherwise.'),

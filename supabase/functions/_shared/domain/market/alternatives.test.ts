@@ -63,11 +63,12 @@ describe('alternatives in one call', () => {
     expect(without.alternatives).toEqual([])
     expect(result.plan).toEqual(without.plan)
     expect(result.position).toEqual(without.position)
-    expect(result.presentation.slice(0, -1)).toEqual([
-      ...without.presentation.slice(0, -1),
+    // The plan's lines, then one per alternative, then the closing line and the one question.
+    expect(result.presentation.slice(0, -2)).toEqual([
+      ...without.presentation.slice(0, -2),
       ...result.alternatives.map((alternative) => alternative.line),
     ])
-    expect(result.presentation.at(-1)).toBe(without.presentation.at(-1))
+    expect(result.presentation.slice(-2)).toEqual(without.presentation.slice(-2))
   })
 
   it('carries through the money check, which gives the same alternatives', () => {

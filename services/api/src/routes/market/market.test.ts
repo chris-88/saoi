@@ -191,7 +191,8 @@ describe('public comparison routes', () => {
     expect(body.presentation.join('\n')).toContain(
       `This plan can be opened in the Saoi app: ${body.saveLink?.url ?? ''}`,
     )
-    expect(body.presentation.at(-1)).toMatch(/the customer decides/)
+    expect(body.presentation.at(-1)).toMatch(/^Answer this one and the plan gets sharper: /)
+    expect(body.presentation.at(-3)).toMatch(/the customer decides/)
   })
 
   it('hold one draft and give one link, however many alternatives are asked for', async () => {

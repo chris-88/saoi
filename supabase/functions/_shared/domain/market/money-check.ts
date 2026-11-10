@@ -3,10 +3,11 @@ import {
   type Goal,
   type MoneyCheckRequest,
   type MoneyCheckResponse,
+  type PlanQuestion,
 } from '../../contracts/market-tools.ts'
-import { questionsFor, SHARPEN, sharpenLines } from './questions.ts'
+import { questionsFor, sharpenLines } from './questions.ts'
 import { review } from './review.ts'
-import { buildPlan } from './plan.ts'
+import { buildPlan, NEXT_QUESTION_PREFIX, nextQuestionLine } from './plan.ts'
 import type { AsOf, Market } from './types.ts'
 
 /**
@@ -52,7 +53,15 @@ export function moneyCheck(
     )
   }
 
-  // A plan already carries the questions in its presentation (saoi_build_plan gives the same).
+  // A plan already ends with its one question (saoi_build_plan gives the same). With no goal
+  // given, the goal is the question that matters most: the plan is for the savings held only.
+  const goalQuestion: PlanQuestion = {
+    key: 'goal',
+    question: 'What is the money for: a home, a car, or nothing in particular yet? And by when?',
+    why: 'With a goal and a date, the plan saves towards it instead of the savings held with no date.',
+    spread: { keysMonths: 0, costEur: 0, priceEur: 0, totalEur: 0 },
+    scoreEur: 0,
+  }
   const presentation =
     plan === null
       ? [
@@ -62,14 +71,33 @@ export function moneyCheck(
         ]
       : assumed === null
         ? [...plan.presentation]
-        : [
-            ...plan.presentation.slice(0, -1).filter((line) => !line.startsWith(SHARPEN)),
-            'No goal was given, so this plan is for the savings held with no date: nothing is locked away.',
-            ...sharpenLines(questions),
-            ...plan.presentation.slice(-1),
-          ]
-  // With no goal given, the plan's questions are the money check's (which ask what it is for).
-  if (plan !== null && assumed !== null) plan = { ...plan, questions }
+        : (() => {
+            const body = plan.presentation.filter((line) => !line.startsWith(NEXT_QUESTION_PREFIX))
+            return [
+              ...body.slice(0, -1),
+              'No goal was given, so this plan is for the savings held with no date: nothing is locked away.',
+              ...body.slice(-1),
+              nextQuestionLine(goalQuestion),
+            ]
+          })()
+  if (plan !== null && assumed !== null) {
+    plan = {
+      ...plan,
+      questions,
+      nextQuestion: goalQuestion,
+      laterQuestions: [
+        ...(plan.nextQuestion === null ? [] : [plan.nextQuestion]),
+        ...plan.laterQuestions,
+      ],
+    }
+  }
 
-  return { presentation, questions, review: reviewed, plan, planGoalAssumed: assumed }
+  // With a plan, the questions are the plan's, ranked by how much each answer would move it.
+  return {
+    presentation,
+    questions: plan === null ? questions : plan.questions,
+    review: reviewed,
+    plan,
+    planGoalAssumed: assumed,
+  }
 }

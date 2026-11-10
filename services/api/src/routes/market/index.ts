@@ -505,13 +505,16 @@ export function marketRoutes(options: MarketRouteOptions) {
   const withLink = (
     presentation: readonly string[],
     saveLink: { url: string } | null,
+    ready = false,
   ): string[] => {
     const closing = presentation.at(-1)
     return [
       ...presentation.slice(0, -1),
       saveLink === null
         ? 'A link to open this plan in the Saoi app could not be held just now; saoi_save_plan can save it.'
-        : `This plan can be opened in the Saoi app: ${saveLink.url} (held for 24 hours, then deleted unless opened).`,
+        : ready
+          ? `Ready to make this plan happen? It can be saved to Saoi: ${saveLink.url} (held for 24 hours, then deleted unless opened).`
+          : `This plan can be opened in the Saoi app: ${saveLink.url} (held for 24 hours, then deleted unless opened).`,
       ...(closing === undefined ? [] : [closing]),
     ]
   }
@@ -525,7 +528,11 @@ export function marketRoutes(options: MarketRouteOptions) {
     )
     const saveLink = await holdDraft(c, result.plan, at)
     return c.json(
-      { ...result, presentation: withLink(result.presentation, saveLink), saveLink },
+      {
+        ...result,
+        presentation: withLink(result.presentation, saveLink, result.saveCall.ready),
+        saveLink,
+      },
       200,
     )
   })
@@ -542,10 +549,10 @@ export function marketRoutes(options: MarketRouteOptions) {
     return c.json(
       {
         ...result,
-        presentation: withLink(result.presentation, saveLink),
+        presentation: withLink(result.presentation, saveLink, result.plan.saveCall.ready),
         plan: {
           ...result.plan,
-          presentation: withLink(result.plan.presentation, saveLink),
+          presentation: withLink(result.plan.presentation, saveLink, result.plan.saveCall.ready),
           saveLink,
         },
       },

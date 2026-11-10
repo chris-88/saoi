@@ -56,7 +56,8 @@ describe('the money check, one call on whatever was said', () => {
     expect(result.presentation.join(' ')).toMatch(/Help to Buy: depends, up to €35,000/)
     expect(result.questions.join(' ')).toMatch(/gross income/)
     expect(result.questions.join(' ')).not.toMatch(/Is this a first home/)
-    expect(result.presentation.at(-1)).toMatch(/the customer decides/)
+    expect(result.presentation.at(-2)).toMatch(/the customer decides/)
+    expect(result.presentation.at(-1)).toMatch(/^Answer this one and the plan gets sharper: /)
     expect(() => moneyCheckResponseSchema.parse(result)).not.toThrow()
   })
 

@@ -4,6 +4,7 @@ import {
   type BuildPlanRequest,
   type BuildPlanResponse,
   type PlanAlternative,
+  type PlanQuestion,
   type Debt,
   type Goal,
   type ProductView,
@@ -15,10 +16,11 @@ import { debtMonthlyRate, payoffOrder, repaymentOf } from './debt.ts'
 import { displayName, euro, interestToClear } from './figures.ts'
 import { HELP_TO_BUY } from '../../market/first-home-rules.ts'
 import { firstHome, helpToBuyFor } from './first-home.ts'
+import { rankQuestions } from './next-question.ts'
 import { homePathways } from './pathways.ts'
 import { affordability } from './mortgage.ts'
 import { moneyFoundForPlan } from './money-found.ts'
-import { questionsFor, sharpenLines } from './questions.ts'
+import { questionsFor } from './questions.ts'
 import { project } from './projection.ts'
 import { monthlyOutgoings } from './review.ts'
 import { guaranteeFlag, SAVINGS_ASSUMPTIONS, UNCONFIRMED_RATE } from './search.ts'
@@ -156,18 +158,105 @@ export function buildPlan(
 ): BuildPlanResponse {
   const { alternatives: asked = [], ...base } = request
   const main = buildMain(market, base, asOf, createdAt)
-  if (asked.length === 0) return main
   const alternatives = asked.map((alternative) =>
     workOutAlternative(market, base, alternative, main, asOf, createdAt),
+  )
+  // The one question that would change the plan most, by running it across plausible answers.
+  const { nextQuestion, laterQuestions } = rankQuestions(
+    base,
+    main,
+    (variant) => buildMain(market, variant, asOf, createdAt),
+    asOf,
   )
   const closing = main.presentation.at(-1)
   return {
     ...main,
     alternatives,
+    nextQuestion,
+    laterQuestions,
+    questions:
+      nextQuestion === null
+        ? main.questions
+        : [nextQuestion, ...laterQuestions].slice(0, 3).map((item) => item.question),
     presentation: [
       ...main.presentation.slice(0, -1),
       ...alternatives.map((alternative) => alternative.line),
       ...(closing === undefined ? [] : [closing]),
+      // The presentation ends with the one question: the host asks it, one per reply.
+      ...(nextQuestion === null ? [] : [nextQuestionLine(nextQuestion)]),
+    ],
+  }
+}
+
+export const NEXT_QUESTION_PREFIX = 'Answer this one and the plan gets sharper:'
+
+export const nextQuestionLine = (question: PlanQuestion): string =>
+  `${NEXT_QUESTION_PREFIX} ${question.question} ${question.why}`
+
+/** Which inputs were answered and which were assumed, for "Plan based on 4 of 6 answers". */
+function completenessOf(
+  request: Omit<BuildPlanRequest, 'alternatives'>,
+  situation: Situation,
+): BuildPlanResponse['completeness'] {
+  const home = request.goals.some((goal) => goal.kind === 'house_deposit')
+  const debts = situation.debts.filter((debt) => debt.kind !== 'mortgage')
+  const inputs: [string, boolean][] = [
+    ['what can be saved each month', situation.monthlySaving !== undefined],
+    ['the goal’s date', request.goals.some((goal) => goal.targetDate !== undefined)],
+    ...(debts.length === 0
+      ? []
+      : ([
+          [
+            'each loan’s repayment',
+            debts.every(
+              (debt) => debt.monthlyRepayment !== undefined || debt.monthsRemaining !== undefined,
+            ),
+          ],
+        ] satisfies [string, boolean][])),
+    ...(home
+      ? ([
+          ['first-time buyer', situation.firstTimeBuyer !== undefined],
+          ['gross income', situation.income?.annualGross !== undefined],
+          ['new build or second-hand', request.propertyKind !== undefined],
+          ['the price', request.homePrice !== undefined],
+        ] satisfies [string, boolean][])
+      : []),
+  ]
+  const answered = inputs.filter(([, given]) => given).map(([name]) => name)
+  const assumed = inputs.filter(([, given]) => !given).map(([name]) => name)
+  return {
+    answered,
+    assumed,
+    line: `Plan based on ${String(answered.length)} of ${String(inputs.length)} answers.`,
+  }
+}
+
+/**
+ * The save wording grows with the plan (Chris, 2026-11-10). What the app does today is stated;
+ * what is not built is "coming", never offered as available.
+ */
+function saveCallFor(
+  request: Omit<BuildPlanRequest, 'alternatives'>,
+  situation: Situation,
+): BuildPlanResponse['saveCall'] {
+  const home = request.goals.some((goal) => goal.kind === 'house_deposit')
+  const ready = home
+    ? situation.income?.annualGross !== undefined && request.propertyKind !== undefined
+    : completenessOf(request, situation).assumed.length === 0
+  return {
+    ready,
+    label: ready ? 'Ready to make this plan happen? Save it to Saoi' : 'Save this plan',
+    note: 'Held for 24 hours behind a single-use link, then deleted unless opened.',
+    appToday: [
+      'keeps the plan',
+      'Saoirse, Saoi’s assistant, talks it through',
+      'signing in keeps it across devices',
+    ],
+    coming: [
+      'a partner joining the plan',
+      'reminders when a chosen rate changes or the goal date nears',
+      'application checklists',
+      'a document store',
     ],
   }
 }
@@ -841,6 +930,11 @@ function buildMain(
               .reachedOn,
           monthlySaving: chosen.monthly,
           monthName,
+          savers: current.lines.map((line) => ({
+            provider: line.product.provider,
+            name: displayName(line.product),
+            monthly: line.monthly,
+          })),
         })
       : null
 
@@ -875,6 +969,11 @@ function buildMain(
 
   return {
     alternatives: [],
+    // Filled by `buildPlan` from the sensitivity runs; empty for the runs themselves.
+    nextQuestion: null,
+    laterQuestions: [],
+    completeness: completenessOf(request, situation),
+    saveCall: saveCallFor(request, situation),
     home,
     assumedRepayments,
     presentation,
@@ -1427,7 +1526,6 @@ function planPresentation(input: {
     )
   }
   if (input.helpToBuy !== null) out.push(input.helpToBuy.note)
-  out.push(...sharpenLines(input.questions))
   out.push('These are options with their figures, for the inputs given; the customer decides.')
   return out
 }
