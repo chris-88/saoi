@@ -1395,6 +1395,12 @@ export const buildPlanRequestSchema = z.object({
       'Income Tax and DIRT paid over the last four tax years (not USC or PRSI): the most Help to Buy can be.',
     ),
   homePreferences: homePreferencesSchema.optional(),
+  county: countySchema.optional(),
+  monthlyRentEur: monthlyRentSchema
+    .optional()
+    .describe(
+      'For a house deposit: rent paid a month today. Changes no figure; kept with the plan as what they pay now. `situation.outgoings.rentMonthly` wins when both are sent.',
+    ),
   alternatives: z
     .array(planAlternativeSchema)
     .max(3)
@@ -1571,8 +1577,17 @@ export const homePathwaysSchema = z
     depositEur: eur,
     stampDutyEur: eur,
     legalAndSurveyEur: eur,
-    helpToBuyEur: eur,
-    neededAtKeysEur: eur.describe('Deposit plus stamp duty and fees, less Help to Buy.'),
+    helpToBuyEur: eur.describe(
+      'Help to Buy at this price. With `helpToBuyConditional`, what it could be, not counted in the figures.',
+    ),
+    helpToBuyConditional: z
+      .boolean()
+      .describe(
+        'True for a new build when tax paid was not given: the options and their keys months are without Help to Buy, as the home calculator’s headline is; the `new_build_help_to_buy` route carries the keys date if tax paid covers it. With tax paid given, Help to Buy is counted.',
+      ),
+    neededAtKeysEur: eur.describe(
+      'Deposit plus stamp duty and fees, less Help to Buy when it is counted.',
+    ),
     keysOn: z.string().nullable(),
     comparedOver: z
       .object({ basis: z.enum(['term', 'fixed_period', 'first_years']), years: z.number().int() })
@@ -1814,6 +1829,9 @@ export const buildPlanResponseSchema = z.object({
   home: homePathwaysSchema
     .nullable()
     .describe('Pathways to a home, when the main goal is a house deposit. Null otherwise.'),
+  routes: routesSchema.describe(
+    'For a house deposit: every route to a home, as the home calculator gives them for the same figures, the customer’s own kind of property first. The presentation shows three lines right after the headline, then "More routes: N"; none is marked best. Empty for other goals.',
+  ),
   alternatives: z
     .array(planAlternativeResultSchema)
     .describe(

@@ -11,6 +11,8 @@ import { moneyCheck } from './money-check.ts'
 import { normaliseMarket } from './normalise.ts'
 import { minLoanOf } from './normalise.ts'
 import { buildPlan } from './plan.ts'
+import { homeCalculator } from './home-calculator.ts'
+import { marketPlanSchema, SAVE_PLAN_MAX_BYTES } from '../../contracts/market-plan.ts'
 import type { MarketRecord } from './types.ts'
 
 /**
@@ -231,11 +233,15 @@ describe('the Bank of Ireland route: first-time buyer, €350,000, €35,000 sav
     expect(avant?.line).toMatch(/not confirmed on the lender’s site/)
   })
 
-  it('leads the presentation with the goal and the pathways, as options', () => {
+  it('leads the presentation with the goal, three routes and the pathways, as options', () => {
     expect(result.presentation[0]).toBe(home?.headline)
-    expect(result.presentation[1]).toBe(home?.assumptions[0])
-    expect(result.presentation[2]).toBe(home?.sortedBy)
-    expect(result.presentation[3]).toMatch(
+    expect(result.presentation.slice(1, 5)).toEqual([
+      ...result.routes.slice(0, 3).map((route) => route.line),
+      `More routes: ${String(result.routes.length - 3)}`,
+    ])
+    expect(result.presentation[5]).toBe(home?.assumptions[0])
+    expect(result.presentation[6]).toBe(home?.sortedBy)
+    expect(result.presentation[7]).toMatch(
       /^[A-Z][^:]+, (\d+-year fixed|variable): .*; deposit in place around [A-Z][a-z]+ \d{4}; /,
     )
     for (const warning of MORTGAGE_WARNINGS) expect(result.presentation).toContain(warning)
@@ -256,11 +262,80 @@ describe('the Bank of Ireland route: first-time buyer, €350,000, €35,000 sav
       homePrice: 350_000,
       propertyKind: 'new_build',
     })
+    // Tax paid not given: Help to Buy is what it could be, and not counted (the calculator's rule).
     expect(built.home?.helpToBuyEur).toBe(35_000)
+    expect(built.home?.helpToBuyConditional).toBe(true)
     expect(built.home?.pathways.find((p) => p.lender === 'boi')?.mortgage.name).toBe(
       '5 Year Fixed BER A',
     )
     expect(built.home?.assumptions[0]).toMatch(/a new build, taken as BER A/)
+    expect(built.home?.assumptions[0]).toMatch(
+      /Help to Buy is not counted in these figures: up to €35,000/,
+    )
+  })
+
+  describe('a new build with tax paid not given (the calculator’s Help to Buy rule)', () => {
+    // €41,500 needed at the keys without Help to Buy: six months away at €2,000 a month, with
+    // €1,500 still to find after five, more than interest on the savings path earns, so the
+    // month is the calculator's (which is before interest). Counting Help to Buy would make it
+    // next month.
+    const situation = {
+      monthlySaving: 2_000,
+      savings: [{ label: 'Savings', balance: 30_000 }],
+      firstTimeBuyer: true,
+      income: { annualGross: 90_000 },
+    }
+    const goal = { ...firstHome, targetDate: '2029-11' }
+    const without = plan({
+      situation,
+      goals: [goal],
+      homePrice: 350_000,
+      propertyKind: 'new_build',
+    })
+    const withTax = plan({
+      situation,
+      goals: [goal],
+      homePrice: 350_000,
+      propertyKind: 'new_build',
+      taxPaidLastFourYearsEur: 40_000,
+    })
+    const calculator = homeCalculator(
+      {
+        depositSavedEur: 30_000,
+        monthlySavingEur: 2_000,
+        annualGrossIncomeEur: 90_000,
+        targetPriceEur: 350_000,
+        firstTimeBuyer: true,
+        propertyKind: 'new_build',
+      },
+      AS_OF,
+    )
+
+    it('gives every option the calculator’s keys month, without Help to Buy', () => {
+      expect(calculator.figures.helpToBuyConditional).toBe(true)
+      expect(without.home?.helpToBuyConditional).toBe(true)
+      expect(without.home?.neededAtKeysEur).toBe(calculator.figures.neededAtKeysEur)
+      expect(without.home?.keysOn).toBe(calculator.figures.depositReachedOn)
+      for (const option of without.home?.pathways ?? []) {
+        expect(option.keysOn).toBe(calculator.figures.depositReachedOn)
+      }
+    })
+
+    it('puts the conditional date on the new-build route', () => {
+      const route = without.routes.find((item) => item.id === 'new_build_help_to_buy')
+      const calculated = calculator.routes.find((item) => item.id === 'new_build_help_to_buy')
+      expect(route?.keysOn).not.toBeNull()
+      expect(route?.keysOn).toBe(calculated?.keysOn)
+      expect((route?.keysOn ?? '') < (without.home?.keysOn ?? '')).toBe(true)
+      expect(route?.line).toBe(calculated?.line)
+    })
+
+    it('counts Help to Buy as before once tax paid is given', () => {
+      expect(withTax.home?.helpToBuyConditional).toBe(false)
+      expect(withTax.home?.helpToBuyEur).toBe(35_000)
+      expect(withTax.home?.neededAtKeysEur).toBe((without.home?.neededAtKeysEur ?? 0) - 35_000)
+      expect((withTax.home?.keysOn ?? '') < (without.home?.keysOn ?? '')).toBe(true)
+    })
   })
 })
 
@@ -605,5 +680,74 @@ describe('the customer sets the filters and the sort (decision 2026-11-10)', () 
     expect(result.presentation.join(' ')).toMatch(
       /Saoi is not regulated by the Central Bank of Ireland and does not give advice/,
     )
+  })
+})
+
+describe('routes to a home travel with the plan (decision 2026-11-10-saoi-routes-card)', () => {
+  const situation = {
+    monthlySaving: 800,
+    savings: [{ label: 'Savings', balance: 35_000, aerPct: 1 }],
+    firstTimeBuyer: true,
+    income: { annualGross: 90_000 },
+  }
+  const result = plan({
+    situation,
+    goals: [firstHome],
+    homePrice: 350_000,
+    propertyKind: 'second_hand',
+    county: 'dublin_city',
+    monthlyRentEur: 1_800,
+  })
+
+  it('works out every route from the figures the home calculator takes', () => {
+    const calculator = homeCalculator(
+      {
+        depositSavedEur: 35_000,
+        monthlySavingEur: 800,
+        annualGrossIncomeEur: 90_000,
+        targetPriceEur: 350_000,
+        firstTimeBuyer: true,
+        propertyKind: 'second_hand',
+        county: 'dublin_city',
+      },
+      AS_OF,
+    )
+    expect(result.routes.map((route) => route.id)).toEqual(
+      calculator.routes.map((route) => route.id),
+    )
+    expect(result.routes.map((route) => route.status)).toEqual(
+      calculator.routes.map((route) => route.status),
+    )
+    expect(result.routes[0]?.id).toBe('second_hand')
+    expect(() => buildPlanResponseSchema.parse(result)).not.toThrow()
+  })
+
+  it('carries them in the plan, which parses and stays inside what a save takes', () => {
+    const stored = marketPlanSchema.parse(JSON.parse(JSON.stringify(result.plan)))
+    expect(stored.comparison?.routes.map((route) => route.line)).toEqual(
+      result.routes.map((route) => route.line),
+    )
+    expect(stored.comparison?.routes).toHaveLength(6)
+    expect(new TextEncoder().encode(JSON.stringify(result.plan)).length).toBeLessThan(
+      SAVE_PLAN_MAX_BYTES,
+    )
+    // Rent changes no figure; it is kept with the plan as what they pay now.
+    expect(stored.situation.outgoings?.rentMonthly).toBe(1_800)
+  })
+
+  it('names no route best in the presentation', () => {
+    for (const line of result.presentation) {
+      expect(line).not.toMatch(/\b(best|fastest|recommended)\b/i)
+      expect(adviceWordsIn(line)).toEqual([])
+    }
+  })
+
+  it('has none when the goal is not a home', () => {
+    const savings = plan({
+      situation,
+      goals: [{ id: 'rainy', kind: 'emergency_fund', label: 'Rainy-day money' }],
+    })
+    expect(savings.routes).toEqual([])
+    expect(savings.presentation.join(' ')).not.toMatch(/More routes/)
   })
 })

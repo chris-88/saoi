@@ -5,6 +5,7 @@ import {
   upgradeStoredPlan,
   type MarketPlan,
   type PlanProduct,
+  type PlanRoute,
 } from '../contracts/market-plan.ts'
 import { factCatalogue, type FactKey } from '../domain/facts.ts'
 import type { Db } from './case-repository.ts'
@@ -180,6 +181,7 @@ export function savedPlanCard(claimed: ClaimedPlan): Card {
     ].slice(0, 4),
     figures: figuresLine(plan),
     ...(plan.comparison === undefined ? {} : { comparison: comparisonCard(plan.comparison) }),
+    routes: routesOf(plan),
     createdAt: plan.createdAt,
     dataCheckedAt: plan.dataCheckedAt,
   }
@@ -211,6 +213,26 @@ export function figuresLine(plan: MarketPlan): string {
   ]
     .filter((part): part is string => part !== null)
     .join(' · ')
+}
+
+/** Every route to a home the plan carries, in its order; empty for a plan without them. */
+export function routesOf(plan: MarketPlan): PlanRoute[] {
+  return plan.comparison === undefined ? [] : plan.comparison.routes.map((route) => ({ ...route }))
+}
+
+/**
+ * The routes for the digest: three lines in their order, then how many more, as the
+ * presentation gives them (`routeLines` in `domain/market/routes.ts`). Never a pick.
+ */
+function routeDigestLines(routes: readonly PlanRoute[]): string[] {
+  if (routes.length === 0) return []
+  const shown = routes.slice(0, 3)
+  const more = routes.length - shown.length
+  return [
+    `Routes to a home: ${String(routes.length)}, in the order they saw them, each a fact with its status; none is best, fastest or recommended, and the customer chooses. The card shows them under the comparison.`,
+    ...shown.map((route) => `Route: ${route.line}`),
+    ...(more > 0 ? [`More routes: ${String(more)}`] : []),
+  ]
 }
 
 /** The comparison's first three options, as the card and the app's welcome show them. */
@@ -283,6 +305,7 @@ export function savedPlanDigestLines(claimed: ClaimedPlan): string[] {
             (option, index) =>
               `Option ${String(index + 1)} in their order: ${option.lender}, ${option.kind} (${option.productName}) at ${String(option.ratePct)}%, ${euroWhole(option.monthlyEur)} a month, ${euroWhole(option.fiveYearCostEur)} over 5 years, keys ${option.keysOn === null ? 'not reached' : monthOf(option.keysOn)}${option.confirmed ? '' : ' (incentives not confirmed on the lender’s site)'}${option.conditions.length === 0 ? '' : `. Conditions: ${option.conditions.join(' ')}`}`,
           ),
+          ...routeDigestLines(plan.comparison.routes),
         ]),
     // A comparison, not a plan to follow: the next step is theirs to choose (2026-11-10).
     `Next: offer them a choice, never a pick: talk through the options, change a figure or a filter, or how the figures were worked out.${first === undefined && firstDebt !== undefined ? ` The debt step in it: ${firstDebt}` : ''} Saoi cannot open any product for them; they apply with a provider directly.`,
