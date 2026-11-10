@@ -85,7 +85,7 @@ describe('money found', () => {
         AS_OF,
         '2026-11-09T12:00:00.000Z',
       )
-      const moco = result.plan.recommendation.products.filter((p) => p.provider === 'moco')
+      const moco = result.plan.combination.products.filter((p) => p.provider === 'moco')
       expect(moco.length, String(balance)).toBeLessThanOrEqual(1)
       const idle = result.moneyFound.parts.filter((part) => /MoCo/.test(part.label))
       expect(idle.length).toBeLessThanOrEqual(1)
@@ -141,7 +141,7 @@ describe('money found', () => {
     expect(debt?.annualEur).toBe(
       Math.round((scenario.cleared.netPosition - scenario.kept.netPosition) / 2),
     )
-    for (const product of result.plan.recommendation.products) {
+    for (const product of result.plan.combination.products) {
       const counted = result.moneyFound.parts.some((part) =>
         part.label.includes(product.productName),
       )

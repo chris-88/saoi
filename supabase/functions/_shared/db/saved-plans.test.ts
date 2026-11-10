@@ -51,13 +51,13 @@ describe('the plan card', () => {
 
   it('says borrowing in borrowing terms', () => {
     const base = plan()
-    const product = base.recommendation.products[0]
+    const product = base.combination.products[0]
     if (product === undefined) throw new Error('no product')
     const card = savedPlanCard({
       id: PLAN_ID,
       plan: {
         ...base,
-        recommendation: {
+        combination: {
           products: [
             {
               ...product,
@@ -98,7 +98,7 @@ describe('what the model is told', () => {
     const base = plan()
     const lines = savedPlanDigestLines({
       id: PLAN_ID,
-      plan: { ...base, recommendation: { products: [] } },
+      plan: { ...base, combination: { products: [] } },
     })
     expect(lines.at(-1)).toMatch(/^Next: Car loan: part paid from the lump sum in this plan\./)
   })

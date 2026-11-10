@@ -1,4 +1,9 @@
-import { PLAN_PRODUCT_CATEGORIES, PLAN_PRODUCT_SOURCES, marketPlanSchema } from './market-plan.ts'
+import {
+  PLAN_PRODUCT_CATEGORIES,
+  PLAN_PRODUCT_SOURCES,
+  marketPlanSchema,
+  upgradeStoredPlan,
+} from './market-plan.ts'
 import { exampleMarketPlan } from './market-plan.example.ts'
 import { claimPlanBodySchema } from './session.ts'
 import { MARKET_CATEGORIES, MARKET_SOURCES } from '../market/schema.ts'
@@ -194,11 +199,11 @@ describe('the market plan (market-plan.ts)', () => {
 
   it('refuses a product pointing at a goal the plan does not have', () => {
     const plan = exampleMarketPlan()
-    const first = plan.recommendation.products[0]
+    const first = plan.combination.products[0]
     if (first === undefined) throw new Error('no product')
     const broken = {
       ...plan,
-      recommendation: { products: [{ ...first, goalIds: ['pension'] }] },
+      combination: { products: [{ ...first, goalIds: ['pension'] }] },
     }
     const result = marketPlanSchema.safeParse(broken)
     expect(result.success).toBe(false)
@@ -217,12 +222,12 @@ describe('the market plan (market-plan.ts)', () => {
   it('refuses a plan with no goals, and a link that is not https', () => {
     expect(marketPlanSchema.safeParse({ ...exampleMarketPlan(), goals: [] }).success).toBe(false)
     const plan = exampleMarketPlan()
-    const first = plan.recommendation.products[0]
+    const first = plan.combination.products[0]
     if (first === undefined) throw new Error('no product')
     expect(
       marketPlanSchema.safeParse({
         ...plan,
-        recommendation: { products: [{ ...first, url: 'javascript:alert(1)' }] },
+        combination: { products: [{ ...first, url: 'javascript:alert(1)' }] },
       }).success,
     ).toBe(false)
   })
@@ -231,5 +236,17 @@ describe('the market plan (market-plan.ts)', () => {
     expect(claimPlanBodySchema.safeParse({ token: 'A'.repeat(22) }).success).toBe(true)
     expect(claimPlanBodySchema.safeParse({ token: 'A'.repeat(21) }).success).toBe(false)
     expect(claimPlanBodySchema.safeParse({ token: `${'A'.repeat(21)}/` }).success).toBe(false)
+  })
+})
+
+describe('a plan stored before 2026-11-10', () => {
+  it('reads `recommendation` as `combination`, and leaves a current plan as it is', () => {
+    const { combination, ...rest } = exampleMarketPlan()
+    const old = { ...rest, recommendation: combination }
+    expect(marketPlanSchema.safeParse(old).success).toBe(false)
+    const upgraded = marketPlanSchema.parse(upgradeStoredPlan(old))
+    expect(upgraded.combination).toEqual(combination)
+    const current = exampleMarketPlan()
+    expect(upgradeStoredPlan(current)).toBe(current)
   })
 })
