@@ -22,7 +22,6 @@ import type { AsOf, Market } from './types.ts'
  */
 
 const IDLE_AER_PCT = 0.1
-const EMERGENCY_MONTHS = 3
 
 export function monthlyOutgoings(situation: Situation): number | null {
   const rent = situation.outgoings?.rentMonthly
@@ -94,29 +93,9 @@ export function review(market: Market, request: ReviewRequest, asOf: AsOf): Revi
     })
   }
 
-  // ---- Emergency fund ---------------------------------------------------------------------
-  const outgoings = monthlyOutgoings(situation)
-  if (outgoings === null) {
-    assumptions.push('Monthly outgoings were not given, so an emergency fund is not sized.')
-  } else {
-    const accessible = held
-      .filter((item) => item.access !== 'fixed_term' && item.access !== 'notice')
-      .reduce((sum, item) => sum + item.balance, 0)
-    const target = outgoings * EMERGENCY_MONTHS
-    if (accessible < target) {
-      findings.push({
-        kind: 'no_emergency_fund',
-        headline: `Instant-access savings cover ${String(round2(outgoings === 0 ? 0 : accessible / outgoings))} months of outgoings`,
-        detail: `Three months of outgoings is ${euro(target)}; ${euro(accessible)} is held where it can be reached at once.`,
-        figures: {
-          outgoingsMonthly: outgoings,
-          threeMonths: target,
-          accessibleNow: accessible,
-          shortfall: round2(target - accessible),
-        },
-      })
-    }
-  }
+  // ---- Emergency fund: not raised by Saoi ---------------------------------------------------
+  // A buffer is modelled only when the customer raises one (Chris, 2026-11-10), so the review
+  // neither finds its absence nor suggests one.
 
   // ---- Debt costing more than savings earn -----------------------------------------------
   for (const debt of situation.debts) {
@@ -215,13 +194,6 @@ export function review(market: Market, request: ReviewRequest, asOf: AsOf): Revi
   // ---- Candidate goals -------------------------------------------------------------------
   const has = (kind: Goal['kind']) => goals.some((goal) => goal.kind === kind)
   const candidateGoals: ReviewResponse['candidateGoals'] = []
-  if (!has('emergency_fund') && findings.some((f) => f.kind === 'no_emergency_fund')) {
-    candidateGoals.push({
-      kind: 'emergency_fund',
-      label: 'Three months’ outgoings in instant access',
-      why: 'Instant-access savings are below three months of outgoings.',
-    })
-  }
   if (
     !has('pay_off_debt') &&
     findings.some((f) => f.kind === 'debt_costs_more_than_savings_earn')

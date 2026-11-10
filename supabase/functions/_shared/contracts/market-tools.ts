@@ -1161,7 +1161,9 @@ export const planAlternativeSchema = z
     name: text(60).describe(
       'A short name the customer would recognise: "Keep the car loan", "€6,000 aside".',
     ),
-    emergencyBufferEur: eur.optional().describe('A different emergency buffer, in euro.'),
+    emergencyBufferEur: eur
+      .optional()
+      .describe('A different emergency buffer, in euro: only when the customer raised one.'),
     keepAccessible: z
       .boolean()
       .optional()
@@ -1185,7 +1187,7 @@ export const buildPlanRequestSchema = z.object({
   emergencyBufferEur: eur
     .optional()
     .describe(
-      'An emergency buffer to hold first, in the best instant-access account, in euro. Wins over `emergencyBufferMonths` and over an `emergency_fund` goal’s `targetAmount`. 0 holds none. To compare a different buffer, pass it as an alternative.',
+      'An emergency buffer to hold first, in the best instant-access account, in euro. Wins over `emergencyBufferMonths` and over an `emergency_fund` goal’s `targetAmount`. 0 holds none. Only when the customer raises a buffer: never add one unasked.',
     ),
   emergencyBufferMonths: z
     .number()
@@ -1251,7 +1253,7 @@ export const buildPlanRequestSchema = z.object({
     .max(3)
     .optional()
     .describe(
-      'Up to three named variations to compare with the main plan in this same call (a different buffer, a debt kept or cleared, another monthly amount or date). Each comes back with its net figure. Use this to compare options rather than calling again.',
+      'Up to three named variations to compare with the main plan in this same call (a debt kept or cleared, another monthly amount or date, or a buffer the customer raised). Each comes back with its net figure. Use this to compare options rather than calling again.',
     ),
 })
 export type BuildPlanRequest = z.infer<typeof buildPlanRequestSchema>
@@ -1317,6 +1319,11 @@ export const planAlternativeResultSchema = z.object({
   differenceEur: z
     .number()
     .describe('Its total less the main plan’s total, at the same date where the date is the same.'),
+  towardsGoalDifferenceEur: z
+    .number()
+    .describe(
+      'What goes towards the main goal less the main plan’s, at the same date: the figure options are compared by. A buffer moves money out of the goal without changing the total held.',
+    ),
   goalReachedOn: z.string().nullable(),
   moneyFoundAnnualEur: z.number(),
   line: z.string().describe('The comparison in one sentence, for the presentation and the card.'),
@@ -1501,7 +1508,7 @@ export const moneyCheckRequestSchema = buildPlanRequestSchema
       .array(goalSchema)
       .max(8)
       .default([])
-      .describe('What the money is for, if they said: a house, a car, a buffer. Empty is fine.'),
+      .describe('What the money is for, if they said: a house, a car. Empty is fine.'),
   })
 export type MoneyCheckRequest = z.infer<typeof moneyCheckRequestSchema>
 
