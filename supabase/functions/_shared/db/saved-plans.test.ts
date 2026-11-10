@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { cardSchema } from '../contracts/cards.ts'
-import { marketPlanSchema, type MarketPlan } from '../contracts/market-plan.ts'
+import {
+  marketPlanSchema,
+  upgradeStoredPlan,
+  type MarketPlan,
+  type PlanRoute,
+} from '../contracts/market-plan.ts'
 import { exampleMarketPlan } from '../contracts/market-plan.example.ts'
 import {
   dayOf,
@@ -118,6 +123,7 @@ describe('what the model is told', () => {
           sortedBy: '4 options that fit, sorted by cost over the first 5 years, lowest first.',
           filters: ['Showing Bank of Ireland options, as you asked.'],
           options: [option, option, option, option],
+          routes: [],
         },
       },
     }
@@ -234,5 +240,100 @@ describe('dates', () => {
     expect(monthOf('2028-06-30')).toBe('June 2028')
     expect(monthOf('nonsense')).toBe('nonsense')
     expect(dayOf('2026-11-09T23:30:00Z')).toBe('9 Nov 2026')
+  })
+})
+
+const route = (id: PlanRoute['id'], line: string): PlanRoute => ({
+  id,
+  name: id,
+  mechanism: 'How it helps.',
+  status: 'potential',
+  line,
+  reason: null,
+  missing: null,
+  keysOn: id === 'second_hand' ? '2028-07' : null,
+  conditions: ['A condition.'],
+  confirmed: true,
+  sources: [{ fact: 'A rule.', url: 'https://www.example.ie/rule', checkedOn: '2026-11-10' }],
+})
+
+const ROUTES: PlanRoute[] = [
+  route('second_hand', 'Second-hand: deposit and costs saved around July 2028'),
+  route('new_build_help_to_buy', 'New build with Help to Buy: up to €35,000 towards the deposit'),
+  route('first_home_scheme', 'First Home Scheme: shared equity on a new build, under the limit'),
+  route('local_authority_home_loan', 'Local Authority Home Loan: income over the limit'),
+  route('affordable_purchase', 'Affordable purchase: depends on the council'),
+]
+
+const homePlan = (routes: PlanRoute[] | undefined): unknown => {
+  const base = plan()
+  return {
+    ...base,
+    comparison: {
+      kind: 'home',
+      headline: 'At these figures, the deposit and buying costs are in place around July 2028.',
+      priceEur: 350_000,
+      sortBy: 'five_year_cost',
+      sortedBy: '1 option that fits.',
+      filters: [],
+      options: [
+        {
+          lender: 'Bank of Ireland',
+          kind: '4-year fixed',
+          productName: '4 Year Fixed HVM BER C',
+          ratePct: 3.2,
+          monthlyEur: 1362.27,
+          fiveYearCostEur: 49338.1,
+          keysOn: '2028-07',
+          confirmed: true,
+          conditions: [],
+        },
+      ],
+      ...(routes === undefined ? {} : { routes }),
+    },
+  }
+}
+
+describe('routes to a home on a saved plan', () => {
+  it('reach the card in their order', () => {
+    const card = savedPlanCard({ id: PLAN_ID, plan: marketPlanSchema.parse(homePlan(ROUTES)) })
+    expect(cardSchema.parse(card)).toEqual(card)
+    expect(card.type === 'saved_plan' && card.routes).toEqual(ROUTES)
+  })
+
+  it('give the model three lines and the count, as facts, never a pick', () => {
+    const lines = savedPlanDigestLines({
+      id: PLAN_ID,
+      plan: marketPlanSchema.parse(homePlan(ROUTES)),
+    })
+    const at = lines.findIndex((line) => line.startsWith('Routes to a home: 5'))
+    expect(at).toBeGreaterThan(-1)
+    expect(lines[at]).toMatch(/none is best, fastest or recommended/)
+    expect(lines.slice(at + 1, at + 5)).toEqual([
+      'Route: Second-hand: deposit and costs saved around July 2028',
+      'Route: New build with Help to Buy: up to €35,000 towards the deposit',
+      'Route: First Home Scheme: shared equity on a new build, under the limit',
+      'More routes: 2',
+    ])
+  })
+
+  it('load as none from a plan stored before routes', () => {
+    const old = homePlan(undefined)
+    expect(marketPlanSchema.safeParse(upgradeStoredPlan(old)).success).toBe(true)
+    const parsed = marketPlanSchema.parse(upgradeStoredPlan(old))
+    expect(parsed.comparison?.routes).toEqual([])
+    const card = savedPlanCard({ id: PLAN_ID, plan: parsed })
+    expect(card.type === 'saved_plan' && card.routes).toEqual([])
+    expect(savedPlanDigestLines({ id: PLAN_ID, plan: parsed }).join('\n')).not.toMatch(
+      /Routes to a home/,
+    )
+  })
+
+  it('upgrades an old plan that still says recommendation and has no routes', () => {
+    const { combination, ...rest } = plan()
+    const old = { ...rest, recommendation: combination, comparison: undefined }
+    const parsed = marketPlanSchema.parse(upgradeStoredPlan(old))
+    expect(parsed.combination).toEqual(combination)
+    expect(parsed.comparison).toBeUndefined()
   })
 })

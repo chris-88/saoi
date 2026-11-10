@@ -1395,6 +1395,12 @@ export const buildPlanRequestSchema = z.object({
       'Income Tax and DIRT paid over the last four tax years (not USC or PRSI): the most Help to Buy can be.',
     ),
   homePreferences: homePreferencesSchema.optional(),
+  county: countySchema.optional(),
+  monthlyRentEur: monthlyRentSchema
+    .optional()
+    .describe(
+      'For a house deposit: rent paid a month today. Changes no figure; kept with the plan as what they pay now. `situation.outgoings.rentMonthly` wins when both are sent.',
+    ),
   alternatives: z
     .array(planAlternativeSchema)
     .max(3)
@@ -1814,6 +1820,9 @@ export const buildPlanResponseSchema = z.object({
   home: homePathwaysSchema
     .nullable()
     .describe('Pathways to a home, when the main goal is a house deposit. Null otherwise.'),
+  routes: routesSchema.describe(
+    'For a house deposit: every route to a home, as the home calculator gives them for the same figures, the customer’s own kind of property first. The presentation shows three lines right after the headline, then "More routes: N"; none is marked best. Empty for other goals.',
+  ),
   alternatives: z
     .array(planAlternativeResultSchema)
     .describe(

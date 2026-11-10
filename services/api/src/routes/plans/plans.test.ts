@@ -16,6 +16,8 @@ import {
   tokenFor,
 } from '../../testing.ts'
 import { hashPlanToken, PLAN_LINK_TTL_MS } from './index.ts'
+import { savedPlanCard } from '@shared/db/saved-plans.ts'
+import { homeRoutes } from '@shared/domain/market/routes.ts'
 
 const verifyToken = createTokenVerifier({ secret: SECRET, jwksUrl: 'http://127.0.0.1:1/jwks' })
 const NOW = Date.parse('2026-11-09T12:00:00Z')
@@ -137,6 +139,32 @@ const save = async (app: ReturnType<typeof appWith>['app'], plan: unknown = exam
 
 const tokenOf = (claimUrl: string): string => claimUrl.split('/?plan=')[1] ?? ''
 
+/** The worked example with a home comparison of one option and these routes. */
+const homePlan = (routes: unknown[]) => ({
+  ...exampleMarketPlan(),
+  comparison: {
+    kind: 'home',
+    headline: 'At these figures, the deposit and buying costs are in place around July 2028.',
+    priceEur: 350_000,
+    sortBy: 'five_year_cost',
+    sortedBy: '1 option that fits, sorted by cost over the first 5 years, lowest first.',
+    filters: [],
+    options: [
+      {
+        lender: 'Bank of Ireland',
+        kind: '4-year fixed',
+        productName: '4 Year Fixed HVM BER C',
+        ratePct: 3.2,
+        monthlyEur: 1362.27,
+        fiveYearCostEur: 49338.1,
+        keysOn: '2028-07',
+        confirmed: true,
+      },
+    ],
+    routes,
+  },
+})
+
 describe('POST /api/plans', () => {
   it('saves without signing in and returns a one-time link and its expiry', async () => {
     const { app, plans } = appWith()
@@ -235,6 +263,62 @@ describe('POST /api/plans/preview', () => {
     expect(comparison.total).toBe(4)
     expect(comparison.options).toHaveLength(3)
     expect(String(shown.body['figures'])).toMatch(/€350k$/)
+  })
+
+  it('round-trips a home plan’s routes through the store, the preview and the card', async () => {
+    const { app, plans } = appWith()
+    const routes = homeRoutes(
+      {
+        priceEur: 350_000,
+        propertyKind: 'second_hand',
+        firstTimeBuyer: true,
+        incomeEur: 90_000,
+        applicants: undefined,
+        savedEur: 35_000,
+        monthlyEur: 800,
+        taxPaidEur: undefined,
+        county: 'dublin_city',
+        maxLoanEur: 360_000,
+        maxLtvPct: 90,
+      },
+      '2026-11-10',
+    )
+    expect(routes.length).toBeGreaterThan(3)
+    const token = tokenOf(String((await save(app, homePlan(routes))).body['claimUrl']))
+
+    // Stored as sent.
+    const stored = plans.rows.get(hashPlanToken(token))?.document as MarketPlan
+    expect(stored.comparison?.routes).toEqual(routes)
+
+    // The preview carries every route, in order.
+    const shown = await post(app, '/api/plans/preview', { token }, { as: null })
+    expect(shown.status).toBe(200)
+    expect(shown.body['routes']).toEqual(routes)
+
+    // The claim records the plan with them, and the card built from it shows them.
+    expect((await post(app, '/api/plans/claim', { token }, { as: USER_ID })).status).toBe(200)
+    const claimed = plans.claims[0]?.plan
+    if (claimed === undefined) throw new Error('not claimed')
+    expect(claimed.comparison?.routes).toEqual(routes)
+    const card = savedPlanCard({ id: 'plan-1', plan: claimed })
+    expect(card.type === 'saved_plan' && card.routes).toEqual(routes)
+  })
+
+  it('still loads a home plan stored before routes, with none', async () => {
+    const { app, plans } = appWith()
+    const token = tokenOf(String((await save(app, homePlan([]))).body['claimUrl']))
+    const row = plans.rows.get(hashPlanToken(token))
+    if (row === undefined) throw new Error('not saved')
+    const document = row.document as { comparison: Record<string, unknown> }
+    const comparison = { ...document.comparison }
+    delete comparison['routes']
+    plans.rows.set(row.tokenHash, { ...row, document: { ...document, comparison } })
+
+    const shown = await post(app, '/api/plans/preview', { token }, { as: null })
+    expect(shown.status).toBe(200)
+    expect(shown.body['routes']).toEqual([])
+    expect((await post(app, '/api/plans/claim', { token }, { as: USER_ID })).status).toBe(200)
+    expect(plans.claims[0]?.plan.comparison?.routes).toEqual([])
   })
 
   it('answers an unknown link with 404', async () => {

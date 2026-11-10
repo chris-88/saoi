@@ -14,10 +14,11 @@ import type { MarketPlan, PlanProduct } from '../../contracts/market-plan.ts'
 import { allocatable, allocate, type AllocationLine } from './allocate.ts'
 import { debtMonthlyRate, payoffOrder, repaymentOf } from './debt.ts'
 import { displayName, euro, interestToClear } from './figures.ts'
-import { HELP_TO_BUY } from '../../market/first-home-rules.ts'
+import { HELP_TO_BUY, MORTGAGE_MEASURES } from '../../market/first-home-rules.ts'
 import { firstHome, helpToBuyFor } from './first-home.ts'
 import { rankQuestions } from './next-question.ts'
 import { homePathways } from './pathways.ts'
+import { homeRoutes, routeLines } from './routes.ts'
 import { affordability } from './mortgage.ts'
 import { moneyFoundForPlan } from './money-found.ts'
 import { questionsFor } from './questions.ts'
@@ -174,7 +175,7 @@ export function buildPlan(
   const closing = main.presentation.at(-1)
   return {
     ...main,
-    plan: withComparison(main.plan, main.home),
+    plan: withComparison(main.plan, main.home, main.routes),
     alternatives,
     runnersUp,
     nextQuestion,
@@ -195,7 +196,11 @@ export function buildPlan(
 }
 
 /** The home options the customer saw, carried in the plan so the app can show them again. */
-function withComparison(plan: MarketPlan, home: BuildPlanResponse['home']): MarketPlan {
+function withComparison(
+  plan: MarketPlan,
+  home: BuildPlanResponse['home'],
+  routes: BuildPlanResponse['routes'],
+): MarketPlan {
   if (home === null || home.pathways.length === 0) return plan
   return {
     ...plan,
@@ -221,6 +226,24 @@ function withComparison(plan: MarketPlan, home: BuildPlanResponse['home']): Mark
         // The first ten carry their conditions, so a question about them is answered in full;
         // the plan stays well inside the 64 KiB it is saved under.
         conditions: index < 10 ? option.conditions.slice(0, 4).map((line) => clip(line, 400)) : [],
+      })),
+      // Every route, as the calculator gives them, so the app and Saoirse can show them again.
+      routes: routes.slice(0, 6).map((route) => ({
+        id: route.id,
+        name: clip(route.name, 120),
+        mechanism: clip(route.mechanism, 400),
+        status: route.status,
+        line: clip(route.line, 300),
+        reason: route.reason === null ? null : clip(route.reason, 400),
+        missing: route.missing === null ? null : clip(route.missing, 300),
+        keysOn: route.keysOn,
+        conditions: route.conditions.slice(0, 10).map((line) => clip(line, 400)),
+        confirmed: route.confirmed,
+        sources: route.sources.slice(0, 10).map((source) => ({
+          fact: clip(source.fact, 400),
+          url: source.url,
+          checkedOn: source.checkedOn,
+        })),
       })),
     },
   }
@@ -918,7 +941,7 @@ function buildMain(
         : `${main.label}${main.targetDate === undefined ? '' : ` by ${monthName(main.targetDate.slice(0, 7))}`}`,
       120,
     ),
-    situation: planSituation(situation),
+    situation: planSituation(situation, request.monthlyRentEur),
     goals: ordered.map((goal) => ({ ...goal })),
     combination: {
       products: products.slice(0, 12),
@@ -1045,9 +1068,39 @@ function buildMain(
         })
       : null
 
+  // ---- Every route to a home, from the figures the home calculator takes -----------------------
+  const routes: BuildPlanResponse['routes'] = []
+  if (main?.kind === 'house_deposit') {
+    const firstTimeBuyer = situation.firstTimeBuyer ?? true
+    const measures = firstTimeBuyer
+      ? MORTGAGE_MEASURES.first_time_buyer
+      : MORTGAGE_MEASURES.second_and_subsequent
+    const income = situation.income?.annualGross ?? null
+    routes.push(
+      ...homeRoutes(
+        {
+          priceEur: request.homePrice ?? home?.price ?? null,
+          propertyKind: request.propertyKind,
+          firstTimeBuyer,
+          incomeEur: income,
+          // The plan takes one gross figure, joint for two: single or joint is not known.
+          applicants: undefined,
+          savedEur: chosen.lump,
+          monthlyEur: chosen.monthly,
+          taxPaidEur: request.taxPaidLastFourYearsEur,
+          county: request.county,
+          maxLoanEur: income === null ? null : round2(income * measures.loanToIncome),
+          maxLtvPct: measures.maxLtvPct,
+        },
+        asOf,
+      ),
+    )
+  }
+
   // ---- Present to the customer ------------------------------------------------------------------
   const presentation = planPresentation({
     home,
+    routes,
     assumed: assumedRepayments.map((item) => item.note),
     moneyFound,
     when: whenLabel,
@@ -1083,6 +1136,7 @@ function buildMain(
     completeness: completenessOf(request, situation),
     saveCall: saveCallFor(request, situation),
     home,
+    routes,
     assumedRepayments,
     presentation,
     questions,
@@ -1501,7 +1555,12 @@ function planProduct(
   }
 }
 
-function planSituation(situation: Situation): MarketPlan['situation'] {
+function planSituation(situation: Situation, monthlyRentEur?: number): MarketPlan['situation'] {
+  // Rent given beside the situation (the calculator's input) is kept with it as what they pay.
+  const outgoings =
+    monthlyRentEur === undefined || situation.outgoings?.rentMonthly !== undefined
+      ? situation.outgoings
+      : { ...situation.outgoings, rentMonthly: monthlyRentEur }
   const held = situation.savings.reduce((sum, item) => sum + item.balance, 0)
   const summary =
     situation.summary ??
@@ -1523,7 +1582,7 @@ function planSituation(situation: Situation): MarketPlan['situation'] {
   return {
     summary: clip(summary === '' ? 'Situation as described to the assistant.' : summary, 1200),
     ...(situation.income === undefined ? {} : { income: situation.income }),
-    ...(situation.outgoings === undefined ? {} : { outgoings: situation.outgoings }),
+    ...(outgoings === undefined ? {} : { outgoings }),
     ...(situation.monthlySaving === undefined ? {} : { monthlySaving: situation.monthlySaving }),
     savings: situation.savings.map((item) => ({
       label: item.label,
@@ -1579,12 +1638,15 @@ function planPresentation(input: {
   buffer: number
   extraMonthly: BuildPlanResponse['whatIf']['extraMonthly']
   helpToBuy: BuildPlanResponse['helpToBuy']
+  routes: BuildPlanResponse['routes']
 }): string[] {
   const out: string[] = [
     ...(input.home === null
-      ? []
+      ? routeLines(input.routes)
       : [
           input.home.headline,
+          // Three routes right after the headline, then "More routes: N", as the calculator does.
+          ...routeLines(input.routes),
           ...input.home.filters,
           ...input.home.assumptions,
           input.home.sortedBy,

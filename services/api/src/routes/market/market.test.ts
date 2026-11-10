@@ -451,6 +451,18 @@ describe('public comparison routes', () => {
       expect(doc.paths[path]?.['post']?.security).toEqual([])
     }
     expect(doc.paths['/api/market/products/{id}']?.['get']).toBeDefined()
+    // build-plan takes the calculator's county and rent, and returns its routes.
+    const shaped = doc as unknown as BuildPlanDoc
+    const buildPlan = shaped.paths['/api/calc/build-plan']?.post
+    const requestProps = resolve(
+      shaped,
+      buildPlan?.requestBody?.content['application/json']?.schema,
+    )?.properties
+    expect(Object.keys(requestProps ?? {})).toEqual(
+      expect.arrayContaining(['county', 'monthlyRentEur', 'homePrice', 'propertyKind']),
+    )
+    const result = resolve(shaped, buildPlan?.responses['200']?.content['application/json']?.schema)
+    expect(Object.keys(result?.properties ?? {})).toContain('routes')
     expect(doc.paths['/api/market/about/{topic}']?.['get']).toBeDefined()
   })
 
@@ -459,3 +471,23 @@ describe('public comparison routes', () => {
     expect(dublinDate(Date.parse('2026-06-30T23:30:00Z'))).toBe('2026-07-01')
   })
 })
+
+type SchemaNode = { $ref?: string; properties?: Record<string, SchemaNode> }
+type BuildPlanDoc = {
+  paths: Record<
+    string,
+    {
+      post?: {
+        requestBody?: { content: Record<string, { schema?: SchemaNode }> }
+        responses: Record<string, { content: Record<string, { schema?: SchemaNode }> }>
+      }
+    }
+  >
+  components?: { schemas?: Record<string, SchemaNode> }
+}
+
+/** A schema node, following one `$ref` into the components. */
+function resolve(doc: BuildPlanDoc, node: SchemaNode | undefined): SchemaNode | undefined {
+  if (node?.$ref === undefined) return node
+  return doc.components?.schemas?.[node.$ref.replace('#/components/schemas/', '')]
+}

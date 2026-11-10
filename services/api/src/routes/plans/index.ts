@@ -16,7 +16,7 @@ import {
   type ClaimPlanResponse,
   type PreviewPlanResponse,
 } from '@shared/contracts/session.ts'
-import { comparisonCard, figuresLine } from '@shared/db/saved-plans.ts'
+import { comparisonCard, figuresLine, routesOf } from '@shared/db/saved-plans.ts'
 import type { CaseSubstance } from '@shared/domain/continuity.ts'
 import type { AppEnv } from '../../context.ts'
 import { ApiError, errorBody } from '../../errors.ts'
@@ -165,6 +165,7 @@ export function previewOf(plan: MarketPlan, expiresAt: string): PreviewPlanRespo
         .filter((part): part is string => part !== null)
         .join(' + '),
     })),
+    routes: routesOf(plan),
     expiresAt,
   }
 }

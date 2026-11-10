@@ -404,7 +404,11 @@ The engine behind the Saoi MCP tools, in `_shared/domain/market/` (pure; contrac
   (`helpToBuyConditional`) and the new-build route carries the keys date if tax paid covers it.
   The first-time-buyer default is named in `assumed`. Rent a month (`monthlyRentEur`) is an
   optional input that changes no figure: first-home sets it beside the options' repayments
-  (`rentVsRepayment`), and the calculator asks it last, marked `optional`.
+  (`rentVsRepayment`), and the calculator asks it last, marked `optional`. Build-plan with a
+  house-deposit goal returns the same `routes` (it takes `county` and `monthlyRentEur` too; rent
+  is kept in the plan's outgoings), and the plan carries them in `comparison.routes`
+  (`upgradeStoredPlan` fills `[]` for older plans), so the preview, the `saved_plan` card
+  (`routes`) and the digest (three lines and the count) have them after a save.
 - **Calculator runs** (`run-bands.ts`, `calculator_runs`): each `POST /api/calc/home` writes one
   anonymous row after responding (fire and forget; a failure is logged, never returned): the day,
   income band, months-to-the-keys band, target met, county (only from the fixed list in

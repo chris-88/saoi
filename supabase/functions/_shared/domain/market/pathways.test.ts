@@ -11,6 +11,8 @@ import { moneyCheck } from './money-check.ts'
 import { normaliseMarket } from './normalise.ts'
 import { minLoanOf } from './normalise.ts'
 import { buildPlan } from './plan.ts'
+import { homeCalculator } from './home-calculator.ts'
+import { marketPlanSchema, SAVE_PLAN_MAX_BYTES } from '../../contracts/market-plan.ts'
 import type { MarketRecord } from './types.ts'
 
 /**
@@ -231,11 +233,15 @@ describe('the Bank of Ireland route: first-time buyer, €350,000, €35,000 sav
     expect(avant?.line).toMatch(/not confirmed on the lender’s site/)
   })
 
-  it('leads the presentation with the goal and the pathways, as options', () => {
+  it('leads the presentation with the goal, three routes and the pathways, as options', () => {
     expect(result.presentation[0]).toBe(home?.headline)
-    expect(result.presentation[1]).toBe(home?.assumptions[0])
-    expect(result.presentation[2]).toBe(home?.sortedBy)
-    expect(result.presentation[3]).toMatch(
+    expect(result.presentation.slice(1, 5)).toEqual([
+      ...result.routes.slice(0, 3).map((route) => route.line),
+      `More routes: ${String(result.routes.length - 3)}`,
+    ])
+    expect(result.presentation[5]).toBe(home?.assumptions[0])
+    expect(result.presentation[6]).toBe(home?.sortedBy)
+    expect(result.presentation[7]).toMatch(
       /^[A-Z][^:]+, (\d+-year fixed|variable): .*; deposit in place around [A-Z][a-z]+ \d{4}; /,
     )
     for (const warning of MORTGAGE_WARNINGS) expect(result.presentation).toContain(warning)
@@ -605,5 +611,74 @@ describe('the customer sets the filters and the sort (decision 2026-11-10)', () 
     expect(result.presentation.join(' ')).toMatch(
       /Saoi is not regulated by the Central Bank of Ireland and does not give advice/,
     )
+  })
+})
+
+describe('routes to a home travel with the plan (decision 2026-11-10-saoi-routes-card)', () => {
+  const situation = {
+    monthlySaving: 800,
+    savings: [{ label: 'Savings', balance: 35_000, aerPct: 1 }],
+    firstTimeBuyer: true,
+    income: { annualGross: 90_000 },
+  }
+  const result = plan({
+    situation,
+    goals: [firstHome],
+    homePrice: 350_000,
+    propertyKind: 'second_hand',
+    county: 'dublin_city',
+    monthlyRentEur: 1_800,
+  })
+
+  it('works out every route from the figures the home calculator takes', () => {
+    const calculator = homeCalculator(
+      {
+        depositSavedEur: 35_000,
+        monthlySavingEur: 800,
+        annualGrossIncomeEur: 90_000,
+        targetPriceEur: 350_000,
+        firstTimeBuyer: true,
+        propertyKind: 'second_hand',
+        county: 'dublin_city',
+      },
+      AS_OF,
+    )
+    expect(result.routes.map((route) => route.id)).toEqual(
+      calculator.routes.map((route) => route.id),
+    )
+    expect(result.routes.map((route) => route.status)).toEqual(
+      calculator.routes.map((route) => route.status),
+    )
+    expect(result.routes[0]?.id).toBe('second_hand')
+    expect(() => buildPlanResponseSchema.parse(result)).not.toThrow()
+  })
+
+  it('carries them in the plan, which parses and stays inside what a save takes', () => {
+    const stored = marketPlanSchema.parse(JSON.parse(JSON.stringify(result.plan)))
+    expect(stored.comparison?.routes.map((route) => route.line)).toEqual(
+      result.routes.map((route) => route.line),
+    )
+    expect(stored.comparison?.routes).toHaveLength(6)
+    expect(new TextEncoder().encode(JSON.stringify(result.plan)).length).toBeLessThan(
+      SAVE_PLAN_MAX_BYTES,
+    )
+    // Rent changes no figure; it is kept with the plan as what they pay now.
+    expect(stored.situation.outgoings?.rentMonthly).toBe(1_800)
+  })
+
+  it('names no route best in the presentation', () => {
+    for (const line of result.presentation) {
+      expect(line).not.toMatch(/\b(best|fastest|recommended)\b/i)
+      expect(adviceWordsIn(line)).toEqual([])
+    }
+  })
+
+  it('has none when the goal is not a home', () => {
+    const savings = plan({
+      situation,
+      goals: [{ id: 'rainy', kind: 'emergency_fund', label: 'Rainy-day money' }],
+    })
+    expect(savings.routes).toEqual([])
+    expect(savings.presentation.join(' ')).not.toMatch(/More routes/)
   })
 })

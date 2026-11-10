@@ -226,6 +226,48 @@ export const planDebtStepSchema = z.object({
   costWithStep: eur.optional(),
 })
 
+/** Repeats `HOME_ROUTE_IDS` (`contracts/market-tools.ts`); `contracts.test.ts` holds them equal. */
+export const PLAN_ROUTE_IDS = [
+  'second_hand',
+  'new_build_help_to_buy',
+  'first_home_scheme',
+  'local_authority_home_loan',
+  'affordable_purchase',
+  'vacant_property_grant',
+] as const
+/** Repeats `HOME_ROUTE_STATUSES`; held equal by the same test. */
+export const PLAN_ROUTE_STATUSES = ['potential', 'needs_one_detail', 'not_applicable'] as const
+
+/**
+ * One route to a home, as the calculator states it (`homeRouteSchema` in `market-tools.ts`,
+ * decision `2026-11-10-saoi-routes-card`), bounded for a public body. A fact with its status,
+ * never a pick.
+ */
+export const planRouteSchema = z.object({
+  id: z.enum(PLAN_ROUTE_IDS),
+  name: text(120),
+  mechanism: text(400),
+  status: z.enum(PLAN_ROUTE_STATUSES),
+  /** About 90 characters, shown as is. */
+  line: text(300),
+  reason: text(400).nullable(),
+  missing: text(300).nullable(),
+  keysOn: monthOrDay.nullable(),
+  conditions: z.array(text(400)).max(10).default([]),
+  confirmed: z.boolean(),
+  sources: z
+    .array(
+      z.object({
+        fact: text(400),
+        url: z.url({ protocol: /^https$/ }).max(500),
+        checkedOn: monthOrDay,
+      }),
+    )
+    .max(10)
+    .default([]),
+})
+export type PlanRoute = z.infer<typeof planRouteSchema>
+
 export const RANKING_OBJECTIVES = [
   'highest_net_return',
   'lowest_total_cost',
@@ -303,6 +345,11 @@ export const marketPlanSchema = z
             }),
           )
           .max(80),
+        /**
+         * Every route to a home, in the order the calculator gave them (2026-11-10). Plans
+         * stored before then have none; `upgradeStoredPlan` fills an empty list.
+         */
+        routes: z.array(planRouteSchema).max(PLAN_ROUTE_IDS.length).default([]),
       })
       .optional(),
     createdAt: isoDateTime,
@@ -339,15 +386,26 @@ export type MarketPlan = z.infer<typeof marketPlanSchema>
 
 /**
  * A stored or posted plan from before 2026-11-10 carries `recommendation` where the contract now
- * says `combination` (the decision `2026-11-10-saoi-compare-with-customer-filters`). Renames it
- * before parsing; anything else passes through untouched.
+ * says `combination` (the decision `2026-11-10-saoi-compare-with-customer-filters`), and a home
+ * comparison without `routes`. Renames the one and fills the other with an empty list before
+ * parsing; anything else passes through untouched.
  */
 export function upgradeStoredPlan(document: unknown): unknown {
-  if (typeof document !== 'object' || document === null || Array.isArray(document)) return document
-  const record = document as Record<string, unknown>
-  if (record['combination'] !== undefined || record['recommendation'] === undefined) return document
-  const { recommendation, ...rest } = record
-  return { ...rest, combination: recommendation }
+  if (!isRecord(document)) return document
+  let record = document
+  if (record['combination'] === undefined && record['recommendation'] !== undefined) {
+    const { recommendation, ...rest } = record
+    record = { ...rest, combination: recommendation }
+  }
+  const comparison = record['comparison']
+  if (isRecord(comparison) && comparison['routes'] === undefined) {
+    record = { ...record, comparison: { ...comparison, routes: [] } }
+  }
+  return record
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 export type PlanProduct = z.infer<typeof planProductSchema>
 export type PlanGoal = z.infer<typeof planGoalSchema>

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { planRouteSchema } from './market-plan.ts'
 
 /**
  * `session` — attaches the caller's anonymous auth user to a participant on a case (§12, §28).
@@ -202,6 +203,8 @@ export const previewPlanResponseSchema = z.object({
     .nullable(),
   /** For a plan with no home comparison: the first products in it, one line each. */
   products: z.array(z.object({ name: z.string(), provider: z.string(), line: z.string() })).max(3),
+  /** For a home: every route to a home the comparison carried, in its order; empty otherwise. */
+  routes: z.array(planRouteSchema).max(6),
   expiresAt: z.string(),
 })
 export type PreviewPlanResponse = z.infer<typeof previewPlanResponseSchema>

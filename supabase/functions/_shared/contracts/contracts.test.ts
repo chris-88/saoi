@@ -1,11 +1,14 @@
 import {
   PLAN_PRODUCT_CATEGORIES,
   PLAN_PRODUCT_SOURCES,
+  PLAN_ROUTE_IDS,
+  PLAN_ROUTE_STATUSES,
   marketPlanSchema,
   upgradeStoredPlan,
 } from './market-plan.ts'
 import { exampleMarketPlan } from './market-plan.example.ts'
 import { claimPlanBodySchema } from './session.ts'
+import { HOME_ROUTE_IDS, HOME_ROUTE_STATUSES } from './market-tools.ts'
 import { MARKET_CATEGORIES, MARKET_SOURCES } from '../market/schema.ts'
 import { describe, expect, it } from 'vitest'
 import { awaitsCustomer, CARD_TYPES, cardSchema } from './cards.ts'
@@ -186,6 +189,11 @@ describe('the market plan (market-plan.ts)', () => {
   it('keeps its source and category lists equal to the market schema it repeats', () => {
     expect([...PLAN_PRODUCT_SOURCES]).toEqual([...MARKET_SOURCES])
     expect([...PLAN_PRODUCT_CATEGORIES]).toEqual([...MARKET_CATEGORIES])
+  })
+
+  it('keeps its route lists equal to the home calculator’s it repeats', () => {
+    expect([...PLAN_ROUTE_IDS]).toEqual([...HOME_ROUTE_IDS])
+    expect([...PLAN_ROUTE_STATUSES]).toEqual([...HOME_ROUTE_STATUSES])
   })
 
   it('strips fields it does not know rather than refusing the plan', () => {

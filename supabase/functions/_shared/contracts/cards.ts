@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { DOCUMENT_TYPES, PRODUCTS } from '../domain/journey.ts'
 import { APPLICATION_STATES } from '../domain/state-machine.ts'
+import { planRouteSchema } from './market-plan.ts'
 
 /**
  * Cards are what the model asks for and the server renders.
@@ -579,6 +580,11 @@ export const savedPlanCardSchema = z.object({
         .max(3),
     })
     .optional(),
+  /**
+   * For a home: every route to a home the comparison carried, in its order (2026-11-10). The app
+   * shows three, then "More routes (N)". Empty for other plans and for plans saved before then.
+   */
+  routes: z.array(planRouteSchema).max(6).default([]),
   createdAt: z.string(),
   dataCheckedAt: z.string(),
 })
