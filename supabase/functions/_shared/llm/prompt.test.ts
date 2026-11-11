@@ -177,6 +177,35 @@ describe('the case digest (§14, Invariant 2)', () => {
     expect(prompt).toContain('Your credit card application was approved')
   })
 
+  it('lists what they hold and the progress line, as facts to state, not to praise', () => {
+    const input = baseInput()
+    const progress =
+      "€33,000 of €47,000 saved; at €1,000 a month that is February 2028, €2,000 ahead of the plan's path."
+    const prompt = composeSystemPrompt({
+      ...input,
+      digest: {
+        ...input.digest,
+        holdings: {
+          lines: ['[id-1] BoI savings (savings): €33,000 held; noted 11 Dec 2026'],
+          progress,
+        },
+      },
+    })
+    expect(prompt).toContain('## What they hold')
+    expect(prompt).toContain('- [id-1] BoI savings (savings): €33,000 held; noted 11 Dec 2026')
+    expect(prompt).toContain(`Progress against the plan: ${progress}`)
+    expect(prompt).toMatch(/facts to state, not to praise/)
+    expect(prompt).toMatch(/open with where\s+things stand/)
+
+    const none = composeSystemPrompt({
+      ...input,
+      digest: { ...input.digest, holdings: { lines: [], progress: null } },
+    })
+    expect(none).toContain('- None entered yet.')
+    expect(none).not.toContain('Progress against the plan:')
+    expect(composeSystemPrompt(input)).not.toContain('## What they hold')
+  })
+
   it('states unseen plan alerts first, as facts, and lists the dates kept', () => {
     const input = baseInput()
     const alert =

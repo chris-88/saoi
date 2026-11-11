@@ -420,6 +420,15 @@ describe('what the digest is given, it keeps', () => {
     ])
   })
 
+  it('carries the holdings and the progress line through to the prompt', () => {
+    const holdings = {
+      lines: ['[id-1] BoI savings (savings): €33,000 held; noted 11 Dec 2026'],
+      progress:
+        "€33,000 of €47,000 saved; at €1,000 a month that is February 2028, €2,000 ahead of the plan's path.",
+    }
+    expect(buildCaseDigest(loaded(), { holdings }).holdings).toEqual(holdings)
+  })
+
   it('carries unseen plan alerts and reminders through to the prompt', () => {
     const alerts = { unseen: ['A rate in your plan changed: …'], reminders: ['AIB, 1 Mar 2027'] }
     expect(buildCaseDigest(loaded(), { alerts }).alerts).toEqual(alerts)

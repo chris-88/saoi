@@ -32,6 +32,8 @@ import { describeGoals, goalContextFor } from '@shared/db/goals.ts'
 import { loadClaimedPlans, savedPlanDigestLines } from '@shared/db/saved-plans.ts'
 import { loadCaseAlerts, loadOpenReminders } from '@shared/db/alerts.ts'
 import { shortDate } from '@shared/domain/market/alerts.ts'
+import { loadHoldings } from '@shared/db/holdings.ts'
+import { holdingLine, planProgress } from '@shared/domain/market/holdings.ts'
 import { participantFor, type LoadedCase } from '@shared/db/loaded-case.ts'
 
 /** The case and the catalogue Saoirse speaks from this turn. */
@@ -321,7 +323,8 @@ export async function buildGeneration(
    * the first: it is the reason the conversation exists, and "what was step two again?" is a
    * question for next week too.
    */
-  const broughtPlans = (await loadClaimedPlans(admin, turn.caseId)).map((claimed) => ({
+  const claimedPlans = await loadClaimedPlans(admin, turn.caseId)
+  const broughtPlans = claimedPlans.map((claimed) => ({
     title: claimed.plan.title,
     lines: savedPlanDigestLines(claimed),
   }))
@@ -343,8 +346,32 @@ export async function buildGeneration(
           reminders: reminders.map((reminder) => `${reminder.label}, ${shortDate(reminder.dueOn)}`),
         }
 
+  /*
+   * What they hold, entered by hand or seeded from the plan, and where that leaves the plan, so
+   * a return visit opens with where things stand. Facts to state, never to praise. Unreadable
+   * holdings never stop a turn.
+   */
+  const heldNow = await loadHoldings(admin, turn.caseId).catch(() => [])
+  const latestPlan = claimedPlans.at(-1)
+  const progress =
+    latestPlan === undefined
+      ? null
+      : planProgress(
+          latestPlan.plan,
+          heldNow,
+          new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/Dublin' }),
+        )
+  const holdings =
+    heldNow.length === 0 && progress === null
+      ? undefined
+      : {
+          lines: heldNow.map((holding) => `[${holding.id}] ${holdingLine(holding)}`),
+          progress: progress?.line ?? null,
+        }
+
   const digest = buildCaseDigest(loaded, {
     ...(alerts === undefined ? {} : { alerts }),
+    ...(holdings === undefined ? {} : { holdings }),
     sensitiveDisclosure: gate.suppressHumour,
     stage,
     acting: turn.trigger === 'action',

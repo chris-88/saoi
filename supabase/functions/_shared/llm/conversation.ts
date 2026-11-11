@@ -43,13 +43,18 @@ export type StageGuide = {
 }
 
 /** Available in every stage: recording what somebody says, and saying where things stand. */
-const ALWAYS: readonly ToolName[] = ['record_facts', 'set_reminder', 'show_status']
+const ALWAYS: readonly ToolName[] = [
+  'record_facts',
+  'set_reminder',
+  'record_holding',
+  'show_status',
+]
 /**
  * The two turns before anything can have started. Offered `show_status` there, the model
  * reached for it on the first and second turn of most conversations, was refused, and the
  * refusal's "nothing to track" leaked into the reply.
  */
-const RECORD_ONLY: readonly ToolName[] = ['record_facts', 'set_reminder']
+const RECORD_ONLY: readonly ToolName[] = ['record_facts', 'set_reminder', 'record_holding']
 
 /**
  * Open banking, simulated: once a conversation is past the fork. Not in the opening or while
