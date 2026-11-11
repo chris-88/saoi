@@ -71,7 +71,7 @@ describe('holdingsFromPlan', () => {
     }
     expect(holdingsFromPlan(plan, '2026-11-09')).toEqual([
       {
-        kind: 'savings',
+        kind: 'current',
         label: 'Current account',
         provider: 'AIB',
         productId: null,

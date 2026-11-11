@@ -47,17 +47,23 @@ const PLAN_DEBT_TO_HOLDING: Readonly<
 
 /** A savings line the customer described as a fixed-term deposit. */
 const FIXED_TERM = /\b(fixed[- ]?term|term deposit|fixed deposit)\b/i
+/** A savings line the customer described as a current account (money not in savings). */
+const CURRENT_ACCOUNT = /\bcurrent account\b/i
 
 const round2 = (amount: number): number => Math.round(amount * 100) / 100
 
 /**
  * The plan's situation as the case's first holdings: each savings line (a `deposit` when its
- * label says fixed term, else `savings`) and each debt (kind mapped; `other` is `other_debt`),
+ * label says fixed term, `current` when it says current account, else `savings`) and each debt (kind mapped; `other` is `other_debt`),
  * noted on `notedOn` (the plan's date) with `source: 'plan'`.
  */
 export function holdingsFromPlan(plan: MarketPlan, notedOn: string): HoldingDraft[] {
   const savings = plan.situation.savings.map((account): HoldingDraft => ({
-    kind: FIXED_TERM.test(account.label) ? 'deposit' : 'savings',
+    kind: FIXED_TERM.test(account.label)
+      ? 'deposit'
+      : CURRENT_ACCOUNT.test(account.label)
+        ? 'current'
+        : 'savings',
     label: account.label,
     provider: account.provider ?? null,
     productId: null,
