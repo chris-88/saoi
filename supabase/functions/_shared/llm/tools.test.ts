@@ -90,10 +90,15 @@ describe('the model has no tool that takes an action', () => {
     // `set_reminder` is the twentieth and records, like `record_facts`: a date the customer
     // gave (their fix ends, a deposit matures). It commits them to nothing and starts nothing;
     // the alerts that follow state the date and the market, and pick nothing.
+    //
+    // `record_holding` is the twenty-first and records too: an account or a debt the customer
+    // stated, with its balance. It opens, moves and closes nothing; progress against the plan
+    // is worked out from it by the server and stated as a fact.
     expect([...TOOL_NAMES].sort()).toEqual([
       'propose_plan',
       'record_facts',
       'record_form_answers',
+      'record_holding',
       'request_upload',
       'set_reminder',
       'show_accounts',

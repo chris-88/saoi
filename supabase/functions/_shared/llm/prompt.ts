@@ -541,6 +541,15 @@ export type CaseDigest = {
     readonly reminders: readonly string[]
   }
   /**
+   * The accounts and debts on the case ("[id] label (kind, provider): €12,000 held at 2%; noted
+   * 11 Nov 2026"), from `holdings`, and the progress line against the claimed plan, worked out by
+   * `planProgress`. Null progress: no plan, or no deposit or debt goal in it.
+   */
+  readonly holdings?: {
+    readonly lines: readonly string[]
+    readonly progress: string | null
+  }
+  /**
    * Whether what they asked for is what suits them, worked out from what they have said about
    * the amount and how soon they mean to repay it. Already decided; the figures are not yours.
    */
@@ -1030,6 +1039,24 @@ function digestSection(digest: CaseDigest): string {
       '## Dates they asked to be reminded of',
       'Kept with `set_reminder`. Do not set one again for the same date.',
       ...alerts.reminders.map((line) => `- ${line}`),
+      '',
+    )
+  }
+
+  const holdings = digest.holdings
+  if (holdings !== undefined) {
+    lines.push(
+      '## What they hold',
+      'Accounts and debts they entered, said in this conversation (`record_holding`) or brought',
+      'in the plan, each with the day its balance was true. When they state a new balance or a',
+      'new account or debt, record it with `record_holding` (pass the id in brackets to change',
+      'one listed here). These are facts to state, not to praise: no "well done", no',
+      'encouragement, nothing about what they should do next. On a return visit, open with where',
+      'things stand: the progress line, in this wording or close to it.',
+      ...(holdings.lines.length === 0
+        ? ['- None entered yet.']
+        : holdings.lines.map((line) => `- ${line}`)),
+      ...(holdings.progress === null ? [] : [`Progress against the plan: ${holdings.progress}`]),
       '',
     )
   }

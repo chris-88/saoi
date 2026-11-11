@@ -208,6 +208,8 @@ function withComparison(
       kind: 'home',
       headline: clip(home.headline, 300),
       priceEur: home.price,
+      neededAtKeysEur: home.neededAtKeysEur,
+      keysOn: home.keysOn,
       sortBy: home.sortBy,
       sortedBy: clip(home.sortedBy, 200),
       filters: home.filters.slice(0, 6).map((filter) => clip(filter, 200)),

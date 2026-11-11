@@ -32,6 +32,7 @@ import {
   alertRoutes,
   type AlertRouteOptions,
 } from './routes/alerts/index.ts'
+import { holdingRoutes, type HoldingRouteOptions } from './routes/holdings/index.ts'
 import type { CaseStore } from './store/cases.ts'
 import type { PartnerStore } from './store/partners.ts'
 import type { SessionStore } from './store/sessions.ts'
@@ -53,6 +54,8 @@ export type AppDeps = {
   readonly market?: MarketRouteOptions
   /** Plan alerts and reminders. Unset, `/api/cases/{id}/alerts`, `/reminders` and the run are not mounted. */
   readonly alerts?: AlertRouteOptions
+  /** Holdings. Unset, `/api/cases/{id}/holdings` is not mounted. */
+  readonly holdings?: HoldingRouteOptions
   readonly config?: Partial<RouteConfig>
   readonly version: string
   /** Browser origins allowed by CORS. Empty or unset denies every origin. */
@@ -188,6 +191,7 @@ export function createApp(deps: AppDeps) {
   if (deps.turn) app.route('/', turnRoutes(deps.turn))
   // Before `caseRoutes` too: they carry their own `requireCaseAccess` per route.
   if (deps.alerts) app.route('/', alertRoutes(deps.alerts))
+  if (deps.holdings) app.route('/', holdingRoutes(deps.holdings))
   app.route('/', caseRoutes)
   if (deps.plans) app.route('/', planRoutes(deps.plans))
   if (deps.market) app.route('/', marketRoutes(deps.market))

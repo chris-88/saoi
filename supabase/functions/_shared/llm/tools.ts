@@ -3,6 +3,7 @@ import { GOAL_IDS } from '../domain/goals/types.ts'
 import { FACT_KEYS, type FactKey } from '../domain/facts.ts'
 import { PRODUCTS } from '../domain/journey.ts'
 import { REMINDER_KINDS } from '../contracts/alerts.ts'
+import { HOLDING_KINDS } from '../contracts/holdings.ts'
 
 /**
  * The tools Saoirse may call.
@@ -274,9 +275,37 @@ export const setReminderInput = z.object({
   label: z.string().trim().min(1).max(120),
 })
 
+/**
+ * An account or a debt the customer stated: "€12,000 in a BoI savings account at 2%", "the
+ * mortgage is €240,000 fixed until March 2027". Recorded as they said it, like a fact; a
+ * fixed-until date keeps a reminder. `holdingId` (from the digest) updates one already held.
+ */
+export const recordHoldingInput = z.object({
+  /** Set to change a holding the digest lists; left out, a new one is added. */
+  holdingId: z.uuid().optional(),
+  kind: z.enum(HOLDING_KINDS),
+  /** In their words: "BoI savings", "AIB mortgage". */
+  label: z.string().trim().min(1).max(80),
+  /** What is held, or what is owed, in euro: always positive. */
+  balance: z.number().min(0).max(9_999_999_999.99),
+  /** AER for an account; APR or the mortgage rate for a debt. */
+  ratePct: z.number().min(0).max(100).optional(),
+  /** Each month: saved in, for an account; the repayment, for a debt. */
+  monthlyAmountEur: z.number().min(0).max(9_999_999_999.99).optional(),
+  /** YYYY-MM-DD the fixed rate ends or the deposit matures. Ask for the day if only a month. */
+  fixedUntil: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'expected YYYY-MM-DD')
+    .optional(),
+  provider: z.string().trim().min(1).max(60).optional(),
+  /** A market product id, only when the digest or a result named one. */
+  productId: z.string().trim().min(1).max(80).optional(),
+})
+
 export const TOOL_INPUTS = {
   record_facts: recordFactsInput,
   set_reminder: setReminderInput,
+  record_holding: recordHoldingInput,
   record_form_answers: recordFormAnswersInput,
   show_form_declarations: showFormDeclarationsInput,
   show_form_upload: showFormUploadInput,
@@ -307,6 +336,19 @@ export type ToolDefinition = {
 }
 
 export const TOOLS: readonly ToolDefinition[] = [
+  {
+    name: 'record_holding',
+    description:
+      'Record an account or a debt the customer states with a balance: savings or a current ' +
+      'account ("€12,000 in a BoI savings account at 2%"), a fixed-term deposit, a credit card, ' +
+      'a loan, car finance, an overdraft or a mortgage ("the mortgage is €240,000 fixed until ' +
+      'March 2027"). Only figures they actually gave; never estimate one. To change one the ' +
+      'digest lists under "What they hold", pass its holdingId with its kind, label and the new ' +
+      'balance. fixedUntil is YYYY-MM-DD (ask for the day if they gave only a month); Saoi then ' +
+      'keeps a reminder for it. Afterwards say what was recorded and the progress line, as ' +
+      'facts: no praise, no encouragement, no suggestion of what to do next.',
+    schema: recordHoldingInput,
+  },
   {
     name: 'set_reminder',
     description:

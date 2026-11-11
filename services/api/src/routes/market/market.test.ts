@@ -42,6 +42,7 @@ function fakeDrafts(init: { heldToday?: number; failing?: boolean } = {}) {
     savedSince: () => Promise.resolve(init.heldToday ?? 0),
     findByTokenHash: () => Promise.resolve(null),
     caseHasPlan: () => Promise.resolve(false),
+    claimedPlan: () => Promise.resolve(null),
     markClaimed: () => Promise.resolve(false),
     recordClaim: () => Promise.resolve({ facts: [] }),
   }

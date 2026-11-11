@@ -1,6 +1,7 @@
 import type { Database, Json } from '@shared/db/database.types.ts'
 import { mustWrite, writeEvent } from '@shared/db/case-repository.ts'
-import { factsFromPlan } from '@shared/db/saved-plans.ts'
+import { type ClaimedPlan, factsFromPlan, loadClaimedPlans } from '@shared/db/saved-plans.ts'
+import { seedHoldingsFromPlan } from '@shared/db/holdings.ts'
 import { DATA_NOTICE_EVENT } from '@shared/llm/data-notice.ts'
 import type { MarketPlan } from '@shared/contracts/market-plan.ts'
 import type { Db } from './client.ts'
@@ -40,6 +41,8 @@ export type PlanStore = {
   findByTokenHash(tokenHash: string): Promise<StoredPlan | null>
   /** Whether any plan has been claimed into this case. */
   caseHasPlan(caseId: string): Promise<boolean>
+  /** The plan most recently claimed into this case, parsed; null when there is none. */
+  claimedPlan(caseId: string): Promise<ClaimedPlan | null>
   /**
    * Claims the plan for this user and case, only if nobody has and it has not expired. True
    * when this call won.
@@ -47,7 +50,8 @@ export type PlanStore = {
   markClaimed(input: { planId: string; userId: string; caseId: string }): Promise<boolean>
   /**
    * Everything the claim records on the case: the situation's facts that map cleanly
-   * (`customer_stated`, keys the case does not already hold), `plan_saved` and `plan_claimed`,
+   * (`customer_stated`, keys the case does not already hold), the first holdings from the
+   * situation's savings and debts (once per case), `plan_saved` and `plan_claimed`,
    * and `last_seen_at` when the case has none, so the claim is news the next turn narrates.
    */
   recordClaim(input: {
@@ -129,6 +133,10 @@ export function supabasePlanStore(db: Db): PlanStore {
       return (result.count ?? 0) > 0
     },
 
+    async claimedPlan(caseId) {
+      return (await loadClaimedPlans(db, caseId)).at(-1) ?? null
+    },
+
     async markClaimed({ planId, userId, caseId }) {
       const now = new Date().toISOString()
       const result = await db
@@ -188,6 +196,24 @@ export function supabasePlanStore(db: Db): PlanStore {
             payload: { key: fact.key, from: 'saved_plan' },
           })
         }
+      }
+
+      // The plan's savings and debts become the case's first holdings, noted on the plan's
+      // date, so the customer edits rather than starts again. Once per case; a failure is
+      // logged and never undoes the claim.
+      try {
+        await seedHoldingsFromPlan(db, {
+          caseId,
+          planId,
+          plan,
+          notedOn: new Date(plan.createdAt).toLocaleDateString('en-CA', {
+            timeZone: 'Europe/Dublin',
+          }),
+        })
+      } catch (error) {
+        console.error(
+          `holdings not seeded from plan ${planId}: ${error instanceof Error ? error.message : 'unknown'}`,
+        )
       }
 
       await writeEvent(db, {

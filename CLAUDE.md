@@ -84,12 +84,14 @@ saoi-api, services/api (Node, Hono; service role; holds ANTHROPIC_API_KEY, VAPID
   session       anonymous start, case listing and switching, participant claiming
   plans         POST /api/plans (public: the MCP saves a plan, gets a one-time link);
                 POST /api/plans/claim (the app opens it into a conversation)
+  holdings      /api/cases/{id}/holdings: accounts and debts by hand, progress
+                against the claimed plan
   partner       join via invite, scoped DTO reads, partner task submission
   admin         simulate events, send notification, reset, persona/domain
                 config, case inspection, metrics
 
 Postgres
-  37 tables. Core: cases, participants, participant_sessions, customers
+  38 tables. Core: cases, participants, participant_sessions, customers
   (synthetic bank-held), facts, messages, events, consents, tokens.
   Applications: applications, application_requests, application_confirmations,
   documents, product_interests.
@@ -97,6 +99,7 @@ Postgres
   need_decisions, saved_plans (plans made in the customer's own AI).
   Alerts: plan_alerts (rate changed, product withdrawn, reminder stage),
   reminders (dates the customer gave), alert_runs (what each run covered).
+  Holdings: holdings (accounts and debts entered by hand, seeded from a claimed plan).
   Forms: form_applications, form_answers.
   Config and ops: persona_config, domain_config, catalogue_overrides,
   product_catalogue, mortgage_rates, market_products,
@@ -496,6 +499,37 @@ nudge: no "switch", "should", "better" or "recommended" (`alerts.test.ts` holds 
   what it returns seen. A turn's digest carries unseen alerts ("Since you were here:") and the
   open reminders; they are marked seen once the reply is saved.
 
+### Holdings
+
+Design `2026-11-11-saoi-holdings-design` (vault). Accounts and debts entered by hand, so the
+saved plan moves; not open banking (`linked_accounts` stays the simulated aggregator).
+
+- **Stored** in `holdings` (nine kinds: three accounts, `current`, `savings`, `deposit`, and six
+  debts; balance, rate, monthly amount, `fixed_until`, `noted_on`, source `plan`, `customer` or
+  `saoirse`), soft-deleted. Contract
+  `_shared/contracts/holdings.ts`; writes in `_shared/db/holdings.ts`, shared by the routes and
+  the turn.
+- **Seeded** once per case when a plan is claimed (`recordClaim`): `holdingsFromPlan` turns the
+  situation's savings (`deposit` when the label says fixed term, `current` when it says current
+  account) and debts into holdings noted on the plan's date. A seed failure is logged and never
+  undoes the claim.
+- **Routes** (primary only): `GET /api/cases/{id}/holdings` (holdings and `progress`),
+  `POST …/holdings`, `PATCH …/holdings/{holdingId}`, `DELETE …/holdings/{holdingId}`.
+- **Reminders**: a `fixed_until` of today or later keeps a `reminders` row (`fixed_rate_ends` for
+  a mortgage or loan, `deposit_matures` for a deposit, `other` else; `holdings.reminder_id`); a
+  moved date replaces it, so every stage is sent for the new date; clearing the date or deleting
+  the holding deletes it.
+- **Progress** (`planProgress`, `_shared/domain/market/holdings.ts`, pure): for the claimed
+  plan's leading house-deposit goal, held now (current, savings and deposit holdings, else the
+  plan's savings) against the cash needed at the keys (`comparison.neededAtKeysEur`, carried in
+  plans saved from 2026-11-11, else the goal's target), the month at this pace before interest
+  (`reachedBeforeInterest`, the keys-date arithmetic) and the difference from the plan's own
+  path (its savings plus its monthly saving per month since it was made). For a debt goal, owed
+  now against the plan and the months left at the repayment. One `line`, a fact: no praise, no
+  instruction (`holdings.test.ts` holds every line to it).
+- **Saoirse**: `record_holding`, and the digest's "What they hold" (each holding with its id and
+  noted date, and the progress line), which a return visit opens with.
+
 ### Open banking, simulated
 
 A stand-in aggregator, Nexus, links the accounts a customer holds at other banks (§6, §53).
@@ -591,8 +625,11 @@ Every tool input is Zod-validated before any effect. Invalid input returns a too
 - `set_reminder`: a date the customer gave (their fixed rate ends, a deposit matures, or
   another money date), recorded like a fact in `reminders`. Refused when the date has passed;
   Saoirse asks for the day when only a month was given. No card.
+- `record_holding`: an account or a debt the customer stated with its balance, recorded in
+  `holdings` (source `saoirse`); `holdingId` from the digest changes one held. A fixed-until date
+  keeps its reminder. The result carries the progress line, stated as a fact. No card.
 
-Twenty tools. **Which ones a turn is offered is decided by the conversation's stage** - the
+Twenty-one tools. **Which ones a turn is offered is decided by the conversation's stage** - the
 form tools are gated further on a form existing. Withholding a tool is enforcement; telling the
 model not to use one is advice.
 

@@ -18,6 +18,8 @@ import { supabaseStore } from '../../src/store/cases.ts'
 import { supabasePartnerStore } from '../../src/store/partners.ts'
 import { supabaseSessionStore } from '../../src/store/sessions.ts'
 import { supabaseUploadStore } from '../../src/store/uploads.ts'
+import { supabaseHoldingStore } from '../../src/store/holdings.ts'
+import { supabasePlanStore } from '../../src/store/plans.ts'
 import { createAdminStores } from '../../src/store/admin/factory.ts'
 import { fixtureModels } from '../../src/turn/generate.ts'
 import { createTurnRunner } from '../../src/turn/turn.ts'
@@ -91,6 +93,7 @@ export function buildApp(options: { audienceMaxCases?: number; fixture?: string 
     sessions: supabaseSessionStore(db),
     partners: supabasePartnerStore(db),
     uploads: supabaseUploadStore(db),
+    holdings: { store: supabaseHoldingStore(db), plans: supabasePlanStore(db) },
     admin: createAdminStores(db, {
       saoiModel: 'claude-sonnet-5-5',
       gateModel: 'claude-haiku-4-5-20251001',
@@ -153,7 +156,7 @@ export type Reply = { status: number; body: any }
 
 export async function request(
   app: App,
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   options: { token?: string | null; body?: unknown; headers?: Record<string, string> } = {},
 ): Promise<Reply> {

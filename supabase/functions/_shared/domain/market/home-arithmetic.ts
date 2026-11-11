@@ -77,10 +77,22 @@ export function keysAt(
   const needed = round2(
     Math.max(0, deposit + stamp + BUYING_COSTS.legalAndSurveyEur - input.helpToBuyEur),
   )
-  let reachedOn: string | null = null
-  if (input.savedEur >= needed) reachedOn = addMonths(asOf, 0)
-  else if (input.monthlyEur > 0) {
-    reachedOn = addMonths(asOf, Math.ceil((needed - input.savedEur) / input.monthlyEur))
-  }
+  const reachedOn = reachedBeforeInterest(input.savedEur, needed, input.monthlyEur, asOf)
   return { loanEur: loan, depositEur: deposit, stampDutyEur: stamp, neededEur: needed, reachedOn }
+}
+
+/**
+ * YYYY-MM an amount is held, from what is saved now and a monthly saving, before interest: this
+ * month when it is already held, else whole months of saving from this one; null when nothing
+ * is saved each month. The arithmetic behind every keys date (and progress against a plan).
+ */
+export function reachedBeforeInterest(
+  savedEur: number,
+  neededEur: number,
+  monthlyEur: number,
+  asOf: AsOf,
+): string | null {
+  if (savedEur >= neededEur) return addMonths(asOf, 0)
+  if (monthlyEur > 0) return addMonths(asOf, Math.ceil((neededEur - savedEur) / monthlyEur))
+  return null
 }

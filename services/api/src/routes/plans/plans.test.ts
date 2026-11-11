@@ -52,6 +52,7 @@ function fakePlans(init: { savedToday?: number; withPlan?: string[] } = {}) {
     savedSince: () => Promise.resolve(init.savedToday ?? 0),
     findByTokenHash: (hash) => Promise.resolve(rows.get(hash) ?? null),
     caseHasPlan: (caseId) => Promise.resolve(withPlan.has(caseId)),
+    claimedPlan: () => Promise.resolve(null),
     markClaimed: ({ planId, userId, caseId }) => {
       const row = [...rows.values()].find((candidate) => candidate.id === planId)
       if (row === undefined || row.claimedAt !== null) return Promise.resolve(false)

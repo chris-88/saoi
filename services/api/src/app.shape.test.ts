@@ -329,6 +329,29 @@ describe('OpenAPI document: alerts', () => {
   })
 })
 
+describe('OpenAPI document: holdings', () => {
+  it('validates and names the holding components', async () => {
+    const { app } = appWith({
+      holdings: { store: {} as never, plans: { claimedPlan: () => Promise.resolve(null) } },
+    })
+    const document = (await (await app.request('/openapi.json')).json()) as {
+      paths: Record<string, Record<string, { tags?: string[] }>>
+      components: { schemas: Record<string, unknown> }
+    }
+    expect((await new Validator().validate(document)).valid).toBe(true)
+    expect(Object.keys(document.paths['/api/cases/{caseId}/holdings'] ?? {}).sort()).toEqual([
+      'get',
+      'post',
+    ])
+    expect(
+      Object.keys(document.paths['/api/cases/{caseId}/holdings/{holdingId}'] ?? {}).sort(),
+    ).toEqual(['delete', 'patch'])
+    expect(Object.keys(document.components.schemas)).toEqual(
+      expect.arrayContaining(['CaseHoldings', 'CreateHolding', 'UpdateHolding', 'Holding']),
+    )
+  })
+})
+
 describe('OpenAPI document: the conversation turn', () => {
   it('validates, and documents the stream with its frames as a named component', async () => {
     const { app } = appWith({ turn: { run: () => Promise.reject(new Error('not called')) } })

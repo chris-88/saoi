@@ -12,6 +12,7 @@ import {
   REMINDER_KINDS,
   REMINDER_STAGES,
 } from '../supabase/functions/_shared/contracts/alerts.ts'
+import { HOLDING_KINDS, HOLDING_SOURCES } from '../supabase/functions/_shared/contracts/holdings.ts'
 import {
   GAP_MONTHS_BANDS,
   INCOME_BANDS,
@@ -179,5 +180,11 @@ describe('the schema keeps the invariants', () => {
     expect(sorted(checkConstraintLiterals('plan_alerts', 'kind'))).toEqual(sorted(ALERT_KINDS))
     expect(sorted(checkConstraintLiterals('reminders', 'kind'))).toEqual(sorted(REMINDER_KINDS))
     expect(migrations).toMatch(new RegExp(`stage in \\(${REMINDER_STAGES.join(', ')}\\)`))
+  })
+
+  it('accepts exactly the holding kinds and sources', () => {
+    const sorted = (values: readonly string[]) => [...values].sort()
+    expect(sorted(checkConstraintLiterals('holdings', 'kind'))).toEqual(sorted(HOLDING_KINDS))
+    expect(sorted(checkConstraintLiterals('holdings', 'source'))).toEqual(sorted(HOLDING_SOURCES))
   })
 })
