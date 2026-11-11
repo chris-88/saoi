@@ -839,6 +839,63 @@ export type Database = {
           },
         ]
       }
+      holdings: {
+        Row: {
+          balance: number
+          case_id: string
+          created_at: string
+          deleted_at: string | null
+          fixed_until: string | null
+          id: string
+          kind: string
+          label: string
+          monthly_amount_eur: number | null
+          noted_on: string
+          product_id: string | null
+          provider: string | null
+          rate_pct: number | null
+          reminder_id: string | null
+          source: string
+          updated_at: string
+        }
+        Insert: {
+          balance: number
+          case_id: string
+          created_at?: string
+          deleted_at?: string | null
+          fixed_until?: string | null
+          id?: string
+          kind: string
+          label: string
+          monthly_amount_eur?: number | null
+          noted_on: string
+          product_id?: string | null
+          provider?: string | null
+          rate_pct?: number | null
+          reminder_id?: string | null
+          source: string
+          updated_at?: string
+        }
+        Update: {
+          balance?: number
+          case_id?: string
+          created_at?: string
+          deleted_at?: string | null
+          fixed_until?: string | null
+          id?: string
+          kind?: string
+          label?: string
+          monthly_amount_eur?: number | null
+          noted_on?: string
+          product_id?: string | null
+          provider?: string | null
+          rate_pct?: number | null
+          reminder_id?: string | null
+          source?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       linked_accounts: {
         Row: {
           account_type: string
