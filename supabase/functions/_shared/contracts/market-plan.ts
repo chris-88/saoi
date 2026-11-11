@@ -326,6 +326,13 @@ export const marketPlanSchema = z
         kind: z.literal('home'),
         headline: text(300),
         priceEur: eur,
+        /**
+         * The cash needed at the keys (deposit, stamp duty, fees, less Help to Buy counted) and
+         * the month it is held at the plan's pace, as the comparison worked them out
+         * (2026-11-11, for progress against the plan). Plans saved before then have neither.
+         */
+        neededAtKeysEur: eur.optional(),
+        keysOn: monthOrDay.nullable().optional(),
         sortBy: z.enum(['five_year_cost', 'keys_date', 'monthly_repayment']),
         sortedBy: text(200),
         filters: z.array(text(200)).max(6).default([]),
