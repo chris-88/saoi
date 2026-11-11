@@ -304,6 +304,31 @@ describe('OpenAPI document: admin API', () => {
   })
 })
 
+describe('OpenAPI document: alerts', () => {
+  it('validates, names the alert components, and leaves the internal run out', async () => {
+    const { app } = appWith({
+      alerts: {
+        store: {} as never,
+        market: () => Promise.reject(new Error('not called')),
+        internalKey: 'internal-key-for-tests',
+      },
+    })
+    const document = (await (await app.request('/openapi.json')).json()) as {
+      paths: Record<string, Record<string, { tags?: string[] }>>
+      components: { schemas: Record<string, unknown> }
+    }
+    expect((await new Validator().validate(document)).valid).toBe(true)
+    expect(document.paths['/api/cases/{caseId}/alerts']?.['get']?.tags).toEqual(['alerts'])
+    expect(Object.keys(document.paths['/api/cases/{caseId}/reminders/{reminderId}'] ?? {})).toEqual(
+      ['delete'],
+    )
+    expect(Object.keys(document.paths).some((path) => path.includes('internal'))).toBe(false)
+    expect(Object.keys(document.components.schemas)).toEqual(
+      expect.arrayContaining(['CaseAlerts', 'CreateReminder', 'Reminder']),
+    )
+  })
+})
+
 describe('OpenAPI document: the conversation turn', () => {
   it('validates, and documents the stream with its frames as a named component', async () => {
     const { app } = appWith({ turn: { run: () => Promise.reject(new Error('not called')) } })

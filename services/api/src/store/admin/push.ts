@@ -13,6 +13,8 @@ export interface AdminPushStore {
     caseId: string
     title?: string | undefined
     body?: string | undefined
+    /** Who sent it, for the event: the console (default) or the alerts run. */
+    actor?: 'admin' | 'system' | undefined
   }): Promise<{ message: string; url: string; subscriptions: number; delivered: number }>
 }
 
@@ -22,7 +24,7 @@ export function supabaseAdminPushStore(
   send: PushSender = sendPush,
 ): AdminPushStore {
   return {
-    async sendNotification({ caseId, title: askedTitle, body }) {
+    async sendNotification({ caseId, title: askedTitle, body, actor = 'admin' }) {
       const vapid = externals.vapid
       if (vapid === undefined) {
         throw new ApiError('upstream_unavailable', 'Push is not configured.')
@@ -90,7 +92,7 @@ export function supabaseAdminPushStore(
       await writeEvent(db, {
         caseId,
         type: 'notification_sent',
-        actor: 'admin',
+        actor,
         payload: {
           channel: 'push',
           subscriptions: targets.length,

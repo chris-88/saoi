@@ -173,6 +173,7 @@ Errors are `{ ok: false, error: { code, message, details?, requestId } }`. Anyth
 | `PRESENTER_KEY`                             | no        | Opens the switcher to every case for a device sending it as `X-Presenter-Key`. Unset, nobody is a presenter. Compared in constant time. |
 | `AUDIENCE_MAX_CASES`                        | no        | Customer cases a day before a new one is refused, default 50.                                                                           |
 | `APP_BASE_URL`                              | no        | Where saoi-web is served; the partner invite link is `${APP_BASE_URL}/#/join/<token>`.                                                  |
+| `INTERNAL_JOB_KEY`                          | no        | 16+ characters. `POST /api/internal/alerts/run` needs it as `X-Internal-Key` (constant-time compare). Unset, that route answers 404.    |
 | `ANTHROPIC_API_KEY`                         | for turns | Required unless `LLM_PROVIDER=fixture`. `SAOI_MODEL` and `GATE_MODEL` pick the models.                                                  |
 | `LLM_PROVIDER`, `LLM_FIXTURE`               | no        | `anthropic` (default) or `fixture`, which replays a script and calls nothing. `LLM_FIXTURE` defaults to `opening`.                      |
 | `TURN_TIMEOUT_MS`, `TURN_MAX_OUTPUT_TOKENS` | no        | Wall clock for a whole turn (default 85000, max 95000) and the output ceiling of one round (default 3072).                              |

@@ -27,6 +27,11 @@ import {
   marketRoutes,
   type MarketRouteOptions,
 } from './routes/market/index.ts'
+import {
+  INTERNAL_ROUTE_PREFIX,
+  alertRoutes,
+  type AlertRouteOptions,
+} from './routes/alerts/index.ts'
 import type { CaseStore } from './store/cases.ts'
 import type { PartnerStore } from './store/partners.ts'
 import type { SessionStore } from './store/sessions.ts'
@@ -46,6 +51,8 @@ export type AppDeps = {
   readonly plans?: PlanRouteOptions
   /** The public comparison API. Unset, `/api/market/*` and `/api/calc/*` are not mounted. */
   readonly market?: MarketRouteOptions
+  /** Plan alerts and reminders. Unset, `/api/cases/{id}/alerts`, `/reminders` and the run are not mounted. */
+  readonly alerts?: AlertRouteOptions
   readonly config?: Partial<RouteConfig>
   readonly version: string
   /** Browser origins allowed by CORS. Empty or unset denies every origin. */
@@ -59,7 +66,9 @@ export type AppDeps = {
 const PUBLIC_ROUTES: ReadonlySet<string> = new Set(['POST /api/plans', 'POST /api/plans/preview'])
 const isPublic = (method: string, path: string): boolean =>
   PUBLIC_ROUTES.has(`${method} ${path.replace(/\/+$/, '')}`) ||
-  MARKET_ROUTE_PREFIXES.some((prefix) => path.startsWith(prefix))
+  MARKET_ROUTE_PREFIXES.some((prefix) => path.startsWith(prefix)) ||
+  // Machine routes: no user token; each checks `X-Internal-Key` and answers 404 without one set.
+  path.startsWith(INTERNAL_ROUTE_PREFIX)
 
 const unlessPublic = (inner: MiddlewareHandler<AppEnv>) =>
   createMiddleware<AppEnv>((c, next) =>
@@ -177,6 +186,8 @@ export function createApp(deps: AppDeps) {
   app.route('/', documentRoutes)
   // Before `caseRoutes`, whose guard admits the primary only: a partner is refused here with 403.
   if (deps.turn) app.route('/', turnRoutes(deps.turn))
+  // Before `caseRoutes` too: they carry their own `requireCaseAccess` per route.
+  if (deps.alerts) app.route('/', alertRoutes(deps.alerts))
   app.route('/', caseRoutes)
   if (deps.plans) app.route('/', planRoutes(deps.plans))
   if (deps.market) app.route('/', marketRoutes(deps.market))

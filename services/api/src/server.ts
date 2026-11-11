@@ -11,6 +11,7 @@ import { supabaseUploadStore } from './store/uploads.ts'
 import { supabasePlanStore } from './store/plans.ts'
 import { supabaseCalculatorRunStore } from './store/calculator-runs.ts'
 import { supabaseMarketStore } from './store/market.ts'
+import { supabaseAlertStore } from './store/alerts.ts'
 import { createAdminStores } from './store/admin/factory.ts'
 import { anthropicModels, fixtureModels } from './turn/generate.ts'
 import { createTurnRunner } from './turn/turn.ts'
@@ -35,6 +36,18 @@ const turnModels =
         })
 
 const planStore = supabasePlanStore(db)
+const marketStore = supabaseMarketStore(db)
+const vapid =
+  env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_D && env.VAPID_SUBJECT
+    ? { publicKey: env.VAPID_PUBLIC_KEY, privateD: env.VAPID_PRIVATE_D, subject: env.VAPID_SUBJECT }
+    : undefined
+const adminStores = createAdminStores(db, {
+  ...(env.ANTHROPIC_API_KEY === undefined ? {} : { anthropicApiKey: env.ANTHROPIC_API_KEY }),
+  saoiModel: env.SAOI_MODEL,
+  gateModel: env.GATE_MODEL,
+  appBaseUrl: env.APP_BASE_URL,
+  ...(vapid === undefined ? {} : { vapid }),
+})
 
 const app = createApp({
   version: env.APP_VERSION,
@@ -52,25 +65,23 @@ const app = createApp({
   uploads: supabaseUploadStore(db),
   plans: { store: planStore, appBaseUrl: env.APP_BASE_URL },
   market: {
-    store: supabaseMarketStore(db),
+    store: marketStore,
     runs: supabaseCalculatorRunStore(db),
     drafts: { store: planStore, appBaseUrl: env.APP_BASE_URL },
   },
-  admin: createAdminStores(db, {
-    ...(env.ANTHROPIC_API_KEY === undefined ? {} : { anthropicApiKey: env.ANTHROPIC_API_KEY }),
-    saoiModel: env.SAOI_MODEL,
-    gateModel: env.GATE_MODEL,
-    appBaseUrl: env.APP_BASE_URL,
-    ...(env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_D && env.VAPID_SUBJECT
-      ? {
-          vapid: {
-            publicKey: env.VAPID_PUBLIC_KEY,
-            privateD: env.VAPID_PRIVATE_D,
-            subject: env.VAPID_SUBJECT,
-          },
-        }
-      : {}),
-  }),
+  alerts: {
+    store: supabaseAlertStore(db),
+    market: () => marketStore.load(),
+    // The console's sender, so there is one web-push path; unset VAPID keeps alerts for the visit.
+    ...(vapid === undefined
+      ? {}
+      : {
+          push: ({ caseId, title, body }) =>
+            adminStores.push.sendNotification({ caseId, title, body, actor: 'system' }),
+        }),
+    internalKey: env.INTERNAL_JOB_KEY ?? '',
+  },
+  admin: adminStores,
   turn: {
     run: createTurnRunner({
       db,
