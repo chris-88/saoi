@@ -89,12 +89,14 @@ saoi-api, services/api (Node, Hono; service role; holds ANTHROPIC_API_KEY, VAPID
                 config, case inspection, metrics
 
 Postgres
-  34 tables. Core: cases, participants, participant_sessions, customers
+  37 tables. Core: cases, participants, participant_sessions, customers
   (synthetic bank-held), facts, messages, events, consents, tokens.
   Applications: applications, application_requests, application_confirmations,
   documents, product_interests.
   Plans and discovery: plans, plan_milestones, plan_checkins, plan_watches,
   need_decisions, saved_plans (plans made in the customer's own AI).
+  Alerts: plan_alerts (rate changed, product withdrawn, reminder stage),
+  reminders (dates the customer gave), alert_runs (what each run covered).
   Forms: form_applications, form_answers.
   Config and ops: persona_config, domain_config, catalogue_overrides,
   product_catalogue, mortgage_rates, market_products,

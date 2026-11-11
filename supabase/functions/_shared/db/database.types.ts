@@ -84,6 +84,24 @@ export type Database = {
         }
         Relationships: []
       }
+      alert_runs: {
+        Row: {
+          id: string
+          ran_at: string
+          through_at: string
+        }
+        Insert: {
+          id?: string
+          ran_at?: string
+          through_at: string
+        }
+        Update: {
+          id?: string
+          ran_at?: string
+          through_at?: string
+        }
+        Relationships: []
+      }
       application_confirmations: {
         Row: {
           application_id: string
@@ -1192,6 +1210,54 @@ export type Database = {
         }
         Relationships: []
       }
+      plan_alerts: {
+        Row: {
+          body: string
+          case_id: string
+          created_at: string
+          data: Json
+          id: string
+          kind: string
+          product_id: string | null
+          product_version: number | null
+          reminder_id: string | null
+          seen_at: string | null
+          sent_at: string | null
+          stage: number | null
+          title: string
+        }
+        Insert: {
+          body: string
+          case_id: string
+          created_at?: string
+          data?: Json
+          id?: string
+          kind: string
+          product_id?: string | null
+          product_version?: number | null
+          reminder_id?: string | null
+          seen_at?: string | null
+          sent_at?: string | null
+          stage?: number | null
+          title: string
+        }
+        Update: {
+          body?: string
+          case_id?: string
+          created_at?: string
+          data?: Json
+          id?: string
+          kind?: string
+          product_id?: string | null
+          product_version?: number | null
+          reminder_id?: string | null
+          seen_at?: string | null
+          sent_at?: string | null
+          stage?: number | null
+          title?: string
+        }
+        Relationships: []
+      }
       plan_checkins: {
         Row: {
           agenda: Json
@@ -1498,6 +1564,42 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      reminders: {
+        Row: {
+          case_id: string
+          created_at: string
+          created_by: string | null
+          deleted_at: string | null
+          due_on: string
+          id: string
+          kind: string
+          label: string
+          product_id: string | null
+        }
+        Insert: {
+          case_id: string
+          created_at?: string
+          created_by?: string | null
+          deleted_at?: string | null
+          due_on: string
+          id?: string
+          kind: string
+          label: string
+          product_id?: string | null
+        }
+        Update: {
+          case_id?: string
+          created_at?: string
+          created_by?: string | null
+          deleted_at?: string | null
+          due_on?: string
+          id?: string
+          kind?: string
+          label?: string
+          product_id?: string | null
+        }
+        Relationships: []
       }
       saved_plans: {
         Row: {
