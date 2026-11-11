@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { GOAL_IDS } from '../domain/goals/types.ts'
 import { FACT_KEYS, type FactKey } from '../domain/facts.ts'
 import { PRODUCTS } from '../domain/journey.ts'
+import { REMINDER_KINDS } from '../contracts/alerts.ts'
 
 /**
  * The tools Saoirse may call.
@@ -260,8 +261,22 @@ export const showPartnerInviteInput = z.object({
  */
 export const showFormInput = z.object({ applicationId })
 
+/**
+ * A date the customer gave: their fixed rate ends, a deposit matures. Recorded as they said it,
+ * like a fact; the alerts that follow (90, 60, 30 and 7 days before, and the day) state the date
+ * and today's market beside it, and pick nothing.
+ */
+export const setReminderInput = z.object({
+  kind: z.enum(REMINDER_KINDS),
+  /** YYYY-MM-DD, today or later. Ask for the day when they gave only a month. */
+  dueOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'expected YYYY-MM-DD'),
+  /** In their words: "AIB fixed rate". */
+  label: z.string().trim().min(1).max(120),
+})
+
 export const TOOL_INPUTS = {
   record_facts: recordFactsInput,
+  set_reminder: setReminderInput,
   record_form_answers: recordFormAnswersInput,
   show_form_declarations: showFormDeclarationsInput,
   show_form_upload: showFormUploadInput,
@@ -292,6 +307,18 @@ export type ToolDefinition = {
 }
 
 export const TOOLS: readonly ToolDefinition[] = [
+  {
+    name: 'set_reminder',
+    description:
+      'Record a date the customer told you about money: when their fixed mortgage rate ends ' +
+      '(fixed_rate_ends), when a fixed-term deposit matures (deposit_matures), or another ' +
+      'money date (other). Only a date they actually gave. If they gave only a month or a ' +
+      'season ("next March"), ask which day first, then call this with YYYY-MM-DD. The label is ' +
+      'in their words ("AIB fixed rate"). Saoi then sends them the date and the market beside ' +
+      'it 90, 60, 30 and 7 days before and on the day; say that in one line, as a fact. Never ' +
+      'suggest what to do when the date comes.',
+    schema: setReminderInput,
+  },
   {
     name: 'record_facts',
     description:

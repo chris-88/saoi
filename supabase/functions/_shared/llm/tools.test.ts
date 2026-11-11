@@ -86,11 +86,16 @@ describe('the model has no tool that takes an action', () => {
     // nothing and is read off the linked rows. The third is the one that could look like
     // acting, because it is about moving money: it names an application, the server picks the
     // account, reads the balance and caps the amount, and `initiate_transfer` is the tap.
+    //
+    // `set_reminder` is the twentieth and records, like `record_facts`: a date the customer
+    // gave (their fix ends, a deposit matures). It commits them to nothing and starts nothing;
+    // the alerts that follow state the date and the market, and pick nothing.
     expect([...TOOL_NAMES].sort()).toEqual([
       'propose_plan',
       'record_facts',
       'record_form_answers',
       'request_upload',
+      'set_reminder',
       'show_accounts',
       'show_arrangement',
       'show_comparison',

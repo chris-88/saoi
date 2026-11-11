@@ -419,6 +419,11 @@ describe('what the digest is given, it keeps', () => {
       { title: 'House deposit', lines: ['Next: monthly saving with AIB'] },
     ])
   })
+
+  it('carries unseen plan alerts and reminders through to the prompt', () => {
+    const alerts = { unseen: ['A rate in your plan changed: …'], reminders: ['AIB, 1 Mar 2027'] }
+    expect(buildCaseDigest(loaded(), { alerts }).alerts).toEqual(alerts)
+  })
 })
 
 describe('what the bank asked for after submission (§41)', () => {

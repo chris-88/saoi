@@ -177,6 +177,25 @@ describe('the case digest (§14, Invariant 2)', () => {
     expect(prompt).toContain('Your credit card application was approved')
   })
 
+  it('states unseen plan alerts first, as facts, and lists the dates kept', () => {
+    const input = baseInput()
+    const alert =
+      'A rate in your plan changed: Bank of Ireland SuperSaver: 3.00% to 2.75% from 10 Nov 2026 (bank’s site, read 11 Nov). Your plan counted 3.00%.'
+    const prompt = composeSystemPrompt({
+      ...input,
+      digest: {
+        ...input.digest,
+        alerts: { unseen: [alert], reminders: ['AIB fixed rate, 1 Mar 2027'] },
+      },
+    })
+    expect(prompt).toContain('Since you were here:')
+    expect(prompt).toContain(`- ${alert}`)
+    expect(prompt).toContain('- AIB fixed rate, 1 Mar 2027')
+    expect(prompt).toMatch(/Pick nothing, advise nothing/)
+
+    expect(composeSystemPrompt(input)).not.toContain('Since you were here')
+  })
+
   it('names the partner and what is waiting on them', () => {
     const input = baseInput()
     const prompt = composeSystemPrompt({
