@@ -37,7 +37,8 @@ export function productDetail(market: Market, id: string): ProductDetail | null 
   }
 }
 
-const pct = (value: number): string => `${value.toFixed(2)}%`
+/** "3.00%": a rate as the engine writes it. */
+export const pct = (value: number): string => `${value.toFixed(2)}%`
 
 export function headlineOf(rates: MarketRates): string {
   switch (rates.kind) {

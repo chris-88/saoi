@@ -62,7 +62,7 @@ const SAVING_GOALS: ReadonlySet<Goal['kind']> = new Set([
 ])
 const DEFAULT_MAX_ACCOUNTS = 5
 const DEFAULT_EMERGENCY_MONTHS = 3
-const NO_DATE_HORIZON = 12
+export const NO_DATE_HORIZON = 12
 
 const clip = (text: string, max: number): string =>
   text.length <= max ? text : `${text.slice(0, max - 1)}…`

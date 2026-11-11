@@ -345,7 +345,11 @@ The engine behind the Saoi MCP tools, in `_shared/domain/market/` (pure; contrac
   mortgage results carry the three statutory warnings; `adviceWordsIn` is the test for wording.
   The home calculator (`home-calculator.ts`, `POST /api/calc/home`) returns the limits, the
   cash at the keys and the month it is saved, the missing inputs as questions, and `rules` so
-  the MCP calculator card recomputes as sliders move.
+  the MCP calculator card recomputes as sliders move. It also carries `figures.maxPriceEur`
+  (the limits' most, to €1,000) and `market` (`home-market.ts`, as the card cannot call a second
+  tool): the top savings rate among accounts reachable by the date with its interest after DIRT,
+  and the count and monthly range of mortgage options from `homePathways` with no filters, each
+  with its basis and a fact line; `null` when the market cannot be loaded.
 - **Options for a home** (`pathways.ts`, Chris 2026-11-10): for a house-deposit goal, `home`
   compares lenders end to end: the price (given, or what the savings by the date support at 90%
   LTV, capped by 4 times income when given), the cash needed at the keys (deposit plus 1% stamp

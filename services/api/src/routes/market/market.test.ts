@@ -5,6 +5,7 @@ import { createApp } from '../../app.ts'
 import { marketPlanSchema } from '@shared/contracts/market-plan.ts'
 import {
   buildPlanResponseSchema,
+  homeCalculatorResponseSchema,
   moneyCheckResponseSchema,
   productDetailSchema,
   searchResponseSchema,
@@ -54,6 +55,7 @@ function appWith(
     drafts?: ReturnType<typeof fakeDrafts>
     draftBurst?: { max: number; windowMs: number }
     runs?: CalculatorRunStore
+    marketDown?: boolean
   } = {},
 ) {
   const loads = options.loads ?? { count: 0 }
@@ -69,7 +71,9 @@ function appWith(
       store: cachedMarketStore(
         () => {
           loads.count += 1
-          return Promise.resolve(MARKET_FIXTURE)
+          return options.marketDown === true
+            ? Promise.reject(new Error('database down'))
+            : Promise.resolve(MARKET_FIXTURE)
         },
         { now: () => NOW },
       ),
@@ -234,6 +238,37 @@ describe('public comparison routes', () => {
       },
     ])
     expect(JSON.stringify(recorded)).not.toMatch(/30000|1000|60000|40000|400000|1800|203\.0\.113/)
+  })
+
+  it('carry the savings and mortgage market on the home calculator’s one response', async () => {
+    const { app, loads } = appWith()
+    const res = await post(app, '/api/calc/home', {
+      depositSavedEur: 30_000,
+      monthlySavingEur: 1_000,
+      annualGrossIncomeEur: 60_000,
+      secondIncomeEur: 40_000,
+      targetPriceEur: 400_000,
+      targetDate: '2028-06',
+      propertyKind: 'second_hand',
+      firstTimeBuyer: true,
+    })
+    expect(res.status).toBe(200)
+    const body = homeCalculatorResponseSchema.parse(await res.json())
+    expect(loads.count).toBe(1)
+    expect(body.figures.maxPriceEur).toBe(444_000)
+    expect(body.figures.termYears).toBe(30)
+    expect(body.market?.savings?.topRatePct).toBeGreaterThan(0)
+    expect(body.market?.mortgage?.loanEur).toBe(360_000)
+    expect(body.lines.slice(-2)).toEqual(body.market?.lines)
+  })
+
+  it('answer the home calculator with no market when the market cannot be loaded', async () => {
+    const { app } = appWith({ marketDown: true })
+    const res = await post(app, '/api/calc/home', { annualGrossIncomeEur: 70_000 })
+    expect(res.status).toBe(200)
+    const body = homeCalculatorResponseSchema.parse(await res.json())
+    expect(body.market).toBeNull()
+    expect(body.figures.maxLoanEur).toBe(280_000)
   })
 
   it('answer the home calculator even when the run cannot be recorded', async () => {

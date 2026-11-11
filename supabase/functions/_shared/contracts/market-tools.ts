@@ -1669,6 +1669,71 @@ export const HOME_INPUT_KEYS = [
   'monthlyRentEur',
 ] as const
 
+/**
+ * The market beside the home calculator's figures (decision 2026-11-10, comparison not advice):
+ * the savings and mortgages that fit the plan, as counts, ranges and the top rate, with the
+ * ranking basis stated. No product or lender is picked.
+ */
+export const homeMarketSchema = z
+  .object({
+    savings: z
+      .object({
+        topRatePct: pct.describe(
+          'The highest AER among the savings and deposit accounts that fit the plan, for the horizon (a fixed term’s rate for the longest term that ends by `by`).',
+        ),
+        topRateProvider: z.string().describe('The provider whose account pays `topRatePct`.'),
+        accounts: z
+          .number()
+          .int()
+          .nonnegative()
+          .describe(
+            'How many accounts fit: open to adult saving, reachable by `by` (no fixed term or notice running past it, nothing locked without a date), and taking the whole deposit saved or the whole monthly amount within their limits. One account listed in two categories counts once.',
+          ),
+        interestToTargetEur: eur.describe(
+          'Interest after DIRT (none taken on a DIRT-free product) on the deposit saved plus the monthly saving until `by`, in the account paying `topRatePct`, from the engine’s month-by-month projection. Money that account cannot take, and months after its rate stops being known, are not counted (`basis` says so).',
+        ),
+        by: z
+          .string()
+          .describe(
+            'YYYY-MM the interest runs to: the date given, else the month the money at the keys is saved, else 12 months on.',
+          ),
+        basis: z
+          .string()
+          .describe('How the top rate and the interest are worked out, in one sentence.'),
+      })
+      .nullable()
+      .describe('Savings that fit the plan. Null: no account fits.'),
+    mortgage: z
+      .object({
+        loanEur: eur.describe('The loan the figures need: the price less the deposit.'),
+        options: z
+          .number()
+          .int()
+          .nonnegative()
+          .describe(
+            'How many mortgage options fit: each lender’s options for this loan, loan-to-value, buyer and property, one per rate type and fixed period, fixed and variable, with no preference applied (the options build-plan lists without filters).',
+          ),
+        lowestRatePct: pct.describe('The lowest initial rate among those options.'),
+        lowestMonthlyEur: eur.describe(
+          'The lowest monthly repayment among those options, at each one’s initial rate.',
+        ),
+        highestMonthlyEur: eur.describe(
+          'The highest monthly repayment among those options, at each one’s initial rate.',
+        ),
+        termYears: z.number().int().positive().describe('The mortgage term the repayments use.'),
+        basis: z.string().describe('Which mortgages are counted and how, in one sentence.'),
+      })
+      .nullable()
+      .describe('Mortgages that fit the figures. Null: no price is known yet, or none fits.'),
+    lines: z
+      .array(z.string())
+      .describe('The two summaries in words, facts only; also appended to the result’s `lines`.'),
+  })
+  .describe(
+    'The savings and mortgage market for these figures: a comparison, not a recommendation. Nothing is picked; the ranking basis is stated.',
+  )
+export type HomeMarket = z.infer<typeof homeMarketSchema>
+
 export const homeCalculatorResponseSchema = z.object({
   inputs: homeCalculatorRequestSchema.describe(
     'The inputs as received, for the calculator card to start from.',
@@ -1702,6 +1767,16 @@ export const homeCalculatorResponseSchema = z.object({
     loanEur: eur.nullable(),
     ltvPct: z.number().nullable(),
     depositNeededEur: eur.nullable(),
+    maxPriceEur: eur
+      .nullable()
+      .describe(
+        'The most the Central Bank limits allow: the income limit (`maxLoanEur`) at the largest loan-to-value (`rules.maxLtvPct`), floored to the nearest €1,000. Lenders decide within it. Null: no income given.',
+      ),
+    termYears: z
+      .number()
+      .int()
+      .positive()
+      .describe('The mortgage term the figures and repayments use, in years.'),
     stampDutyEur: eur.nullable(),
     legalAndSurveyEur: eur,
     helpToBuyEur: eur.describe(
@@ -1723,6 +1798,11 @@ export const homeCalculatorResponseSchema = z.object({
     monthlyCommitmentsNote: z.string().nullable(),
   }),
   lines: z.array(z.string()).describe('The figures in words, as options and facts.'),
+  market: homeMarketSchema
+    .nullable()
+    .describe(
+      'The savings and mortgages that fit these figures, from Saoi’s market data. Null when the market data is not available.',
+    ),
   assumed: z
     .array(z.string())
     .describe(
