@@ -494,10 +494,19 @@ export function marketRoutes(options: MarketRouteOptions) {
     return c.json(await calculate(() => debts(loaded, body, dublinDate(now()))), 200)
   })
 
-  routes.openapi(homeCalculatorRoute, (c) => {
+  routes.openapi(homeCalculatorRoute, async (c) => {
     const body = c.req.valid('json')
     const asOf = dublinDate(now())
-    const result = homeCalculator(body, asOf)
+    // The market rides on the same response (the card cannot call a second tool). Without it the
+    // calculator still answers, with `market: null`; nothing about the customer is logged.
+    const loaded = await market().catch((error: unknown) => {
+      c.get('log').warn('home calculator answered without market data', {
+        requestId: c.get('requestId'),
+        error: error instanceof Error ? error.message : 'unknown',
+      })
+      return null
+    })
+    const result = homeCalculator(body, asOf, loaded)
     const runs = options.runs
     if (runs !== undefined) {
       // Fire and forget, after the response is built: a failed record never fails the request.

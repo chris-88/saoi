@@ -83,7 +83,7 @@ function known(
 }
 
 /** Views that are one account: the same provider page, or else the view itself. */
-function accountOf(product: ProductView): string {
+export function accountOf(product: ProductView): string {
   return product.provenance.source === 'bank'
     ? `${product.provider}|${product.provenance.sourceUrl}`
     : product.id

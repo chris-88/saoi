@@ -5,8 +5,10 @@ import { BUYING_COSTS } from '../../market/mortgage-incentives.ts'
 import { euro } from './figures.ts'
 import { keysAt, monthName, monthsBetween, stampDutyAt } from './home-arithmetic.ts'
 import { homeRoutes, routeLines } from './routes.ts'
+import { homeMarketSummary } from './home-market.ts'
+import { TERM_YEARS } from './pathways.ts'
 import { round2 } from './simulate.ts'
-import type { AsOf } from './types.ts'
+import type { AsOf, Market } from './types.ts'
 
 /**
  * The home calculator (Chris, 2026-11-10): the front door for buying a home. Takes whatever the
@@ -26,7 +28,12 @@ import type { AsOf } from './types.ts'
 
 const NEW_KINDS = new Set(['new_build', 'self_build'])
 
-export function homeCalculator(request: HomeCalculatorRequest, asOf: AsOf): HomeCalculatorResponse {
+export function homeCalculator(
+  request: HomeCalculatorRequest,
+  asOf: AsOf,
+  /** The market for the savings and mortgage summary (`homeMarketSummary`); null: none. */
+  market: Market | null = null,
+): HomeCalculatorResponse {
   const firstTimeBuyer = request.firstTimeBuyer ?? true
   const measures = firstTimeBuyer
     ? MORTGAGE_MEASURES.first_time_buyer
@@ -37,6 +44,12 @@ export function homeCalculator(request: HomeCalculatorRequest, asOf: AsOf): Home
       ? null
       : (request.annualGrossIncomeEur ?? 0) + (request.secondIncomeEur ?? 0)
   const maxLoan = income === null ? null : round2(income * measures.loanToIncome)
+  /** The most the limits allow: the income limit at the largest loan-to-value, to €1,000. */
+  const maxPrice = maxLoan === null ? null : Math.floor(maxLoan / ltv / 1_000) * 1_000
+  const maxPriceDeposit =
+    maxPrice === null || maxLoan === null
+      ? null
+      : round2(maxPrice - Math.min(maxPrice * ltv, maxLoan))
   const htbApplies =
     firstTimeBuyer && request.propertyKind !== undefined && NEW_KINDS.has(request.propertyKind)
   /** Counted towards the cash at the keys only when tax paid, which limits it, was given. */
@@ -113,6 +126,11 @@ export function homeCalculator(request: HomeCalculatorRequest, asOf: AsOf): Home
       `The Central Bank limit for a ${firstTimeBuyer ? 'first-time buyer' : 'second or later buyer'} is ${String(measures.loanToIncome)} times gross income: ${euro(maxLoan)} on ${euro(income)}${request.secondIncomeEur === undefined ? '' : ' (both incomes)'}. Lenders decide within it, and may lend above it only under the 15% allowance.`,
     )
   }
+  if (maxPrice !== null && maxPriceDeposit !== null && maxPrice > 0) {
+    lines.push(
+      `Within the Central Bank limits, up to ${euro(maxPrice)} with a ${euro(maxPriceDeposit)} deposit over ${String(TERM_YEARS)} years; lenders decide.`,
+    )
+  }
   if (price !== null && loan !== null && deposit !== null && needed !== null && stamp !== null) {
     lines.push(
       `${priceFrom === 'given' ? `For a ${euro(price)} home` : `The most the deposit by ${monthName(target ?? '')} and the income limit allow is about a ${euro(price)} home`}: a ${euro(loan)} mortgage (${String(round2((loan / price) * 100))}% of the price) and a ${euro(deposit)} deposit.`,
@@ -141,6 +159,30 @@ export function homeCalculator(request: HomeCalculatorRequest, asOf: AsOf): Home
       `Help to Buy is not counted above: up to ${euro(helpToBuyShown)}, it is limited by the Income Tax and DIRT paid over the last four tax years, not given.`,
     )
   }
+
+  const figures: HomeCalculatorResponse['figures'] = {
+    incomeEur: income,
+    maxLoanEur: maxLoan,
+    priceEur: price,
+    priceFrom,
+    loanEur: loan,
+    ltvPct: price === null || loan === null ? null : round2((loan / price) * 100),
+    depositNeededEur: deposit,
+    maxPriceEur: maxPrice !== null && maxPrice > 0 ? maxPrice : null,
+    termYears: TERM_YEARS,
+    stampDutyEur: stamp,
+    legalAndSurveyEur: BUYING_COSTS.legalAndSurveyEur,
+    helpToBuyEur: helpToBuyShown,
+    helpToBuyConditional,
+    neededAtKeysEur: needed,
+    depositReachedOn: reachedOn,
+    targetDateMet: targetMet,
+    monthlyCommitmentsNote,
+  }
+
+  // ---- The market beside the figures: savings and mortgages that fit, facts only -------------
+  const marketSummary = market === null ? null : homeMarketSummary(market, request, figures, asOf)
+  if (marketSummary !== null) lines.push(...marketSummary.lines)
 
   // ---- Every route to a home, after the headline ---------------------------------------------
   const routes = homeRoutes(
@@ -233,24 +275,9 @@ export function homeCalculator(request: HomeCalculatorRequest, asOf: AsOf): Home
         ...HELP_TO_BUY.sources.map((source) => source.url).slice(0, 1),
       ],
     },
-    figures: {
-      incomeEur: income,
-      maxLoanEur: maxLoan,
-      priceEur: price,
-      priceFrom,
-      loanEur: loan,
-      ltvPct: price === null || loan === null ? null : round2((loan / price) * 100),
-      depositNeededEur: deposit,
-      stampDutyEur: stamp,
-      legalAndSurveyEur: BUYING_COSTS.legalAndSurveyEur,
-      helpToBuyEur: helpToBuyShown,
-      helpToBuyConditional,
-      neededAtKeysEur: needed,
-      depositReachedOn: reachedOn,
-      targetDateMet: targetMet,
-      monthlyCommitmentsNote,
-    },
+    figures,
     lines,
+    market: marketSummary,
     assumed,
     routes,
     questions,
