@@ -30,6 +30,8 @@ import { isProduct, type Product } from '@shared/domain/journey.ts'
 import { describeProspect, wouldInvolve } from '@shared/domain/prospect.ts'
 import { describeGoals, goalContextFor } from '@shared/db/goals.ts'
 import { loadClaimedPlans, savedPlanDigestLines } from '@shared/db/saved-plans.ts'
+import { loadCaseAlerts, loadOpenReminders } from '@shared/db/alerts.ts'
+import { shortDate } from '@shared/domain/market/alerts.ts'
 import { participantFor, type LoadedCase } from '@shared/db/loaded-case.ts'
 
 /** The case and the catalogue Saoirse speaks from this turn. */
@@ -324,7 +326,25 @@ export async function buildGeneration(
     lines: savedPlanDigestLines(claimed),
   }))
 
+  /*
+   * Plan alerts not yet seen and the dates they gave. Saoirse states the alerts first ("Since you
+   * were here: …") in their own factual wording; they are marked seen once the reply is saved.
+   * Unreadable alerts never stop a turn.
+   */
+  const [unseenAlerts, reminders] = await Promise.all([
+    loadCaseAlerts(admin, turn.caseId, { unseenOnly: true, limit: 10 }).catch(() => []),
+    loadOpenReminders(admin, turn.caseId).catch(() => []),
+  ])
+  const alerts =
+    unseenAlerts.length === 0 && reminders.length === 0
+      ? undefined
+      : {
+          unseen: [...unseenAlerts].reverse().map((alert) => `${alert.title}: ${alert.body}`),
+          reminders: reminders.map((reminder) => `${reminder.label}, ${shortDate(reminder.dueOn)}`),
+        }
+
   const digest = buildCaseDigest(loaded, {
+    ...(alerts === undefined ? {} : { alerts }),
     sensitiveDisclosure: gate.suppressHumour,
     stage,
     acting: turn.trigger === 'action',
@@ -497,6 +517,8 @@ export async function buildGeneration(
   }
 
   return {
+    /** The unseen alerts this turn's digest states; marked seen when the reply is saved. */
+    alertIds: unseenAlerts.map((alert) => alert.id),
     primary,
     signInForPlan,
     goals,

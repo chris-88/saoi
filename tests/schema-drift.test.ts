@@ -8,6 +8,11 @@ import { APPLICATION_STATES } from '../supabase/functions/_shared/domain/state-m
 import { LOCAL_AREAS } from '../supabase/functions/_shared/market/areas.ts'
 import { PROPERTY_KINDS } from '../supabase/functions/_shared/contracts/market-tools.ts'
 import {
+  ALERT_KINDS,
+  REMINDER_KINDS,
+  REMINDER_STAGES,
+} from '../supabase/functions/_shared/contracts/alerts.ts'
+import {
   GAP_MONTHS_BANDS,
   INCOME_BANDS,
   RENT_BANDS,
@@ -167,5 +172,12 @@ describe('the schema keeps the invariants', () => {
     expect(sorted(checkConstraintLiterals('calculator_runs', 'property_kind'))).toEqual(
       sorted(PROPERTY_KINDS),
     )
+  })
+
+  it('accepts exactly the alert and reminder kinds', () => {
+    const sorted = (values: readonly string[]) => [...values].sort()
+    expect(sorted(checkConstraintLiterals('plan_alerts', 'kind'))).toEqual(sorted(ALERT_KINDS))
+    expect(sorted(checkConstraintLiterals('reminders', 'kind'))).toEqual(sorted(REMINDER_KINDS))
+    expect(migrations).toMatch(new RegExp(`stage in \\(${REMINDER_STAGES.join(', ')}\\)`))
   })
 })

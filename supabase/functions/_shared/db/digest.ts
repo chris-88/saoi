@@ -214,6 +214,8 @@ export function buildCaseDigest(
     readonly checkin?: CaseDigest['checkin']
     readonly revived?: CaseDigest['revived']
     readonly broughtPlans?: CaseDigest['broughtPlans']
+    /** Unseen plan alerts and open reminders, as lines. */
+    readonly alerts?: CaseDigest['alerts']
     /** Where the customer is trying to get to, from the Goal Engine. */
     readonly goals?: readonly string[]
     /** Whether what they are looking at is what suits them. */
@@ -316,6 +318,7 @@ export function buildCaseDigest(
     ...(options.checkin === undefined ? {} : { checkin: options.checkin }),
     ...(options.revived === undefined ? {} : { revived: options.revived }),
     ...(options.broughtPlans === undefined ? {} : { broughtPlans: options.broughtPlans }),
+    ...(options.alerts === undefined ? {} : { alerts: options.alerts }),
     ...(options.goals === undefined ? {} : { goals: options.goals }),
     ...(options.suitability === undefined ? {} : { suitability: options.suitability }),
     ...(options.prospect === undefined ? {} : { prospect: options.prospect }),

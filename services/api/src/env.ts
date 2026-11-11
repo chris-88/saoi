@@ -39,6 +39,11 @@ const envSchema = z.object({
   VAPID_PUBLIC_KEY: z.string().min(1).optional(),
   VAPID_PRIVATE_D: z.string().min(1).optional(),
   VAPID_SUBJECT: z.string().min(1).optional(),
+  /**
+   * `POST /api/internal/alerts/run`: the key the host's timer sends as `X-Internal-Key`. Unset,
+   * the route answers 404 and nothing is exposed.
+   */
+  INTERNAL_JOB_KEY: z.string().min(16).optional(),
   /** `fixture` replays a script from `services/api/src/turn/fixtures/` and calls nothing. */
   LLM_PROVIDER: z.enum(['anthropic', 'fixture']).default('anthropic'),
   LLM_FIXTURE: z.string().min(1).default('opening'),

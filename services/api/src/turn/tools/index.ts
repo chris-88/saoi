@@ -1,5 +1,6 @@
 import { recordFormAnswersTool } from './record-form-answers.ts'
 import { recordFactsTool } from './record-facts.ts'
+import { setReminderTool } from './set-reminder.ts'
 import { showProductOptionsTool } from './show-product-options.ts'
 import { showStatusTool } from './show-status.ts'
 import { showConnectAccountsTool } from './show-connect-accounts.ts'
@@ -24,6 +25,7 @@ import type { ToolModule } from './_shared.ts'
 export const TOOL_MODULES: { readonly [N in ToolName]: ToolModule<N> } = {
   record_form_answers: recordFormAnswersTool,
   record_facts: recordFactsTool,
+  set_reminder: setReminderTool,
   show_product_options: showProductOptionsTool,
   show_status: showStatusTool,
   show_connect_accounts: showConnectAccountsTool,

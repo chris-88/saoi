@@ -17,6 +17,7 @@ import { admit, type GateAllowed } from './gate.ts'
 import { createMeter, generate, type ModelFactory } from './generate.ts'
 import { caseHasEvent } from './lookups.ts'
 import { persistBlocked, persistReply, recordCustomerTurn } from './persist.ts'
+import { markAlertsSeen } from '@shared/db/alerts.ts'
 import { just } from './stream.ts'
 import { createToolExecutor } from './tools.ts'
 
@@ -267,6 +268,13 @@ export function createTurnRunner(deps: TurnDeps): TurnRunner {
           called,
           rejections,
           usage,
+        })
+        // The reply that stated the unseen alerts is saved: they have been seen. Never fails the turn.
+        await markAlertsSeen(admin, caseId, generation.alertIds).catch((error: unknown) => {
+          deps.log?.warn('alerts not marked seen', {
+            caseId,
+            error: error instanceof Error ? error.message : 'unknown',
+          })
         })
 
         deps.log?.info('turn', {

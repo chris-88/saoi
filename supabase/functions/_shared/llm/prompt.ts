@@ -533,6 +533,14 @@ export type CaseDigest = {
    */
   readonly broughtPlans?: readonly { readonly title: string; readonly lines: readonly string[] }[]
   /**
+   * Plan alerts not yet seen ("title: body"), stated first on a visit, and the open reminders
+   * ("label, 1 Mar 2027"), from `plan_alerts` and `reminders`.
+   */
+  readonly alerts?: {
+    readonly unseen: readonly string[]
+    readonly reminders: readonly string[]
+  }
+  /**
    * Whether what they asked for is what suits them, worked out from what they have said about
    * the amount and how soon they mean to repay it. Already decided; the figures are not yours.
    */
@@ -1001,6 +1009,27 @@ function digestSection(digest: CaseDigest): string {
       '## Do not raise again',
       'The customer has declined these. Do not bring them up unless they do.',
       ...digest.declinedProducts.map((product) => `- ${product}`),
+      '',
+    )
+  }
+
+  const alerts = digest.alerts
+  if (alerts !== undefined && alerts.unseen.length > 0) {
+    lines.push(
+      '## Since you were here: alerts not yet seen',
+      'Saoi raised these about their plan or a date they gave. State them first in this reply,',
+      'opening "Since you were here:", one line each, in this wording or close to it: facts with',
+      'their date and source. Pick nothing, advise nothing, and do not suggest what to do about',
+      'them; they decide. They are marked seen once this reply is saved.',
+      ...alerts.unseen.map((line) => `- ${line}`),
+      '',
+    )
+  }
+  if (alerts !== undefined && alerts.reminders.length > 0) {
+    lines.push(
+      '## Dates they asked to be reminded of',
+      'Kept with `set_reminder`. Do not set one again for the same date.',
+      ...alerts.reminders.map((line) => `- ${line}`),
       '',
     )
   }
