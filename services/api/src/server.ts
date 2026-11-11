@@ -12,6 +12,7 @@ import { supabasePlanStore } from './store/plans.ts'
 import { supabaseCalculatorRunStore } from './store/calculator-runs.ts'
 import { supabaseMarketStore } from './store/market.ts'
 import { supabaseAlertStore } from './store/alerts.ts'
+import { supabaseHoldingStore } from './store/holdings.ts'
 import { createAdminStores } from './store/admin/factory.ts'
 import { anthropicModels, fixtureModels } from './turn/generate.ts'
 import { createTurnRunner } from './turn/turn.ts'
@@ -81,6 +82,7 @@ const app = createApp({
         }),
     internalKey: env.INTERNAL_JOB_KEY ?? '',
   },
+  holdings: { store: supabaseHoldingStore(db), plans: planStore },
   admin: adminStores,
   turn: {
     run: createTurnRunner({
