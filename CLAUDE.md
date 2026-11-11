@@ -473,6 +473,29 @@ amounts, projections and unknowns, the payoff order, the ranking basis, assumpti
   next (its `Next:` line), no figures.
 - `npm run plan:sample` saves the worked example against the live API and prints a link.
 
+### Plan alerts and reminders
+
+Design `2026-11-11-saoi-plan-alerts-design` (vault). Facts with a date and a source, never a
+nudge: no "switch", "should", "better" or "recommended" (`alerts.test.ts` holds every body to it).
+
+- **Raised** by `POST /api/internal/alerts/run` (`X-Internal-Key` = `INTERNAL_JOB_KEY`; unset,
+  404; not in the OpenAPI document), from a daily timer on the host after the Monday refresh.
+  It pairs every `market_products` version superseded since the last `alert_runs.through_at`
+  with its successor (none: withdrawn by the refresh's retire path), and raises one
+  `rate_change` or `product_withdrawn` alert per case and version for claimed plans
+  (`saved_plans.case_id` set) built before the change whose `combination.products` hold that
+  provider, source and product id, when the headline rate moved
+  (`_shared/domain/market/alerts.ts`). Reminders (`reminders`, set by `set_reminder` or
+  `POST /api/cases/{id}/reminders`) raise a `reminder` alert at 90, 60, 30 and 7 days before
+  and on the day, the latest stage reached once, with today's fixed mortgage rates (lenders
+  and range) or fixed-term deposits (count and top rate) beside the date. Partial unique
+  indexes make a run idempotent.
+- **Sent** through the console's push store (`sendNotification`, actor `system`): `sent_at` only
+  when a browser took it; a failure never fails the run, and the alert waits for the visit.
+- **Read**: `GET /api/cases/{id}/alerts` (alerts newest first, open reminders by date) marks
+  what it returns seen. A turn's digest carries unseen alerts ("Since you were here:") and the
+  open reminders; they are marked seen once the reply is saved.
+
 ### Open banking, simulated
 
 A stand-in aggregator, Nexus, links the accounts a customer holds at other banks (§6, §53).
@@ -565,7 +588,11 @@ Every tool input is Zod-validated before any effect. Invalid input returns a too
   server reads the facts and the published rates. One tap starts every account on it through
   `select_products`.
 
-Nineteen tools. **Which ones a turn is offered is decided by the conversation's stage** - the
+- `set_reminder`: a date the customer gave (their fixed rate ends, a deposit matures, or
+  another money date), recorded like a fact in `reminders`. Refused when the date has passed;
+  Saoirse asks for the day when only a month was given. No card.
+
+Twenty tools. **Which ones a turn is offered is decided by the conversation's stage** - the
 form tools are gated further on a form existing. Withholding a tool is enforcement; telling the
 model not to use one is advice.
 
@@ -730,7 +757,7 @@ The browser apps' `VITE_*` variables are documented in saoi-web and saoi-admin. 
 
 saoi-api environment, as actually read: `ANTHROPIC_API_KEY`, `SAOI_MODEL`, `GATE_MODEL`,
 `APP_BASE_URL`, `AUDIENCE_MAX_CASES`, `PRESENTER_KEY`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_D`,
-`VAPID_SUBJECT`.
+`VAPID_SUBJECT`, `INTERNAL_JOB_KEY` (the alerts run; unset, that route answers 404).
 
 Soft-read, unset in production: `LLM_PROVIDER` (`fixture` replays a script) and `LLM_FIXTURE`
 (which one).
