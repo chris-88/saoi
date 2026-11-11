@@ -4,8 +4,8 @@
  * plan seeds the first holdings once.
  */
 import { describe, expect, it } from 'vitest'
-import { exampleMarketPlan } from '@shared/contracts/market-plan.example.ts'
-import { seedHoldingsFromPlan } from '@shared/db/holdings.ts'
+// The harness first: it loads the app and @hono/zod-openapi, which has to extend zod before any
+// shared schema is built.
 import {
   NO_SUCH_ID,
   buildApp,
@@ -15,6 +15,8 @@ import {
   startVisitor,
   type Participant,
 } from './harness.ts'
+import { exampleMarketPlan } from '@shared/contracts/market-plan.example.ts'
+import { seedHoldingsFromPlan } from '@shared/db/holdings.ts'
 
 const app = buildApp()
 const path = (visitor: Participant, rest = '') => `/api/cases/${visitor.caseId}/holdings${rest}`
