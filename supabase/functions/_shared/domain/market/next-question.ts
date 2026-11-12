@@ -207,15 +207,36 @@ export function rankQuestions(
   /*
    * First-time buyer (2026-11-12): assumed when not said, and it sets the Central Bank limit
    * (4 times income for a first home, 3.5 times otherwise) and whether Help to Buy can apply.
-   * Scored by the larger of what the plan moves between the two and the difference in the loan
-   * the limits allow on the income given, so a buyer whose figures are otherwise complete is
-   * still asked the one thing assumed.
+   * Scored on the customer's own figures (Chris, 2026-11-12): what the plan moves between the
+   * two answers, plus what the limits move. With a price given, the limits count only where the
+   * lower multiple stops reaching the loan the price needs (capped at the gap between the two);
+   * without one, the spread in the most the limits allow.
    */
   if (home && situation.firstTimeBuyer === undefined) {
     const income = situation.income?.annualGross
-    const first = MORTGAGE_MEASURES.first_time_buyer.loanToIncome
-    const other = MORTGAGE_MEASURES.second_and_subsequent.loanToIncome
-    const limitSpread = income === undefined ? 0 : round2(income * (first - other))
+    const firstMeasures = MORTGAGE_MEASURES.first_time_buyer
+    const otherMeasures = MORTGAGE_MEASURES.second_and_subsequent
+    const limits =
+      income === undefined
+        ? null
+        : {
+            first: round2(income * firstMeasures.loanToIncome),
+            other: round2(income * otherMeasures.loanToIncome),
+          }
+    const loanNeeded =
+      base.homePrice === undefined ? null : round2((base.homePrice * firstMeasures.maxLtvPct) / 100)
+    const limitScore =
+      limits === null
+        ? 0
+        : loanNeeded === null
+          ? round2(
+              Math.max(
+                0,
+                maxPriceAt(limits.first, firstMeasures.maxLtvPct) -
+                  maxPriceAt(limits.other, otherMeasures.maxLtvPct),
+              ),
+            )
+          : round2(Math.min(Math.max(0, loanNeeded - limits.other), limits.first - limits.other))
     const before = candidates.length
     score(
       'first_time_buyer',
@@ -225,18 +246,11 @@ export function rankQuestions(
       ([true, false] as const).map((firstTimeBuyer) =>
         run({ ...base, situation: { ...situation, firstTimeBuyer } }),
       ),
-      (s) => {
-        const limit =
-          income === undefined
-            ? `It sets the Central Bank limit: ${String(first)} times gross income for a first home, ${String(other)} times otherwise`
-            : `It sets the Central Bank limit on ${euro(income)} a year: ${euro(Math.round(income * first))} as a first-time buyer, ${euro(Math.round(income * other))} otherwise`
-        const parts = movedParts(s)
-        return parts.length === 0 ? `${limit}.` : `${limit}; here it moves ${listed(parts)}.`
-      },
+      (s) => firstTimeBuyerWhy(income, limits, loanNeeded, base.homePrice, s),
     )
     const added = candidates[before]
-    if (added !== undefined && limitSpread > added.scoreEur) {
-      candidates[before] = { ...added, scoreEur: limitSpread }
+    if (added !== undefined && limitScore > 0) {
+      candidates[before] = { ...added, scoreEur: round2(added.scoreEur + limitScore) }
     }
   }
   const assumed = main.assumedRepayments.map((item) => item.debtId)
@@ -299,4 +313,40 @@ function incomeWhy(base: Base, s: Spread): string {
     `It decides whether the Central Bank limits reach the ${euro(base.homePrice)}: a ${euro(loan)} mortgage (${String(measures.maxLtvPct)}%) needs about ${euro(needs)} a year at ${String(measures.loanToIncome)} times income` +
     (parts.length === 0 ? '.' : `; ${range} it moves ${listed(parts)}.`)
   )
+}
+
+/** The most the limits allow for a loan ceiling, to €1,000, as the home calculator works it. */
+const maxPriceAt = (maxLoan: number, maxLtvPct: number): number =>
+  Math.floor(maxLoan / (maxLtvPct / 100) / 1_000) * 1_000
+
+/**
+ * What first-time status moves, as facts in their figures (2026-11-12): the two limits, and
+ * with a price whether each reaches the loan it needs; then what the plan moves, when it does.
+ * Nothing it does not hold (the rates lenders may offer) is said.
+ */
+function firstTimeBuyerWhy(
+  income: number | undefined,
+  limits: { readonly first: number; readonly other: number } | null,
+  loanNeeded: number | null,
+  price: number | undefined,
+  s: Spread,
+): string {
+  const first = MORTGAGE_MEASURES.first_time_buyer.loanToIncome
+  const other = MORTGAGE_MEASURES.second_and_subsequent.loanToIncome
+  const lead =
+    income === undefined || limits === null
+      ? `It sets the Central Bank limit: ${String(first)} times gross income for a first home, ${String(other)} times otherwise`
+      : `It sets the Central Bank limit on ${euro(income)} a year: ${euro(Math.round(limits.first))} as a first-time buyer, ${euro(Math.round(limits.other))} otherwise`
+  const reach =
+    limits === null || loanNeeded === null || price === undefined
+      ? ''
+      : limits.other >= loanNeeded
+        ? `, and both cover the ${euro(Math.round(loanNeeded))} mortgage the ${euro(price)} needs`
+        : limits.first >= loanNeeded
+          ? `, and only the first covers the ${euro(Math.round(loanNeeded))} mortgage the ${euro(price)} needs`
+          : `, and neither covers the ${euro(Math.round(loanNeeded))} mortgage the ${euro(price)} needs`
+  const parts = movedParts(s)
+  return parts.length === 0
+    ? `${lead}${reach}.`
+    : `${lead}${reach}; between the two the plan moves ${listed(parts)}.`
 }

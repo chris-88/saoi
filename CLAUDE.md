@@ -393,8 +393,10 @@ The engine behind the Saoi MCP tools, in `_shared/domain/market/` (pure; contrac
   largest is asked; the rest are `laterQuestions`. On a new build with Help to Buy conditional,
   tax paid (`tax_paid`) is a candidate scored by the Help to Buy at stake, worded for both when
   `buyingTogether` (2026-11-12). First-time buyer (`first_time_buyer`), when assumed, is scored
-  by the larger of its spread and the difference in the loan the limits allow (4 against 3.5
-  times income). Each `why` names only what moves in their figures (with a price given, the
+  by what the plan moves between the two answers plus what the limits (4 against 3.5 times
+  income) move in their figures: with a price, only the part of the loan it needs that 3.5
+  times does not reach, capped at the gap; without one, the spread in the most the limits
+  allow. Each `why` names only what moves in their figures (with a price given, the
   income's says whether the limits reach it), never a spread of nothing. The presentation ends
   with that one question.
   `completeness` counts answered and assumed inputs; `saveCall` is always "Save this comparison"
