@@ -162,6 +162,8 @@ export function generate(args: {
       generation.digest.forms !== undefined,
       generation.hasFigures,
     ),
+    // The return turn after a plan edit is text only (`returnsAfterPlanEdit`).
+    textOnly: generation.afterPlanEdit,
     onToolRejected: (rejection) => args.rejections.push(rejection),
     onToolCalled: (name) => args.called.push(name),
     onUsage: (used) => args.meter.recordModel(used),

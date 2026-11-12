@@ -513,11 +513,15 @@ amounts, projections and unknowns, the payoff order, the ranking basis, assumpti
   date, lender options by the comparison), `reading` and the previous document. `reading` is one
   or two sentences of fact ("Moving the keys to March 2028 means €4,751 less saved by then at
   this pace; the 18-month deposits no longer fit, and deposits of up to one year still do."),
-  never "better" and never a pick. Date reminders (`other`, not a holding's) in the month the
-  goal date or keys month was move to the same day of the new month. `plan_edited` is
-  narratable, so the app's return turn opens on it (`returnInstruction`: no greeting, not the
-  reading again word for word); the digest lists the edits; a reload shows the plan card from the
-  stored plan.
+  never "better" and never a pick. A date or saving edit that leaves the goal's month before the
+  keys month says so in the same sentence ("…at this pace, four months short of the money for
+  the keys, which is there in July 2028; …"); at or after it, nothing extra. Date reminders
+  (`other`, not a holding's) in the month the goal date or keys month was move to the same day
+  of the new month. `plan_edited` is narratable, so the app's return turn opens on it
+  (`returnInstruction`: no greeting, not the reading again word for word); that turn is text
+  only (`returnsAfterPlanEdit`: `tool_choice: none` with the tools still sent, so the cached
+  prefix holds, and any call refused unrun), so products wait for the customer's own message;
+  the digest lists the edits; a reload shows the plan card from the stored plan.
 - `npm run plan:sample` saves the worked example against the live API and prints a link.
 
 ### Plan alerts and reminders
