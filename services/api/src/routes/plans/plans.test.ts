@@ -165,6 +165,7 @@ const ARRIVAL = {
       value: '3.11%',
       sub: ['€409 interest', 'by Sep 2027'],
       quiet: ['15 accounts'],
+      lines: ['€409 interest', 'by Sep 2027', '15 accounts'],
       detail: [
         'Interest after DIRT on the deposit money to September 2027, the keys month',
         'Top rate among the 15 accounts that take this saving by then',
@@ -176,6 +177,7 @@ const ARRIVAL = {
       value: '€1,567/mo',
       sub: ['€360,000 loan', 'from 3.25%'],
       quiet: ['5 options'],
+      lines: ['€360,000 loan', 'from 3.25%', '5 options'],
       detail: [
         'From €1,567 to €1,698 a month over 30 years, at each option’s initial rate',
         'The lowest monthly and the lowest rate among 5 first-time-buyer options at 90% loan-to-value, one per lender, rate type and fixed period; no lender is picked',
@@ -189,6 +191,7 @@ const ARRIVAL = {
       value: '€488,000',
       sub: ['4× income', '90% loan'],
       quiet: [],
+      lines: ['4× income', '90% loan'],
       detail: [
         'The most the Central Bank limits allow: 4 times income at 90% loan, over 30 years',
         'That price needs a €48,800 deposit.',
