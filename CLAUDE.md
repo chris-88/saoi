@@ -354,7 +354,13 @@ The engine behind the Saoi MCP tools, in `_shared/domain/market/` (pure; contrac
   (the limits' most, to €1,000) and `market` (`home-market.ts`, as the card cannot call a second
   tool): the top savings rate among accounts reachable by the date with its interest after DIRT,
   and the count and monthly range of mortgage options from `homePathways` with no filters, each
-  with its basis and a fact line; `null` when the market cannot be loaded.
+  with its basis and a fact line; `null` when the market cannot be loaded. `gate` (`homeGate`,
+  Chris 2026-11-12) is the core information: the funds saved, the monthly saving, the income
+  (both when `buyingTogether`) and a price or a date; until `ready`, `missing` lists them most
+  useful first, each with a plain question and what it moves, at most two `askNow`, and
+  `presentation` holds only those questions and the statement, while `figures`, `rules` and
+  `inputs` still return for the card. Kind of home, first-time status, bank, rate type and rent
+  never hold it back.
 - **Options for a home** (`pathways.ts`, Chris 2026-11-10): for a house-deposit goal, `home`
   compares lenders end to end: the price (given, or what the savings by the date support at 90%
   LTV, capped by 4 times income when given), the cash needed at the keys (deposit plus 1% stamp
