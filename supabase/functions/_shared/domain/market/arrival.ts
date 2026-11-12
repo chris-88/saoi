@@ -159,7 +159,7 @@ export function arrivalFor(
     savingsTile(summary?.savings ?? null),
     mortgageTile(summary?.mortgage ?? null, figures.loanEur ?? home.loan, firstTimeBuyer, figures),
     affordTile(figures, limits),
-  ]
+  ].map(withLines)
 
   return {
     keysOn: ready,
@@ -185,7 +185,12 @@ export function arrivalFor(
 
 type Calculated = ReturnType<typeof homeCalculator>
 type Summary = NonNullable<ReturnType<typeof homeMarketSummary>>
-type Tile = PlanArrivalView['tiles'][number]
+type Tile = Omit<PlanArrivalView['tiles'][number], 'lines'>
+
+/** The old tile shape's lines, for app builds cached before 2026-11-12; remove after 2026-11-26. */
+function withLines(tile: Tile): PlanArrivalView['tiles'][number] {
+  return { ...tile, lines: [...tile.sub, ...tile.quiet] }
+}
 
 const NOT_AVAILABLE = 'Not available'
 
