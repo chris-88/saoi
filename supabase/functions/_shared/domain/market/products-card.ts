@@ -20,6 +20,7 @@ import { displayName, euro, oldestCheck } from './figures.ts'
 import { monthName, shortMonth } from './home-arithmetic.ts'
 import { homePathways, HORIZON_YEARS, SORT_WORDS } from './pathways.ts'
 import { pct } from './product.ts'
+import { ratePeriod } from './rate-period.ts'
 import { SAVINGS_ASSUMPTIONS, search, UNCONFIRMED_RATE } from './search.ts'
 import {
   addMonths,
@@ -93,8 +94,19 @@ export type CaseFigures = {
   readonly sortBy: HomeSort | null
 }
 
+/**
+ * For the model beside a card, never on it: what one row's money figure counts, in a sentence it
+ * can quote when asked whether a figure will be realised ("€581 counts 3.11% to 1 January, then
+ * 1.51%."). Rows whose figure is not interest (a mortgage's cost) carry none.
+ */
+export type RowBasis = { readonly id: string; readonly lead: string; readonly line: string }
+
 export type ProductsResult =
-  | { readonly kind: 'card'; readonly card: MarketProductsCard }
+  | {
+      readonly kind: 'card'
+      readonly card: MarketProductsCard
+      readonly figureBasis: readonly RowBasis[]
+    }
   | { readonly kind: 'questions'; readonly questions: readonly string[] }
 
 const ASSET_KINDS = new Set(['current', 'savings', 'deposit'])
@@ -232,56 +244,6 @@ function headlineRate(terms: DepositTerms, termMonths: number | null): number | 
   return terms.lumpSumAerPct ?? (bands.length === 0 ? null : Math.max(...bands))
 }
 
-const MONTH_SHORT = [
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
-]
-
-/** "bonus until 1 Jan": the next reset of a threshold bonus (bunq) after `asOf`. */
-function bonusUntil(terms: DepositTerms, asOf: AsOf): string | null {
-  const bonus = terms.thresholdBonus
-  if (bonus === null || bonus.resetMonths.length === 0) return null
-  for (let ahead = 1; ahead <= 12; ahead += 1) {
-    const month = Number(addMonths(asOf, ahead).slice(5, 7))
-    if (bonus.resetMonths.includes(month)) {
-      return `bonus rate until 1 ${MONTH_SHORT[month - 1] ?? ''}`
-    }
-  }
-  return null
-}
-
-/** The one flag a row carries, most important first. */
-function savingsNote(product: ProductView, figures: SavingsFigures, asOf: AsOf): string | null {
-  const terms = product.terms
-  if (terms.kind !== 'deposit') return null
-  if (!product.rateConfirmed) return 'rate from CCPC only'
-  const bonus = bonusUntil(terms, asOf)
-  if (bonus !== null) return bonus
-  if (figures.stop !== null) {
-    return `interest to ${shortMonth(addMonths(asOf, figures.stop.afterMonths))} only: the rate after is not stated`
-  }
-  if (figures.notPlaced.lumpSum > 0) {
-    return `${whole(figures.notPlaced.lumpSum)} of it is above what it takes`
-  }
-  if (product.platform !== null) return `opened through ${product.platform.name}`
-  const guarantee = product.depositGuarantee
-  if (guarantee !== null && guarantee.country !== null && guarantee.country !== 'Ireland') {
-    return `${guarantee.country} deposit guarantee`
-  }
-  if (terms.basis === 'variable') return 'variable rate'
-  return null
-}
-
 // ---------------------------------------------------------------------------------------------
 // The savings market
 // ---------------------------------------------------------------------------------------------
@@ -301,29 +263,209 @@ const byWhen = (horizon: Horizon, months: number, asOf: AsOf): string =>
     ? `by ${shortMonth(addMonths(asOf, months))}`
     : `in ${String(months)} months`
 
+/** "to July 2028", or "over 12 months" when no date is known: the period a figure covers. */
+const runsTo = (horizon: Horizon, months: number, asOf: AsOf): string =>
+  horizon.dated || months < horizon.months
+    ? `to ${monthName(addMonths(asOf, months))}`
+    : `over ${String(months)} months`
+
+/**
+ * What the money column counts, once per savings card (2026-11-12: "Rate card projecting rates
+ * that will never be realised"). One sentence.
+ */
+export function moneyColumnLine(horizon: Horizon): string {
+  return (
+    `The money column is interest after DIRT ${horizon.dated ? `to ${monthName(horizon.by)}` : `over ${String(NO_DATE_HORIZON)} months`}, ` +
+    'counting each rate for as long as the product states it and the rate after where stated; ' +
+    'where the rate after is not stated the money stops there.'
+  )
+}
+
 type Row = MarketProductsCard['rows'][number]
 
 type MarketRow = {
   readonly row: Row
   readonly rate: number
   readonly money: number
+  /** For the model, not the card: what the money figure counts, one sentence it can quote. */
+  readonly figureBasis: string
 }
 
-function marketRow(result: SearchResult, horizon: Horizon, asOf: AsOf): MarketRow | null {
+/** A savings row's value, note and the sentence behind its money. */
+type SavingsWords = {
+  readonly value: string
+  readonly note: string | null
+  readonly figureBasis: string
+  /** The rate is stated to end before the figures do, and `value` names the end. */
+  readonly period: boolean
+}
+
+/**
+ * How a savings row states its rate: the headline with its period where the rate is stated to
+ * end before the figures do ("3.11% to 1 Jan", then "then 1.51%; the money counts both"), a
+ * rate whose duration is not stated says so, and a fixed term that ends early says the money
+ * stops there. `figureBasis` is the same in a sentence the model can quote ("€581 counts 3.11%
+ * to 1 January, then 1.51%."). The money is `simulateDeposit`'s, which already counts each
+ * period; nothing here changes a figure.
+ */
+function savingsWords(
+  product: ProductView,
+  terms: DepositTerms,
+  figures: SavingsFigures,
+  input: {
+    readonly rate: number
+    readonly money: number
+    readonly horizon: Horizon
+    readonly asOf: AsOf
+    readonly lump: number
+    readonly monthly: number
+  },
+): SavingsWords {
+  const { rate, money, horizon, asOf } = input
+  const lumpIn = Math.max(0, input.lump - figures.notPlaced.lumpSum)
+  const monthlyIn = Math.max(0, input.monthly - figures.notPlaced.monthly)
+  const period = ratePeriod(
+    terms,
+    asOf,
+    figures.horizonMonths,
+    lumpIn + monthlyIn * Math.max(0, figures.horizonMonths - 1),
+  )
+  const amount = whole(money)
+  const to = runsTo(horizon, figures.knownMonths, asOf)
+  const banded =
+    terms.access !== 'fixed_term' && terms.thresholdBonus === null && terms.bands.length > 1
+  const rateWords = banded ? `its balance-band rates, up to ${pct(rate)},` : pct(rate)
+  const notPlaced =
+    figures.notPlaced.lumpSum > 0
+      ? ` ${whole(figures.notPlaced.lumpSum)} of the sum is above what it takes and is not counted.`
+      : ''
+
+  if (period !== null) {
+    const value = `${pct(rate)} to ${period.endsShort}`
+    if (period.after === null) {
+      return {
+        value,
+        period: true,
+        note: `then not stated; the money stops at ${period.endsShort}`,
+        figureBasis:
+          `${amount} counts ${pct(rate)} to ${period.endsLong}; the rate after is not stated, so the money stops there.` +
+          notPlaced,
+      }
+    }
+    const added =
+      period.kind === 'bonus' && monthlyIn > 0 && terms.thresholdBonus !== null
+        ? ` on what is held at each ${period.resets ?? 'reset'}, and ${pct(terms.thresholdBonus.bonusAerPct)} on money added after it`
+        : ''
+    return {
+      value,
+      period: true,
+      note: `then ${period.after}; the money counts both`,
+      figureBasis:
+        `${amount} counts ${pct(rate)} to ${period.endsLong}, then ${period.after}${added}.` +
+        notPlaced,
+    }
+  }
+
+  const value = pct(rate)
+  if (figures.stop !== null && terms.access === 'fixed_term') {
+    const end = addMonths(asOf, figures.stop.afterMonths)
+    return {
+      value,
+      period: false,
+      note: `interest to ${shortMonth(end)} only: the rate after is not stated`,
+      figureBasis:
+        `${amount} counts ${pct(rate)} for the ${String(figures.termMonths ?? figures.stop.afterMonths)}-month term, to ${monthName(end)}; the rate after is not stated, so the money stops there.` +
+        notPlaced,
+    }
+  }
+  if (terms.access === 'fixed_term') {
+    return {
+      value,
+      period: false,
+      note: otherNote(product, terms, figures),
+      figureBasis:
+        `${amount} counts ${pct(rate)} for the ${String(figures.termMonths ?? figures.knownMonths)}-month term, ${to}.` +
+        notPlaced,
+    }
+  }
+  if (terms.rateForNewAccounts) {
+    return {
+      value,
+      period: false,
+      note: 'rate for new accounts; how long it holds is not stated',
+      figureBasis:
+        `${amount} counts ${pct(rate)}, the rate for new accounts, ${to}; how long it holds is not stated.` +
+        notPlaced,
+    }
+  }
+  if (!product.rateConfirmed) {
+    return {
+      value,
+      period: false,
+      note: 'rate from CCPC only; how long it holds is not stated',
+      figureBasis:
+        `${amount} counts ${pct(rate)}, CCPC’s one figure, ${to}; how long it holds is not stated.` +
+        notPlaced,
+    }
+  }
+  return {
+    value,
+    period: false,
+    note: otherNote(product, terms, figures),
+    figureBasis:
+      `${amount} counts ${rateWords}${terms.basis === 'variable' && !banded ? ', a variable rate,' : ''} ${to}.` +
+      notPlaced,
+  }
+}
+
+/** The one flag a row carries when its rate has nothing stated against it. */
+function otherNote(
+  product: ProductView,
+  terms: DepositTerms,
+  figures: SavingsFigures,
+): string | null {
+  if (figures.notPlaced.lumpSum > 0) {
+    return `${whole(figures.notPlaced.lumpSum)} of it is above what it takes`
+  }
+  if (product.platform !== null) return `opened through ${product.platform.name}`
+  const guarantee = product.depositGuarantee
+  if (guarantee !== null && guarantee.country !== null && guarantee.country !== 'Ireland') {
+    return `${guarantee.country} deposit guarantee`
+  }
+  if (terms.basis === 'variable') return 'variable rate'
+  return null
+}
+
+function marketRow(
+  result: SearchResult,
+  horizon: Horizon,
+  asOf: AsOf,
+  lump: number,
+  monthly: number,
+): MarketRow | null {
   const { product, figures } = result
   if (product.terms.kind !== 'deposit' || figures.kind !== 'savings') return null
   const rate = headlineRate(product.terms, figures.termMonths)
   if (rate === null) return null
+  const words = savingsWords(product, product.terms, figures, {
+    rate,
+    money: figures.netInterest,
+    horizon,
+    asOf,
+    lump,
+    monthly,
+  })
   return {
     rate,
     money: figures.netInterest,
+    figureBasis: words.figureBasis,
     row: {
       id: product.id,
       lead: displayName(product),
       kind: accessKind(product.terms, figures.termMonths),
-      value: pct(rate),
+      value: words.value,
       figure: `${whole(figures.netInterest)} ${byWhen(horizon, figures.knownMonths, asOf)}`,
-      note: savingsNote(product, figures, asOf),
+      note: words.note,
       held: false,
       confirmed: product.rateConfirmed,
     },
@@ -381,7 +523,7 @@ function searchSavings(
   let partial = 0
   for (const response of responses) {
     for (const result of response.results) {
-      const row = marketRow(result, options.horizon, options.asOf)
+      const row = marketRow(result, options.horizon, options.asOf, options.amount, options.monthly)
       if (row === null) continue
       const keys = [accountOf(result.product), `${row.row.lead}|${row.row.kind}|${row.row.value}`]
       if (keys.some((key) => seen.has(key))) {
@@ -554,6 +696,18 @@ function heldVsMarket(
     held: true,
     confirmed: true,
   }))
+  const heldBasis: RowBasis[] = held.map(({ account, rate }, index) => ({
+    id: `held:${String(index + 1)}`,
+    lead: ownLabel(account),
+    line:
+      rate === null
+        ? 'No money figure: the rate was not given.'
+        : `${whole(heldInterest(account.balance, rate, horizon.months))} counts ${pct(rate)}, ` +
+          (account.ratePct === null
+            ? 'the rate in CCPC’s current-account table'
+            : 'the rate given for it') +
+          `, on ${whole(account.balance)} ${runsTo(horizon, horizon.months, asOf)}.`,
+  }))
   const room = Math.max(0, PRODUCTS_CARD_MAX_ROWS - baseline.length)
   const shown = ranked.slice(0, room)
   const top = ranked[0]
@@ -573,10 +727,8 @@ function heldVsMarket(
       basis: {
         figures: savingsFiguresUsed(figures, amount, horizon),
         objective:
-          'By AER, highest first, with your own account on top as the baseline. The money column is interest after DIRT on the sum held, ' +
-          (horizon.dated
-            ? `to ${monthName(horizon.by)}.`
-            : `over ${String(NO_DATE_HORIZON)} months.`) +
+          'By AER, highest first, with your own account on top as the baseline. ' +
+          moneyColumnLine(horizon) +
           (top === undefined || ownRate === null
             ? ''
             : ` The highest shown is ${pct(top.rate)} against ${pct(ownRate)} on your own account.`),
@@ -594,6 +746,10 @@ function heldVsMarket(
       },
       statement: RESULT_STATEMENT,
     },
+    figureBasis: [
+      ...heldBasis.slice(0, PRODUCTS_CARD_MAX_ROWS),
+      ...shown.map((item) => ({ id: item.row.id, lead: item.row.lead, line: item.figureBasis })),
+    ],
   }
 }
 
@@ -650,8 +806,7 @@ function byAccess(
       more: Math.max(0, matched - instantShown.length - fixedShown.length),
       basis: {
         figures: savingsFiguresUsed(figures, amount, horizon),
-        objective:
-          'Instant access first, then fixed term; each by AER, highest first. The money column is interest after DIRT on the sum held, to the end of the term or the date, whichever comes first.',
+        objective: `Instant access first, then fixed term; each by AER, highest first. ${moneyColumnLine(horizon)}`,
         assumptions: [...new Set([...instant.assumptions, ...fixed.assumptions])],
         coverage: coverageLine(
           matched,
@@ -666,6 +821,11 @@ function byAccess(
       },
       statement: RESULT_STATEMENT,
     },
+    figureBasis: [...instantShown, ...fixedShown].map((item) => ({
+      id: item.row.id,
+      lead: item.row.lead,
+      line: item.figureBasis,
+    })),
   }
 }
 
@@ -795,29 +955,54 @@ function fitsDate(
     const timing = statedBonus > 0 ? bonusTiming(product, terms, horizon.months) : null
     const bonus = timing === 'by_keys' ? statedBonus : 0
     const total = round2(result.netInterest + bonus)
-    const note =
+    const words = savingsWords(product, terms, result, {
+      rate,
+      money: total,
+      horizon,
+      asOf,
+      lump: saved,
+      monthly,
+    })
+    const heldOnly =
+      result.notPlaced.monthly > 0 && result.notPlaced.monthly >= monthly && monthly > 0
+    const bonusNote =
       timing === 'by_keys'
         ? `includes a ${whole(bonus)} bonus${terms.dirtApplies ? ' after DIRT' : ''}, on its conditions`
         : timing === 'after_drawdown'
           ? 'bonus paid after drawdown, not counted'
           : timing === 'not_stated'
             ? `${whole(statedBonus)} bonus, not counted: when it is paid is not stated`
-            : result.notPlaced.monthly > 0 && result.notPlaced.monthly >= monthly && monthly > 0
-              ? 'the sum held only, not the monthly saving'
-              : savingsNote(product, result, asOf)
+            : null
+    // The rate's period first: the value names its end, and the note says what follows it.
+    const note = words.period
+      ? words.note
+      : (bonusNote ?? (heldOnly ? 'the sum held only, not the monthly saving' : words.note))
+    const bonusBasis =
+      timing === 'by_keys'
+        ? ` It includes a ${whole(bonus)} bonus${terms.dirtApplies ? ' after DIRT' : ''}, on its conditions.`
+        : timing === 'after_drawdown'
+          ? ` The ${whole(statedBonus)} bonus is paid after drawdown and is not counted.`
+          : timing === 'not_stated'
+            ? ` The ${whole(statedBonus)} bonus is not counted: when it is paid is not stated.`
+            : ''
+    const figureBasis =
+      words.figureBasis +
+      bonusBasis +
+      (heldOnly ? ' It counts the sum held only, as it does not take the monthly saving.' : '')
     return [
       {
         product,
         fixed: terms.access === 'fixed_term',
         rate,
         money: total,
+        figureBasis,
         row: {
           id: product.id,
           lead: displayName(product),
           kind: accessKind(terms, termMonths),
-          value: pct(rate),
+          value: words.value,
           figure: `${whole(total)} ${byWhen(horizon, result.knownMonths, asOf)}`,
-          note: note ?? (product.rateConfirmed ? null : 'rate from CCPC only'),
+          note,
           held: false,
           confirmed: product.rateConfirmed,
         },
@@ -859,6 +1044,7 @@ function fitsDate(
         ],
         objective:
           `By the term that fits ${monthName(horizon.by)}, then by interest after DIRT plus any bonus by then. ` +
+          `${moneyColumnLine(horizon)} ` +
           (horizon.months > FITS_DATE_TERM_MONTHS
             ? `The keys are ${String(horizon.months)} months away, so fixed terms are shown at six months; a six-month term's interest stops at its end, as the rate after it is not stated.`
             : 'A fixed term is shown at the longest term that ends by then.'),
@@ -879,6 +1065,11 @@ function fitsDate(
       },
       statement: RESULT_STATEMENT,
     },
+    figureBasis: shown.map((fit) => ({
+      id: fit.row.id,
+      lead: fit.row.lead,
+      line: fit.figureBasis,
+    })),
   }
 }
 
@@ -1039,6 +1230,7 @@ function mortgageBySort(
       },
       statement: RESULT_STATEMENT,
     },
+    figureBasis: [],
   }
 }
 

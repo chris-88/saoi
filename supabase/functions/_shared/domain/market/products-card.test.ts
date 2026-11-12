@@ -11,6 +11,8 @@ import {
   type ProductsResult,
 } from './products-card.ts'
 import { PRODUCTS_AS_OF, productsHoldings, productsPlan } from './products-card.fixture.ts'
+import type { ProductView } from '../../contracts/market-tools.ts'
+import type { Market } from './types.ts'
 
 const MARKET = normaliseMarket(MARKET_FIXTURE)
 const FIGURES = caseFigures({
@@ -236,5 +238,167 @@ describe('productsCard: no figures, no card', () => {
     expect(productsCard(MARKET, noDate, { arrangement: 'fits_date' }, PRODUCTS_AS_OF).kind).toBe(
       'questions',
     )
+  })
+})
+
+describe('productsCard: a rate states its period (2026-11-12)', () => {
+  const NO_INSTRUCTION = /\b(check|ask|confirm)\w*/i
+
+  /** The card and the model's figure basis for one row, by id. */
+  function rowOf(result: ProductsResult, id: string) {
+    const card = cardOf(result)
+    const row = card.rows.find((item) => item.id === id)
+    if (result.kind !== 'card') throw new Error('expected a card')
+    const basis = result.figureBasis.find((item) => item.id === id)
+    if (row === undefined || basis === undefined) {
+      throw new Error(`no row ${id} in ${JSON.stringify(card.rows.map((item) => item.id))}`)
+    }
+    return { card, row, basis: basis.line }
+  }
+
+  /** A market with one more instant-access account, an introductory rate on CCPC's figures. */
+  function withIntro(thenAerPct: number | null): Market {
+    const base = MARKET.products.find((product) => product.id === 'moco:savings.moco_easysaver')
+    if (base === undefined || base.terms.kind !== 'deposit') throw new Error('no MoCo row')
+    const intro: ProductView = {
+      ...base,
+      id: 'test:savings.intro',
+      provenance: { ...base.provenance, sourceUrl: 'https://example.ie/intro-saver' },
+      name: 'Intro Saver',
+      rateConfirmed: thenAerPct !== null,
+      terms: {
+        ...base.terms,
+        aerPct: 4.5,
+        bands: [{ fromEur: 0, toEur: null, aerPct: 4.5 }],
+        introductory: { months: 6, thenAerPct },
+        rateForNewAccounts: false,
+      },
+    }
+    return { ...MARKET, products: [...MARKET.products, intro] }
+  }
+
+  it('bunq: the bonus to 1 January on the value, the rate after in the note and the basis', () => {
+    const { row, basis } = rowOf(
+      productsCard(MARKET, FIGURES, { arrangement: 'held_vs_market' }, PRODUCTS_AS_OF),
+      'bunq:savings.bunq_savings',
+    )
+    expect(row.value).toBe('3.11% to 1 Jan')
+    expect(row.note).toBe('then 1.61% to €10,000 and 1.51% above; the money counts both')
+    expect(row.figure).toMatch(/^€[\d,]+ by Jul 2028$/)
+    const money = row.figure.split(' ')[0] ?? ''
+    expect(basis).toBe(`${money} counts 3.11% to 1 January, then 1.61% to €10,000 and 1.51% above.`)
+  })
+
+  it('bunq with monthly saving: the bonus on money added after each reset is named', () => {
+    const { row, basis } = rowOf(
+      productsCard(MARKET, FIGURES, { arrangement: 'fits_date' }, PRODUCTS_AS_OF),
+      'bunq:savings.bunq_savings',
+    )
+    expect(row.value).toBe('3.11% to 1 Jan')
+    expect(basis).toMatch(
+      /^€[\d,]+ counts 3\.11% to 1 January, then 1\.61% to €10,000 and 1\.51% above on what is held at each 1 January and 1 July, and 3\.11% on money added after it\.$/,
+    )
+  })
+
+  it('an introductory rate with no rate after: the money stops at its end, and says so', () => {
+    const { row, basis } = rowOf(
+      productsCard(withIntro(null), FIGURES, { arrangement: 'held_vs_market' }, PRODUCTS_AS_OF),
+      'test:savings.intro',
+    )
+    expect(row.value).toBe('4.50% to May 2027')
+    expect(row.note).toBe('then not stated; the money stops at May 2027')
+    expect(row.figure).toMatch(/^€[\d,]+ by May 2027$/)
+    expect(row.confirmed).toBe(false)
+    expect(basis).toMatch(
+      /^€[\d,]+ counts 4\.50% to May 2027; the rate after is not stated, so the money stops there\.$/,
+    )
+  })
+
+  it('an introductory rate with a stated rate after: the money counts both, to the date', () => {
+    const { row, basis } = rowOf(
+      productsCard(withIntro(1.5), FIGURES, { arrangement: 'held_vs_market' }, PRODUCTS_AS_OF),
+      'test:savings.intro',
+    )
+    expect(row.value).toBe('4.50% to May 2027')
+    expect(row.note).toBe('then 1.50%; the money counts both')
+    expect(row.figure).toMatch(/^€[\d,]+ by Jul 2028$/)
+    expect(basis).toMatch(/^€[\d,]+ counts 4\.50% to May 2027, then 1\.50%\.$/)
+  })
+
+  it('a rate for new accounts: how long it holds is not stated, and the row stays confirmed', () => {
+    const { row, basis } = rowOf(
+      productsCard(MARKET, FIGURES, { arrangement: 'held_vs_market' }, PRODUCTS_AS_OF),
+      'moco:savings.moco_easysaver',
+    )
+    expect(row.value).toBe('2.10%')
+    expect(row.note).toBe('rate for new accounts; how long it holds is not stated')
+    expect(row.confirmed).toBe(true)
+    expect(basis).toMatch(
+      /^€[\d,]+ counts 2\.10%, the rate for new accounts, to July 2028; how long it holds is not stated\.$/,
+    )
+  })
+
+  it('a rate that holds to the date: no period on the value', () => {
+    // Keys in December: bunq's bonus runs past the date, so nothing is stated against it.
+    const december = { ...FIGURES, keysMonth: '2026-12' }
+    const { row, basis } = rowOf(
+      productsCard(MARKET, december, { arrangement: 'held_vs_market' }, PRODUCTS_AS_OF),
+      'bunq:savings.bunq_savings',
+    )
+    expect(row.value).toBe('3.11%')
+    expect(row.note ?? '').not.toMatch(/then|stops|not stated/)
+    expect(basis).toMatch(/^€[\d,]+ counts 3\.11%(, a variable rate,)? to December 2026\.$/)
+  })
+
+  it('a fixed term that ends before the date: as before, and the basis says the money stops', () => {
+    const { row, basis } = rowOf(
+      productsCard(MARKET, FIGURES, { arrangement: 'held_vs_market' }, PRODUCTS_AS_OF),
+      'boi:savings.advantage_fixed',
+    )
+    expect(row.value).toBe('2.48%')
+    expect(row.note).toBe('interest to May 2028 only: the rate after is not stated')
+    expect(basis).toMatch(
+      /^€[\d,]+ counts 2\.48% for the 18-month term, to May 2028; the rate after is not stated, so the money stops there\.$/,
+    )
+  })
+
+  it('states once what the money column counts', () => {
+    const line =
+      'The money column is interest after DIRT to July 2028, counting each rate for as long as the product states it and the rate after where stated; where the rate after is not stated the money stops there.'
+    for (const arrangement of ['held_vs_market', 'by_access', 'fits_date'] as const) {
+      const card = cardOf(productsCard(MARKET, FIGURES, { arrangement }, PRODUCTS_AS_OF))
+      expect(card.basis.objective, arrangement).toContain(line)
+    }
+  })
+
+  it('every new string is free of advice and instruction', () => {
+    for (const market of [MARKET, withIntro(null), withIntro(1.5)]) {
+      for (const arrangement of ['held_vs_market', 'by_access', 'fits_date'] as const) {
+        const result = productsCard(market, FIGURES, { arrangement }, PRODUCTS_AS_OF)
+        const card = cardOf(result)
+        if (result.kind !== 'card') continue
+        expect(result.figureBasis.map((item) => item.id)).toEqual(card.rows.map((row) => row.id))
+        const strings = [
+          ...card.rows.flatMap((row) => [row.value, row.note ?? '']),
+          ...result.figureBasis.map((item) => item.line),
+          card.basis.objective,
+        ]
+        for (const text of strings) {
+          expect(adviceWordsIn(text), text).toEqual([])
+          expect(text).not.toMatch(NO_INSTRUCTION)
+          expect(text).not.toMatch(/\b(best|should|recommended)\b/i)
+        }
+      }
+    }
+  })
+
+  it('a mortgage card carries no figure basis: its figure is a cost, not interest', () => {
+    const result = productsCard(
+      MARKET,
+      FIGURES,
+      { arrangement: 'mortgage_by_sort' },
+      PRODUCTS_AS_OF,
+    )
+    expect(result.kind === 'card' && result.figureBasis).toEqual([])
   })
 })
