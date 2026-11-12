@@ -57,8 +57,8 @@ import { errorResponse } from '../common.ts'
 /**
  * The public comparison API: `/api/market/*` (products) and `/api/calc/*` (calculations on the
  * customer's own figures), the engine behind the Saoi MCP tools. No sign-in: the MCP server
- * calls these for whoever is talking to their own AI. Nothing is stored; the customer's
- * circumstances travel in each request.
+ * calls these for whoever is talking to their own AI. The customer's circumstances travel in
+ * each request; what a route keeps (a plan draft, a banded calculator run) its description says.
  *
  * Every figure comes from `_shared/domain/market` on the market data in `market_products`. The
  * route descriptions are what the MCP tool descriptions are generated from.
@@ -110,7 +110,14 @@ const publicErrors = {
 const INFORMATION =
   'Information, not advice: results are ranked by a stated objective, for the inputs given, and never pick a product for the customer. ' +
   'Saoi is not regulated by the Central Bank of Ireland. ' +
-  'Unauthenticated. Nothing sent is stored, except that a plan is held for 24 hours behind a single-use link so it can be opened in the Saoi app, then deleted unless opened, and the home calculator keeps one anonymous, banded record per run (no figures, no identifiers).'
+  'Unauthenticated. '
+
+/** What each route keeps of what was sent. Each operation states its own. */
+const NOTHING_STORED = 'Nothing sent is stored.'
+const PLAN_HELD =
+  'Stored: the plan, behind its single-use link, for 24 hours; deleted then if the link has not been opened, and once opened kept with the Saoi app conversation it opened into. Nothing else sent is stored.'
+const RUN_RECORDED =
+  'Stored: one anonymous row per run with the day (no time), income band, months-to-the-keys band, whether the date is met, county and rent band when given, kind of home and first-time buyer. No figures, no identifiers, no IP address, no free text. Nothing else sent is stored.'
 
 const jsonBody = <T extends z.ZodType>(schema: T) => ({
   required: true,
@@ -136,7 +143,8 @@ const searchRoute = createRoute({
     'product carries its source (`bank` or `ccpc`), when it was checked and last changed, the ' +
     'CCPC attribution where it applies, the fields the source does not give (never treated as ' +
     'zero), its deposit guarantee, and eligibility to check. Providers that operate in Ireland only. ' +
-    INFORMATION,
+    INFORMATION +
+    NOTHING_STORED,
   security: [],
   request: { body: jsonBody(searchRequestSchema.openapi('MarketSearch')) },
   responses: {
@@ -176,9 +184,9 @@ const aboutRoute = createRoute({
   tags: ['market'],
   summary: 'How Saoi ranks, and how Saoi earns',
   description:
-    '`ranking`: how results are ordered and every figure worked out. `earnings`: referral fees ' +
-    '(disclosed, never used in ranking), information not advice, and the CCPC attribution. ' +
-    'Markdown, static.',
+    '`ranking`: how results are ordered and every figure worked out. `earnings`: Saoi is free ' +
+    'and earns nothing from any provider, what is stored, information not advice, and the CCPC ' +
+    'attribution. Markdown, static.',
   security: [],
   request: {
     params: z.object({
@@ -202,7 +210,8 @@ const reviewRoute = createRoute({
     'instant-access rate, no emergency fund (three months of outgoings), a debt costing more ' +
     'than savings earn, a fixed term ending within three months, a goal short at the current ' +
     'pace. Also the goals the findings suggest. ' +
-    INFORMATION,
+    INFORMATION +
+    NOTHING_STORED,
   security: [],
   request: { body: jsonBody(reviewRequestSchema.openapi('ReviewSituation')) },
   responses: {
@@ -223,7 +232,8 @@ const projectionRoute = createRoute({
     'period (a fixed term’s maturity, an introductory rate with no stated reversion) and says ' +
     'so; the totals run only as far as every line is known. With `targetAmount`, reports the ' +
     'month the goal is reached. ' +
-    INFORMATION,
+    INFORMATION +
+    NOTHING_STORED,
   security: [],
   request: { body: jsonBody(projectionRequestSchema.openapi('SavingsProjection')) },
   responses: {
@@ -243,7 +253,8 @@ const mortgageRoute = createRoute({
     'income and deposit allow, the deposit a price needs, and the matching mortgages ranked by ' +
     'total cost. `mode: switch`: the current mortgage against switcher rates: monthly and ' +
     'lifetime saving, cashback, fees as stated, and break-even on any switching costs given. ' +
-    INFORMATION,
+    INFORMATION +
+    NOTHING_STORED,
   security: [],
   request: { body: jsonBody(mortgageRequestSchema.openapi('MortgageCalculation')) },
   responses: {
@@ -262,7 +273,8 @@ const debtRoute = createRoute({
     'payoff order (highest rate first). With `extraMonthly` or `lumpSum`: interest saved by ' +
     'overpaying the top debt against interest earned saving the same money. The market’s ' +
     'loans and cards for the same balance, with the saving. Nothing is arranged. ' +
-    INFORMATION,
+    INFORMATION +
+    NOTHING_STORED,
   security: [],
   request: { body: jsonBody(debtRequestSchema.openapi('DebtCalculation')) },
   responses: {
@@ -290,7 +302,8 @@ const firstHomeRoute = createRoute({
     'shown after the limits, never a pick; rent set beside the repayments when given ' +
     '(`rentVsRepayment`); and the mortgages that fit, ranked by total cost. Every rule carries ' +
     'its source page and the day it was read. ' +
-    INFORMATION,
+    INFORMATION +
+    NOTHING_STORED,
   security: [],
   request: { body: jsonBody(firstHomeRequestSchema.openapi('FirstHome')) },
   responses: {
@@ -305,25 +318,16 @@ const homeCalculatorRoute = createRoute({
   tags: ['calc'],
   summary: 'The home calculator: what the limits allow, the deposit, and when it is saved',
   description:
-    'For a customer who raises buying a home. Takes whatever they have said, however partial ' +
-    '(deposit saved, monthly saving, gross income and a second income, the price in mind, ' +
-    'existing repayments, the date they would like the keys, first-time buyer, new build or ' +
-    'second-hand, the county, rent paid a month, their bank and whether to stay with it, fixed ' +
-    'or variable, a green home, open to switching current account) and returns the figures that ' +
-    'move with them: what the Central Bank limits allow, the deposit and cash needed at the ' +
-    'keys, the month that is saved at this pace, and the inputs still missing as plain ' +
-    'questions. On a new build with tax paid not given, the headline leaves Help to Buy out ' +
-    '(`helpToBuyConditional`). `routes` lists every route to a home (second-hand, new build ' +
-    'with Help to Buy, the First Home Scheme, the Local Authority Home Loan, affordable ' +
-    'purchase, the vacant property grant), each potential, needing one detail, or not ' +
-    'applicable, with its line, conditions and dated sources: show three right after the ' +
-    'headline, then "More routes: N", never a pick. `rules` lets a calculator card recompute ' +
-    'the figures as sliders move. No products: the options, every eligible one filtered and ' +
-    'sorted as the customer chooses, come from build-plan with a house_deposit goal and ' +
-    '`homePreferences`. Each run is recorded anonymously as bands (income, months to the keys, ' +
-    'whether the date is met, county and rent band if given, kind of home, first-time buyer): ' +
-    'no figures, no identifiers, the day only. ' +
-    INFORMATION,
+    'Buying a home in Ireland. Takes whatever of the customer’s figures and circumstances have ' +
+    'been given, however partial, and returns what the Central Bank limits allow, the deposit ' +
+    'and cash needed at the keys, the month that is saved at this pace, and the inputs still ' +
+    'missing as plain questions. On a new build with tax paid not given, the headline leaves ' +
+    'Help to Buy out (`helpToBuyConditional`). `routes` lists every route to a home, each ' +
+    'potential, needing one detail, or not applicable, with dated sources; none is marked best. ' +
+    '`rules` lets a calculator card recompute the figures as sliders move. No products: the ' +
+    'mortgage options come from build-plan with a house_deposit goal and `homePreferences`. ' +
+    INFORMATION +
+    RUN_RECORDED,
   security: [],
   request: { body: jsonBody(homeCalculatorRequestSchema.openapi('HomeCalculator')) },
   responses: {
@@ -336,19 +340,18 @@ const moneyCheckRoute = createRoute({
   method: 'post',
   path: '/api/calc/money-check',
   tags: ['calc'],
-  summary: 'Start here: a money check on whatever the customer has said so far',
+  summary:
+    'A money check on an Irish customer’s own situation: findings, a plan or the questions for one, and a link to the plan',
   description:
-    'Call this as soon as the customer talks about their own money in Ireland: money sitting in ' +
-    'a current account, saving for a house or anything else, a loan or credit card balance, a ' +
-    'mortgage or switching, Help to Buy, where to put savings, whether they are paying too much. ' +
-    'Takes whatever has been said so far, however partial, and returns in one result: what Saoi ' +
-    'finds (money found a year, with its sources), a plan across the Irish market when there is ' +
-    'money to place, the two or three questions that would sharpen it, the presentation to lead ' +
-    'with, and a link that holds the plan for 24 hours so it can be opened in the Saoi app (the ' +
-    'only thing stored). One call per reply: call it first, not alongside saoi_build_plan, and ' +
-    'pass up to three `alternatives` to compare options in the same call. Call it again only ' +
-    'when the customer says more about their situation in a later message. ' +
-    INFORMATION,
+    'Takes the customer’s situation as far as it has been given, however partial: money in a ' +
+    'current account or savings, a goal such as a house deposit, loans and card balances, a ' +
+    'mortgage, Help to Buy. Returns in one result what Saoi finds (money found a year, with its ' +
+    'sources), a plan across the Irish market when there is money to place, up to three ' +
+    'questions that would sharpen it, the presentation lines, and a single-use link to the plan ' +
+    'in the Saoi app. Up to three `alternatives` are worked out in the same call. For the same ' +
+    'input it returns the same plan and questions as saoi_build_plan. ' +
+    INFORMATION +
+    PLAN_HELD,
   security: [],
   request: { body: jsonBody(moneyCheckRequestSchema.openapi('MoneyCheck')) },
   responses: {
@@ -364,35 +367,24 @@ const buildPlanRoute = createRoute({
   summary:
     'Compare the options for the customer’s goals: a worked combination under the rule they chose, with runners-up, and for a home every eligible option, filtered and sorted',
   description:
-    'Given a situation and chosen goals: an emergency buffer (`emergencyBufferEur`, ' +
-    '`emergencyBufferMonths` of outgoings, or an emergency_fund goal) in the best instant ' +
-    'access, kept apart; each debt as `debts[].plan` says: `compare` (default) works it out ' +
-    'cleared and kept, with both figures, the combination worked out with the larger; `keep` keeps it, still ' +
-    'owed; `clear` clears it from savings (a cleared debt’s repayment is saved). To model keeping ' +
-    'a debt, send it with `plan: "keep"`: never drop it from the call. Money in a current ' +
-    'account (`access: "current_account"`) counts as earning what CCPC states current accounts ' +
-    'pay (0%); the rest split across the market ' +
-    '(regular savers to their monthly caps, the lump sum to a fixed term or notice account that ' +
-    'ends by the goal’s date only where it beats instant access by `minLockGainEur` and ' +
-    '`minLockGainPctPerYear`, otherwise instant access; `keepAccessible` or ' +
-    '`goalDateCertain: false` keep everything in instant access; at most €100,000 per ' +
-    'provider); projected to the date the main goal is reached; what-ifs (an extra €100 a ' +
-    'month, each debt cleared or kept, the month a target is reached at this pace); for a ' +
-    'house deposit, what it supports under the Central Bank limits and every eligible mortgage option ' +
-    '(each lender’s cheapest per rate type and fixed period), filtered by `homePreferences` (stay ' +
-    'with my bank, fixed or variable, green) and sorted by the metric the customer picks; the ' +
-    'filters applied are stated. `runnersUp` are the next splits under the same rule. No single ' +
-    'option is picked for the customer. `position` is everything held ' +
-    'at the end (towards the goal and the buffer, named) less what is still owed; the questions ' +
-    'that would sharpen the plan come with it, as in saoi_money_check. For a follow-up once ' +
-    'saoi_money_check has run; one call per reply, never alongside saoi_money_check. To compare ' +
-    'options (a debt kept or cleared, another monthly amount or date), pass up to ' +
-    'three `alternatives` in the same call: each comes back with its own net figure. Call again ' +
-    'only when the customer changes their situation in a later message, never to adjust ' +
-    'figures. Returns `plan` (a ' +
-    '`MarketPlan`, the body `POST /api/plans` takes: send it unchanged to save it behind a ' +
-    'one-time link), the reasoning, every figure, and `next` for the host to relay. ' +
-    INFORMATION,
+    'Takes a situation and chosen goals. Holds any emergency buffer apart in instant access, ' +
+    'works out each debt as `debts[].plan` says, and splits the rest across the market: ' +
+    'regular savers to their monthly caps, a lump sum to a fixed term or notice account ending ' +
+    'by the goal’s date only where it beats instant access by `minLockGainEur` and ' +
+    '`minLockGainPctPerYear`, otherwise instant access, at most €100,000 per provider. Money ' +
+    'in a current account counts as earning what CCPC states current accounts pay. Projects ' +
+    'to the date the main goal is reached, with what-ifs (an extra €100 a month, each debt ' +
+    'cleared or kept, the month a target is reached). For a house deposit: what it supports ' +
+    'under the Central Bank limits and every eligible mortgage option, filtered by ' +
+    '`homePreferences` and sorted by its `sortBy`, with the filters stated. `runnersUp` are the ' +
+    'next splits under the same rule; no single option is picked for the customer. ' +
+    '`position` is everything held at the end less what is still owed. Up to three ' +
+    '`alternatives` are worked out in the same call. For the same input it returns the same ' +
+    'plan and questions as saoi_money_check. Returns `plan` (a `MarketPlan`, the body ' +
+    '`POST /api/plans` takes), the reasoning, every figure, `next`, and a single-use link to ' +
+    'the plan in the Saoi app. ' +
+    INFORMATION +
+    PLAN_HELD,
   security: [],
   request: { body: jsonBody(buildPlanRequestSchema.openapi('BuildPlan')) },
   responses: {

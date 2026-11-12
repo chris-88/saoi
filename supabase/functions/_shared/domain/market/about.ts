@@ -81,12 +81,18 @@ with the provider.
 
 const EARNINGS = `# How Saoi earns
 
-Saoi is free, and it earns nothing today. It takes no commission, referral fee or payment for
-leads from any provider, and no provider pays to be shown or to be placed higher. Links to a
-provider go to the provider's own page, with nothing tracked that earns a fee.
+Saoi is free, and it earns nothing from any provider. No provider pays Saoi, or pays to be
+shown or to be placed higher. Links to a provider go to the provider's own page, with nothing
+tracked that earns a fee.
 
-Nothing about a customer is stored except a comparison they choose to save: it is held for 24
-hours behind a single-use link so they can open it in the Saoi app, then deleted unless opened.
+## What is stored
+
+A plan worked out for a customer is held for 24 hours behind a single-use link so they can open
+it in the Saoi app; it is deleted then if the link has not been opened, and once opened it is
+kept with the conversation it opened into. Each run of the home calculator keeps one anonymous
+row of bands (the day, income band, how many months to the keys, whether the date is met,
+county and rent band when given, kind of home, first-time buyer): no figures, no identifiers,
+no IP address. Nothing else a customer sends is stored.
 
 ## How the order is decided
 
@@ -111,5 +117,5 @@ Bank of Ireland's savings and deposit figures are read from Bank of Ireland's ow
 
 export const ABOUT: Readonly<Record<AboutTopic, About>> = {
   ranking: { topic: 'ranking', title: 'How Saoi ranks', text: RANKING, updatedOn: '2026-11-10' },
-  earnings: { topic: 'earnings', title: 'How Saoi earns', text: EARNINGS, updatedOn: '2026-11-10' },
+  earnings: { topic: 'earnings', title: 'How Saoi earns', text: EARNINGS, updatedOn: '2026-11-12' },
 }

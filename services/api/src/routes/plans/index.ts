@@ -90,7 +90,8 @@ const saveRoute = createRoute({
   description:
     'Public: no sign-in. Called by the Saoi MCP server (`saoi_save_plan`) with the plan ' +
     '`saoi_build_plan` returned (`MarketPlan`, version 1). Holds it and returns a claim link ' +
-    'into app.saoi.ie that works once, for 24 hours; unopened, it is then deleted. ' +
+    'into app.saoi.ie that works once, for 24 hours; unopened, it is then deleted, and once ' +
+    'opened it is kept with the Saoi app conversation it opened into. ' +
     '`saoi_build_plan` already returns such a link with every plan. The body is capped at 64 KiB; saves are ' +
     'rate-limited per address and capped per day.',
   security: [],

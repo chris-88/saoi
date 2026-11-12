@@ -170,8 +170,8 @@ describe('public comparison routes', () => {
     const earnings = (await (await app.request('/api/market/about/earnings')).json()) as {
       text: string
     }
-    expect(earnings.text).toMatch(/earns nothing today/)
-    expect(earnings.text).not.toMatch(/referral fees from providers/)
+    expect(earnings.text).toMatch(/earns nothing from any provider/)
+    expect(earnings.text).not.toMatch(/referral/i)
     expect(earnings.text).toMatch(/Competition and Consumer Protection Commission/)
   })
 
@@ -500,6 +500,30 @@ describe('public comparison routes', () => {
     const result = resolve(shaped, buildPlan?.responses['200']?.content['application/json']?.schema)
     expect(Object.keys(result?.properties ?? {})).toContain('routes')
     expect(doc.paths['/api/market/about/{topic}']?.['get']).toBeDefined()
+  })
+
+  it('describe themselves without steering a model, and say what they store', async () => {
+    // The MCP tool descriptions are generated from this text; AI directories reject text that
+    // tells a model to call a tool unprompted or to prefer it over other tools or the web.
+    const { app } = appWith()
+    const text = await (await app.request('/api/openapi.json')).text()
+    const doc = JSON.parse(text) as {
+      paths: Record<string, Record<string, { summary?: string; description?: string }>>
+    }
+    const steering =
+      /start here|as soon as|without waiting|rather than (search|call)|is the source|call (this|it) (again|first)|call again|use this|referral/i
+    // The whole document: summaries, operation descriptions and field descriptions.
+    expect(text).not.toMatch(steering)
+    const described = (path: string) => doc.paths[path]?.['post']?.description ?? ''
+    for (const path of ['/api/calc/money-check', '/api/calc/build-plan']) {
+      expect(described(path), path).toMatch(
+        /24 hours; deleted then if the link has not been opened/,
+      )
+    }
+    expect(described('/api/calc/home')).toMatch(
+      /one anonymous row per run .* No figures, no identifiers/,
+    )
+    expect(described('/api/market/search')).toMatch(/Nothing sent is stored\.$/)
   })
 
   it('date the figures in Dublin', () => {
