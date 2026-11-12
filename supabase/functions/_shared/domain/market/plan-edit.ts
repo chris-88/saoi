@@ -1,4 +1,4 @@
-import type { CasePlan, EditPlanBody, PlanEditable } from '../../contracts/case-plan.ts'
+import type { CasePlan, CasePlanEdit, PlanEditable } from '../../contracts/case-plan.ts'
 import type { PlanProgress } from '../../contracts/holdings.ts'
 import {
   type MarketPlan,
@@ -92,7 +92,7 @@ const neededOf = (plan: MarketPlan): number | null =>
  * goals as stored, the extras it kept (`inputs`), and the price the profile shows held, so a
  * change to the date or the saving does not move the price under them.
  */
-export function rebuildRequest(plan: MarketPlan, edits: EditPlanBody): BuildPlanRequest {
+export function rebuildRequest(plan: MarketPlan, edits: CasePlanEdit): BuildPlanRequest {
   const inputs = plan.inputs ?? {}
   const shown = editableOf(plan)
   const goal = editGoal(plan)
@@ -261,7 +261,7 @@ const MAX_EDITS = 20
 export function applyPlanEdit(
   market: Market,
   plan: MarketPlan,
-  edits: EditPlanBody,
+  edits: CasePlanEdit,
   asOf: AsOf,
   at: string,
 ): PlanEditResult | null {

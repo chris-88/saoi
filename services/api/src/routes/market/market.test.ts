@@ -45,6 +45,7 @@ function fakeDrafts(init: { heldToday?: number; failing?: boolean } = {}) {
     claimedPlan: () => Promise.resolve(null),
     markClaimed: () => Promise.resolve(false),
     recordClaim: () => Promise.resolve({ facts: [] }),
+    saveEdit: () => Promise.resolve(),
   }
   return { store, held, sweeps }
 }

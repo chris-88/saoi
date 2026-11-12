@@ -75,6 +75,7 @@ function fakePlans(init: { savedToday?: number; withPlan?: string[] } = {}) {
       claims.push(input)
       return Promise.resolve({ facts: [] })
     },
+    saveEdit: () => Promise.resolve(),
   }
   return { store, rows, claims }
 }
@@ -562,6 +563,9 @@ function recordingDb(latestEventAt: string) {
     if (chain.table === 'events' && ops.includes('maybeSingle')) {
       return { data: { created_at: latestEventAt }, error: null }
     }
+    if (chain.table === 'saved_plans' && ops.includes('update')) {
+      return { data: [{ id: 'plan-1' }], error: null }
+    }
     return { data: ops.includes('maybeSingle') ? null : [], error: null, count: 0 }
   }
   const from = (table: string): unknown => {
@@ -666,5 +670,32 @@ describe('the claim’s writes (2026-11-12, "3. Arrival")', () => {
       '2026-11-12T09:00:00Z',
     )
     expect(inserts('messages')[0]?.['content']).toBe(ARRIVAL_FALLBACK_OPENING)
+  })
+})
+
+describe('an edit’s writes (2026-11-12, "6. The saving months")', () => {
+  it('replaces the claimed plan’s document and writes plan_edited with the payload', async () => {
+    const { db, chains } = recordingDb('2026-11-12T09:00:00.000001+00:00')
+    const plan = marketPlanSchema.parse({ ...homePlan([]), title: 'Buying a home by March 2028' })
+    const event = { planId: 'plan-1', reading: 'Moving the keys to March 2028 means …' }
+    await supabasePlanStore(db).saveEdit({ planId: 'plan-1', caseId: CASE_ID, plan, event })
+
+    const update = chains.find((chain) => chain.table === 'saved_plans')
+    expect(update?.steps.find((step) => step.op === 'update')?.args[0]).toEqual({
+      document: plan,
+      title: 'Buying a home by March 2028',
+    })
+    // Only the plan claimed into this case.
+    expect(update?.steps.filter((step) => step.op === 'eq').map((step) => step.args)).toEqual([
+      ['id', 'plan-1'],
+      ['case_id', CASE_ID],
+    ])
+    const written = chains.find((chain) => chain.table === 'events')
+    expect(written?.steps.find((step) => step.op === 'insert')?.args[0]).toMatchObject({
+      case_id: CASE_ID,
+      type: 'plan_edited',
+      actor: 'customer',
+      payload: event,
+    })
   })
 })

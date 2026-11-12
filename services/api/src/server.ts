@@ -38,6 +38,8 @@ const turnModels =
 
 const planStore = supabasePlanStore(db)
 const marketStore = supabaseMarketStore(db)
+const alertStore = supabaseAlertStore(db)
+const holdingStore = supabaseHoldingStore(db)
 const vapid =
   env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_D && env.VAPID_SUBJECT
     ? { publicKey: env.VAPID_PUBLIC_KEY, privateD: env.VAPID_PRIVATE_D, subject: env.VAPID_SUBJECT }
@@ -71,7 +73,7 @@ const app = createApp({
     drafts: { store: planStore, appBaseUrl: env.APP_BASE_URL },
   },
   alerts: {
-    store: supabaseAlertStore(db),
+    store: alertStore,
     market: () => marketStore.load(),
     // The console's sender, so there is one web-push path; unset VAPID keeps alerts for the visit.
     ...(vapid === undefined
@@ -82,7 +84,13 @@ const app = createApp({
         }),
     internalKey: env.INTERNAL_JOB_KEY ?? '',
   },
-  holdings: { store: supabaseHoldingStore(db), plans: planStore },
+  holdings: { store: holdingStore, plans: planStore },
+  casePlan: {
+    plans: planStore,
+    holdings: holdingStore,
+    reminders: alertStore,
+    market: () => marketStore.load(),
+  },
   admin: adminStores,
   turn: {
     run: createTurnRunner({

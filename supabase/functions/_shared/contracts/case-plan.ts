@@ -92,7 +92,7 @@ export const casePlanSchema = z
   .describe('The claimed plan, as the profile shows it.')
 export type CasePlan = z.infer<typeof casePlanSchema>
 
-export const editPlanBodySchema = z
+export const casePlanEditSchema = z
   .object({
     targetDate: month.optional().describe('YYYY-MM, this month or later.'),
     homePrice: amount.optional(),
@@ -106,9 +106,9 @@ export const editPlanBodySchema = z
     message: 'Give at least one figure to change.',
   })
   .describe('The figures to change; the rest stay as they are.')
-export type EditPlanBody = z.infer<typeof editPlanBodySchema>
+export type CasePlanEdit = z.infer<typeof casePlanEditSchema>
 
-export const editPlanResponseSchema = casePlanSchema
+export const casePlanEditedSchema = casePlanSchema
   .extend({
     reading: z
       .string()
@@ -117,4 +117,4 @@ export const editPlanResponseSchema = casePlanSchema
       ),
   })
   .describe('The rebuilt plan, and what the change does.')
-export type EditPlanResponse = z.infer<typeof editPlanResponseSchema>
+export type CasePlanEdited = z.infer<typeof casePlanEditedSchema>

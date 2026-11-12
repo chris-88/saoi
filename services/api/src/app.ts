@@ -33,6 +33,7 @@ import {
   type AlertRouteOptions,
 } from './routes/alerts/index.ts'
 import { holdingRoutes, type HoldingRouteOptions } from './routes/holdings/index.ts'
+import { casePlanRoutes, type CasePlanRouteOptions } from './routes/plans/case-plan.ts'
 import type { CaseStore } from './store/cases.ts'
 import type { PartnerStore } from './store/partners.ts'
 import type { SessionStore } from './store/sessions.ts'
@@ -56,6 +57,8 @@ export type AppDeps = {
   readonly alerts?: AlertRouteOptions
   /** Holdings. Unset, `/api/cases/{id}/holdings` is not mounted. */
   readonly holdings?: HoldingRouteOptions
+  /** The plan in the profile. Unset, `/api/cases/{id}/plan` is not mounted. */
+  readonly casePlan?: CasePlanRouteOptions
   readonly config?: Partial<RouteConfig>
   readonly version: string
   /** Browser origins allowed by CORS. Empty or unset denies every origin. */
@@ -130,7 +133,8 @@ export function createApp(deps: AppDeps) {
         'X-Presenter-Key',
         REQUEST_ID_HEADER,
       ],
-      allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+      // PATCH: the holdings and the plan in the profile are changed in place.
+      allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       exposeHeaders: [REQUEST_ID_HEADER, 'Retry-After'],
       maxAge: 600,
     }),
@@ -192,6 +196,7 @@ export function createApp(deps: AppDeps) {
   // Before `caseRoutes` too: they carry their own `requireCaseAccess` per route.
   if (deps.alerts) app.route('/', alertRoutes(deps.alerts))
   if (deps.holdings) app.route('/', holdingRoutes(deps.holdings))
+  if (deps.casePlan) app.route('/', casePlanRoutes(deps.casePlan))
   app.route('/', caseRoutes)
   if (deps.plans) app.route('/', planRoutes(deps.plans))
   if (deps.market) app.route('/', marketRoutes(deps.market))
