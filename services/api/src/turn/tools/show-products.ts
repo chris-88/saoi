@@ -1,13 +1,32 @@
 import { writeEvent } from '@shared/db/case-repository.ts'
 import { loadHoldings } from '@shared/db/holdings.ts'
 import { loadClaimedPlans } from '@shared/db/saved-plans.ts'
-import { caseFigures, productsCard, productsCardText } from '@shared/domain/market/products-card.ts'
+import {
+  caseFigures,
+  productsCard,
+  productsCardText,
+  type RowBasis,
+} from '@shared/domain/market/products-card.ts'
 import { adviceWordsIn } from '@shared/market/disclosures.ts'
 import type { ToolModule } from './_shared.ts'
 
 /** Today in Europe/Dublin, YYYY-MM-DD: the day the figures are worked out from. */
 const dublinToday = (now: Date = new Date()): string =>
   now.toLocaleDateString('en-CA', { timeZone: 'Europe/Dublin' })
+
+/**
+ * What each row's money figure counts, for the model to quote when asked whether a figure will
+ * be realised (2026-11-12: Saoirse told Chris bunq's €581 would not be earned and to check with
+ * bunq, when the figure already counted the bonus ending and the rate after it). Not on the card.
+ */
+export function figureBasisText(rows: readonly RowBasis[]): string {
+  if (rows.length === 0) return ''
+  return (
+    '\nfigureBasis, what each row’s money figure counts, to answer a question about one (not to ' +
+    'read out with the card):\n' +
+    rows.map((row) => `- ${row.lead}: ${row.line}`).join('\n')
+  )
+}
 
 /**
  * The product card that follows the question asked (the first-home experience, "4. The
@@ -61,8 +80,11 @@ export const showProductsTool: ToolModule<'show_products'> = {
     }
 
     const card = outcome.card
-    // Held to the line on every string the card says (the duty of care, 2.2): never shown if not.
-    const advice = adviceWordsIn(productsCardText(card))
+    // Held to the line on every string the card says (the duty of care, 2.2), and on what the
+    // model is handed to quote beside it: never shown if not.
+    const advice = adviceWordsIn(
+      [productsCardText(card), ...outcome.figureBasis.map((row) => row.line)].join('\n'),
+    )
     if (advice.length > 0) {
       return { result: 'That card could not be shown just now.', refused: true }
     }
@@ -78,6 +100,14 @@ export const showProductsTool: ToolModule<'show_products'> = {
         ...(input.filters === undefined ? {} : { filters: input.filters }),
         rows: card.rows.length,
         more: card.more,
+        // Read back by the next turns' digest (`productsBasisLines`): the rows' figure basis
+        // outlives the tool result, which only the turn that called it sees.
+        figureBasis: outcome.figureBasis.map((row) => ({
+          id: row.id,
+          lead: row.lead,
+          value: row.value,
+          line: row.line,
+        })),
       },
     }).catch(() => undefined)
 
@@ -87,7 +117,8 @@ export const showProductsTool: ToolModule<'show_products'> = {
         (card.more > 0 ? ` and ${String(card.more)} more they can ask for` : '') +
         `. ${card.arrangement.line} Say one line about what it shows, in their terms, and ask ` +
         'nothing else. Do not read the rows or figures out, do not rank them in words, and ' +
-        'never say which one to take: it is a comparison, and they decide.',
+        'never say which one to take: it is a comparison, and they decide.' +
+        figureBasisText(outcome.figureBasis),
       card,
     }
   },

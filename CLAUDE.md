@@ -687,13 +687,20 @@ Every tool input is Zod-validated before any effect. Invalid input returns a too
   `withHeldRates`) and builds the `market_products` card: up to 8 rows plus `more`, the
   arrangement named with how to change it, and the basis statement (duty of care 2.4). Every
   string is held to `adviceWordsIn`. No figures: the result is the questions to ask, no card.
-  Writes `products_shown`. The digest lists cards shown (arrangement and when, never the rows,
-  read from `messages.cards` as `productsShown`), so "by access instead" calls it again.
+  Writes `products_shown`. The digest lists cards shown (arrangement and when, never the rows'
+  figures, read from `messages.cards` as `productsShown`), so "by access instead" calls it again.
   `fits_date` counts a bonus in the money by the keys month only when it is paid by then
   (`bonusTiming`): the MortgageSaver bonus is paid after drawdown, and a bonus with no stated
   payment date is not assumed; both are a note, not a figure. The same test as the tool
   (`holdsMarketFigures`: a claimed plan or holdings) lets questions about other providers
-  through the gate.
+  through the gate. A savings row's value names the end of a bonus or introductory rate that
+  ends before the date ("3.11% to 1 Jan") and its note what follows (the rate after, which the
+  money already counts, or that it is not stated and the money stops there; a rate for new
+  accounts says how long it holds is not stated), the basis says once what the money column
+  counts, and the tool result, not the card, gives the model each row's `figureBasis` to quote
+  (`rate-period.ts`, 2026-11-12); `products_shown` records them, and later turns' digests carry
+  one line a row (lead, value, `figureBasis`) for the newest card of each of the two most recent
+  arrangements (`productsBasisLines`).
 
 Twenty-two tools. **Which ones a turn is offered is decided by the conversation's stage** - the
 form tools are gated further on a form existing, and `show_products` is offered in any stage

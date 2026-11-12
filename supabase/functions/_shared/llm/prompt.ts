@@ -555,6 +555,12 @@ export type CaseDigest = {
    */
   readonly productsShown?: readonly string[]
   /**
+   * What each row's money figure counts on the most recent products cards, one line a row:
+   * "bunq Savings Account, 3.11% to 1 Jan (held_vs_market): €456 counts 3.11% to 1 January,
+   * then 1.61% to €10,000 and 1.51% above." For a question about a figure in a later turn.
+   */
+  readonly productsBasis?: readonly string[]
+  /**
    * Whether what they asked for is what suits them, worked out from what they have said about
    * the amount and how soon they mean to repay it. Already decided; the figures are not yours.
    */
@@ -1075,12 +1081,24 @@ function digestSection(digest: CaseDigest): string {
       'month (fits_date), or the mortgage options in the order they asked for (mortgage_by_sort).',
       'One line with the card and nothing asked beside it, unless the tool returns questions: then',
       'ask the first one. Never "best", never "recommended", never what they should take.',
+      'The money figures on a savings card already count bonus and introductory periods as the',
+      'product states them, and the rate after where it is stated. When asked whether a figure will',
+      "be realised, answer from that row's `figureBasis` (in the tool result, or listed below once",
+      'a card has been shown). Never say a figure will not be realised unless the row says the',
+      'rate after is not stated, and never tell them to check with the provider: the row’s note',
+      'is the fact to relay.',
       ...(digest.productsShown === undefined || digest.productsShown.length === 0
         ? []
         : [
-            'Already shown (the rows are on the card, not here; for another arrangement or order,',
-            'call `show_products` again):',
+            'Already shown (for another arrangement or order, call `show_products` again):',
             ...digest.productsShown.map((line) => `- ${line}`),
+          ]),
+      ...(digest.productsBasis === undefined || digest.productsBasis.length === 0
+        ? []
+        : [
+            'What the money figure on each row of those cards counts (`figureBasis`), for a',
+            'question about one; not to read out:',
+            ...digest.productsBasis.map((line) => `- ${line}`),
           ]),
       '',
     )

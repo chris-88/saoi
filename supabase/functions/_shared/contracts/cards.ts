@@ -650,11 +650,17 @@ export const marketProductsCardSchema = z.object({
         lead: z.string(),
         /** The access or term: "instant access", "6-month fixed", "4-year fixed at 3.20%". */
         kind: z.string(),
-        /** The headline: "3.11%", "€1,751/mo". */
+        /**
+         * The headline: "€1,751/mo", "3.11%"; a savings rate that ends before the date names its
+         * end ("3.11% to 1 Jan").
+         */
         value: z.string(),
         /** The money in their figures: "€815 by Jul 2028", "€49,338 over 5 years". */
         figure: z.string(),
-        /** One flag, or null: "rate from CCPC only", "bonus until 1 Jan". */
+        /**
+         * One flag, or null: "then 1.51%; the money counts both", "rate for new accounts; how
+         * long it holds is not stated", "rate from CCPC only; how long it holds is not stated".
+         */
         note: z.string().nullable(),
         /** Their own account, the baseline. */
         held: z.boolean(),
