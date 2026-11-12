@@ -358,8 +358,21 @@ export type MessageRow = {
 }
 
 /**
+ * Cards that go on screen before Saoirse's words in the turn that shows them (`turn/turn.ts`
+ * yields them first): the plan brought from their AI, the account-opened welcome and the reuse
+ * card. A reload puts them in the same place, above the message's text, so the transcript reads
+ * as it did live: the arrival is [card, question], not [question, card].
+ */
+export const LEAD_CARDS: ReadonlySet<Card['type']> = new Set<Card['type']>([
+  'saved_plan',
+  'account_opened',
+  'reuse',
+])
+
+/**
  * The transcript as the screen renders it: messages and their cards in order, each card
- * resolved against the case (Invariant 2 applied to history).
+ * resolved against the case (Invariant 2 applied to history). A message's lead cards
+ * (`LEAD_CARDS`) come before its text, the rest after it.
  */
 export function buildHistory(
   messages: readonly MessageRow[],
@@ -368,30 +381,36 @@ export function buildHistory(
   const entries = messages
     // System messages are internal: they belong in the event log, not the conversation.
     .filter((message) => message.role !== 'system')
-    .flatMap((message): HistoryEntry[] => [
-      {
-        kind: 'message',
-        id: message.id,
-        author: message.role === 'customer' ? ('customer' as const) : ('assistant' as const),
-        text: message.content,
-        messageId: message.id,
-      },
-      ...message.cards.flatMap((raw, index): HistoryEntry[] => {
-        // A card that no longer parses is dropped rather than breaking the whole transcript.
-        const parsed = cardSchema.safeParse(raw)
-        if (!parsed.success) return []
+    .flatMap((message): HistoryEntry[] => {
+      const cards = message.cards.flatMap(
+        (raw, index): Extract<HistoryEntry, { kind: 'card' }>[] => {
+          // A card that no longer parses is dropped rather than breaking the whole transcript.
+          const parsed = cardSchema.safeParse(raw)
+          if (!parsed.success) return []
 
-        const settled = settledState(parsed.data, state)
-        return [
-          {
-            kind: 'card',
-            id: `${message.id}-card-${String(index)}`,
-            card: parsed.data,
-            ...(settled === undefined ? {} : { settled }),
-          },
-        ]
-      }),
-    ])
+          const settled = settledState(parsed.data, state)
+          return [
+            {
+              kind: 'card',
+              id: `${message.id}-card-${String(index)}`,
+              card: parsed.data,
+              ...(settled === undefined ? {} : { settled }),
+            },
+          ]
+        },
+      )
+      return [
+        ...cards.filter((entry) => LEAD_CARDS.has(entry.card.type)),
+        {
+          kind: 'message',
+          id: message.id,
+          author: message.role === 'customer' ? ('customer' as const) : ('assistant' as const),
+          text: message.content,
+          messageId: message.id,
+        },
+        ...cards.filter((entry) => !LEAD_CARDS.has(entry.card.type)),
+      ]
+    })
 
   return supersedeOlderStatus(entries)
 }

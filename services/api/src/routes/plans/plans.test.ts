@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { exampleMarketPlan } from '@shared/contracts/market-plan.example.ts'
-import type { MarketPlan } from '@shared/contracts/market-plan.ts'
+// The app first: it extends zod with `.openapi()` before any shared schema is built.
 import { createApp } from '../../app.ts'
+import { marketPlanSchema, type MarketPlan } from '@shared/contracts/market-plan.ts'
 import { createTokenVerifier } from '../../middleware/auth.ts'
 import type { PlanStore, StoredPlan } from '../../store/plans.ts'
 import {
@@ -17,7 +18,11 @@ import {
 } from '../../testing.ts'
 import { hashPlanToken, PLAN_LINK_TTL_MS } from './index.ts'
 import { savedPlanCard } from '@shared/db/saved-plans.ts'
+import type { Db } from '../../store/client.ts'
+import { previewPlanResponseSchema } from '@shared/contracts/session.ts'
+import { ARRIVAL_FALLBACK_OPENING } from '@shared/domain/market/arrival.ts'
 import { homeRoutes } from '@shared/domain/market/routes.ts'
+import { supabasePlanStore } from '../../store/plans.ts'
 
 const verifyToken = createTokenVerifier({ secret: SECRET, jwksUrl: 'http://127.0.0.1:1/jwks' })
 const NOW = Date.parse('2026-11-09T12:00:00Z')
@@ -139,6 +144,35 @@ const save = async (app: ReturnType<typeof appWith>['app'], plan: unknown = exam
   post(app, '/api/plans', { plan, client: 'claude' })
 
 const tokenOf = (claimUrl: string): string => claimUrl.split('/?plan=')[1] ?? ''
+
+/** The first-home experience's couple, as `saoi_build_plan` words their arrival (2026-11-12). */
+const ARRIVAL = {
+  keysOn: '2027-09',
+  readyLine: 'September 2027',
+  readyNote: 'Before interest',
+  factParts: [
+    '€40,000 deposit',
+    '+ €4,000 stamp duty',
+    '+ €3,000 legal and survey',
+    'Help to Buy up to €35,000 not counted',
+  ],
+  progress: { savedEur: 32_000, neededEur: 47_000, monthlySavingEur: 1_500 },
+  tiles: [
+    { label: 'Savings', value: 'up to 3.11%', lines: ['€879 interest by Jun 2028', '17 accounts'] },
+    {
+      label: 'Mortgage',
+      value: '€360,000',
+      lines: ['from 3.25%, €1,567/mo', '5 options, 30 years'],
+    },
+    { label: 'Could afford', value: 'up to €488,000', lines: ['4× income, 90% loan', '30 years'] },
+  ],
+  assumptions: ['First-time buyer', 'New build', 'Rent not given'],
+  hookQuestion: {
+    key: 'tax_paid',
+    question: 'How much Income Tax and DIRT have you both paid over the last four years?',
+    why: 'It decides whether Help to Buy covers the €35,000.',
+  },
+}
 
 /** The worked example with a home comparison of one option and these routes. */
 const homePlan = (routes: unknown[]) => ({
@@ -328,6 +362,28 @@ describe('POST /api/plans/preview', () => {
       (await post(app, '/api/plans/preview', { token: 'A'.repeat(22) }, { as: null })).status,
     ).toBe(404)
   })
+
+  it('carries a home plan’s arrival and Saoirse’s first line (2026-11-12)', async () => {
+    const { app } = appWith()
+    const plan = { ...homePlan([]), arrival: ARRIVAL }
+    const token = tokenOf(String((await save(app, plan)).body['claimUrl']))
+
+    const shown = await post(app, '/api/plans/preview', { token }, { as: null })
+    expect(shown.status).toBe(200)
+    expect(shown.body['arrival']).toEqual(ARRIVAL)
+    expect(shown.body['opening']).toBe(
+      'How much Income Tax and DIRT have you both paid over the last four years? It decides whether Help to Buy covers the €35,000.',
+    )
+    expect(previewPlanResponseSchema.parse(shown.body).arrival?.tiles).toHaveLength(3)
+  })
+
+  it('gives a plan without an arrival none, and the short line that invites them on', async () => {
+    const { app } = appWith()
+    const token = tokenOf(String((await save(app)).body['claimUrl']))
+    const shown = await post(app, '/api/plans/preview', { token }, { as: null })
+    expect(shown.body['arrival']).toBeNull()
+    expect(shown.body['opening']).toBe(ARRIVAL_FALLBACK_OPENING)
+  })
 })
 
 describe('POST /api/plans/claim', () => {
@@ -461,5 +517,126 @@ describe('POST /api/plans/claim', () => {
     const claimed = await post(app, '/api/plans/claim', { token }, { as: USER_ID })
     expect(claimed.status).toBe(429)
     expect(plans.rows.get(hashPlanToken(token))?.claimedAt).toBeNull()
+  })
+})
+
+/**
+ * A stand-in for supabase-js that records every chain it is asked for and answers each with an
+ * empty success, so the claim's writes can be read back in order without a database.
+ */
+function recordingDb(latestEventAt: string) {
+  const chains: { table: string; steps: { op: string; args: unknown[] }[] }[] = []
+  const answer = (chain: (typeof chains)[number]) => {
+    const ops = chain.steps.map((step) => step.op)
+    if (chain.table === 'messages' && ops.includes('single')) {
+      return { data: { id: 'message-1' }, error: null }
+    }
+    if (chain.table === 'events' && ops.includes('maybeSingle')) {
+      return { data: { created_at: latestEventAt }, error: null }
+    }
+    return { data: ops.includes('maybeSingle') ? null : [], error: null, count: 0 }
+  }
+  const from = (table: string): unknown => {
+    const chain = { table, steps: [] as { op: string; args: unknown[] }[] }
+    chains.push(chain)
+    const builder: object = new Proxy(
+      {},
+      {
+        get: (_target, prop) =>
+          prop === 'then'
+            ? (resolve: (value: unknown) => void) => {
+                resolve(answer(chain))
+              }
+            : (...args: unknown[]) => {
+                chain.steps.push({ op: String(prop), args })
+                return builder
+              },
+      },
+    )
+    return builder
+  }
+  return { db: { from, rpc: from } as unknown as Db, chains }
+}
+
+describe('the claim’s writes (2026-11-12, "3. Arrival")', () => {
+  const claim = async (plan: MarketPlan, latestEventAt: string) => {
+    const { db, chains } = recordingDb(latestEventAt)
+    await supabasePlanStore(db).recordClaim({
+      planId: '99999999-9999-4999-8999-999999999999',
+      caseId: CASE_ID,
+      participantId: 'participant-1',
+      plan,
+      client: 'claude',
+      savedAt: new Date(NOW).toISOString(),
+    })
+    const inserts = (table: string) =>
+      chains
+        .filter((chain) => chain.table === table)
+        .flatMap((chain) => chain.steps.filter((step) => step.op === 'insert'))
+        .map((step) => step.args[0] as Record<string, unknown>)
+    return { chains, inserts }
+  }
+
+  it('writes Saoirse’s first message: the plan card with the arrival, the question as its text', async () => {
+    const plan = marketPlanSchema.parse({ ...homePlan([]), arrival: ARRIVAL })
+    const { chains, inserts } = await claim(plan, '2026-11-12T09:00:00.000001+00:00')
+
+    const [message] = inserts('messages')
+    expect(message).toMatchObject({
+      role: 'assistant',
+      content:
+        'How much Income Tax and DIRT have you both paid over the last four years? It decides whether Help to Buy covers the €35,000.',
+    })
+    const cards = message?.['cards'] as Record<string, unknown>[]
+    expect(cards).toHaveLength(1)
+    expect(cards[0]).toMatchObject({
+      type: 'saved_plan',
+      planId: '99999999-9999-4999-8999-999999999999',
+      arrival: ARRIVAL,
+    })
+
+    // After the events, so it is the last thing on the case; the claim is then seen, so the next
+    // `POST /api/sessions` does not run a return turn over the question.
+    const at = (match: (chain: (typeof chains)[number]) => boolean) => chains.findIndex(match)
+    const claimedAt = at((chain) =>
+      chain.steps.some(
+        (step) =>
+          step.op === 'insert' &&
+          (step.args[0] as Record<string, unknown>)['type'] === 'plan_claimed',
+      ),
+    )
+    const messageAt = at((chain) => chain.table === 'messages')
+    const seenAt = at(
+      (chain) => chain.table === 'cases' && chain.steps.some((step) => step.op === 'update'),
+    )
+    expect(claimedAt).toBeGreaterThan(-1)
+    expect(messageAt).toBeGreaterThan(claimedAt)
+    expect(seenAt).toBeGreaterThan(messageAt)
+    const claimed = inserts('events').find((event) => event['type'] === 'plan_claimed')
+    expect((claimed?.['payload'] as Record<string, unknown>)['opening']).toBe(message?.['content'])
+    const seen = chains
+      .filter((chain) => chain.table === 'cases')
+      .flatMap((chain) => chain.steps.filter((step) => step.op === 'update'))
+      .map((step) => (step.args[0] as Record<string, unknown>)['last_seen_at'])
+    expect(seen).toHaveLength(1)
+    expect(Date.parse(String(seen[0]))).toBeGreaterThanOrEqual(Date.parse('2026-11-12T09:00:00Z'))
+  })
+
+  it('moves last seen to the latest event when the database clock runs ahead', async () => {
+    const ahead = '2099-01-01T00:00:00.000001+00:00'
+    const { chains } = await claim(marketPlanSchema.parse(exampleMarketPlan()), ahead)
+    const seen = chains
+      .filter((chain) => chain.table === 'cases')
+      .flatMap((chain) => chain.steps.filter((step) => step.op === 'update'))
+      .map((step) => (step.args[0] as Record<string, unknown>)['last_seen_at'])
+    expect(seen).toEqual([ahead])
+  })
+
+  it('opens a plan without an arrival on the short line that invites them on', async () => {
+    const { inserts } = await claim(
+      marketPlanSchema.parse(exampleMarketPlan()),
+      '2026-11-12T09:00:00Z',
+    )
+    expect(inserts('messages')[0]?.['content']).toBe(ARRIVAL_FALLBACK_OPENING)
   })
 })

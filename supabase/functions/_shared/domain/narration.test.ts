@@ -62,6 +62,21 @@ describe('saying what happened', () => {
     ).toBe('Your documents were checked and accepted.')
   })
 
+  /** Since 2026-11-12 the claim writes the card and the first question itself. */
+  it('says a claimed plan’s card and first question are already on screen', () => {
+    expect(
+      describeEvent({
+        type: 'plan_claimed',
+        payload: { title: 'Buying a home by June 2028', opening: 'Roughly what price?' },
+      }),
+    ).toBe(
+      'The plan you made with your AI assistant is here: Buying a home by June 2028. Its card and my first question are already on screen.',
+    )
+    expect(describeEvent({ type: 'plan_claimed', payload: { title: 'A plan' } })).toBe(
+      'The plan you made with your AI assistant is here: A plan.',
+    )
+  })
+
   /** Nobody wrote copy for it, so nobody reads a raw event name. */
   it('says nothing for an event it has no words for', () => {
     expect(describeEvent({ type: 'turn_tools', payload: {} })).toBeNull()

@@ -8,9 +8,16 @@ import { accountOf, allocatable } from './allocate.ts'
 import { euro } from './figures.ts'
 import { monthName } from './home-arithmetic.ts'
 import { homePathways, TERM_YEARS } from './pathways.ts'
-import { NO_DATE_HORIZON } from './plan.ts'
 import { pct } from './product.ts'
-import { addMonths, bestRung, monthsUntil, placement, round2, simulateDeposit } from './simulate.ts'
+import {
+  addMonths,
+  bestRung,
+  monthsUntil,
+  NO_DATE_HORIZON,
+  placement,
+  round2,
+  simulateDeposit,
+} from './simulate.ts'
 import type { AsOf, Market } from './types.ts'
 
 /**

@@ -16,7 +16,7 @@ import {
   type ClaimPlanResponse,
   type PreviewPlanResponse,
 } from '@shared/contracts/session.ts'
-import { comparisonCard, figuresLine, routesOf } from '@shared/db/saved-plans.ts'
+import { comparisonCard, figuresLine, planOpening, routesOf } from '@shared/db/saved-plans.ts'
 import type { CaseSubstance } from '@shared/domain/continuity.ts'
 import type { AppEnv } from '../../context.ts'
 import { ApiError, errorBody } from '../../errors.ts'
@@ -123,7 +123,8 @@ const previewRoute = createRoute({
     'Reads a saved comparison by its link’s token without spending it, so the app can welcome ' +
     'the customer with it and show what Saoi keeps before anything is stored against them: ' +
     'the title, their figures in one line, and for a home the first three options in the ' +
-    'order they chose. No sign-in. Same errors as the claim.',
+    'order they chose, the host card’s figures (`arrival`) and Saoirse’s first line (`opening`, ' +
+    'which the claim writes as the first message). No sign-in. Same errors as the claim.',
   security: [],
   request: {
     body: {
@@ -167,6 +168,8 @@ export function previewOf(plan: MarketPlan, expiresAt: string): PreviewPlanRespo
         .join(' + '),
     })),
     routes: routesOf(plan),
+    arrival: plan.arrival ?? null,
+    opening: planOpening(plan),
     expiresAt,
   }
 }
@@ -179,9 +182,11 @@ const claimRoute = createRoute({
   description:
     'Spends the link’s token and puts the plan in a conversation: the browser’s current one ' +
     'when it is still empty, otherwise a new one. Records the situation’s facts that map ' +
-    'cleanly onto the fact catalogue (`customer_stated`) and writes `plan_saved` and ' +
-    '`plan_claimed`, which the next turn narrates with the plan card. Opening it again in the ' +
-    'same browser returns the same conversation (`reopened`).',
+    'cleanly onto the fact catalogue (`customer_stated`), writes `plan_saved` and ' +
+    '`plan_claimed`, and writes Saoirse’s first message: the plan card with the preview’s ' +
+    '`opening` as its text. The claim is not news for a return turn; the customer’s answer is ' +
+    'an ordinary message turn. Opening it again in the same browser returns the same ' +
+    'conversation (`reopened`).',
   security,
   middleware: [requireIdentity],
   request: {

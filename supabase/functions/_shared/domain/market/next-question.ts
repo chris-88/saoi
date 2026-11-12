@@ -146,6 +146,34 @@ export function rankQuestions(
         `The price sets the keys date and the loan: 15% either side of ${euro(price)} moves the keys by ${String(s.keysMonths)} months.`,
     )
   }
+  /*
+   * Tax paid (2026-11-12, the first-home experience): on a new build with tax paid not given,
+   * Help to Buy is left out of the figures and could be up to `helpToBuyEur`. What is at stake is
+   * that amount, so it is the score; the spread is the plan run with none of it and all of it.
+   */
+  const conditional = main.home?.helpToBuyConditional === true ? main.home.helpToBuyEur : 0
+  if (home && base.taxPaidLastFourYearsEur === undefined && conditional > 0) {
+    const results = [0, conditional].map((taxPaidLastFourYearsEur) =>
+      run({ ...base, taxPaidLastFourYearsEur }),
+    )
+    const measures = results.map(measure)
+    candidates.push({
+      key: 'tax_paid',
+      question: `How much Income Tax and DIRT ${base.buyingTogether === true ? 'have you both' : 'have you'} paid over the last four years?`,
+      why: `It decides whether Help to Buy covers the ${euro(Math.round(conditional))}.`,
+      spread: {
+        keysMonths: keysSpread(
+          measures.map((m) => m.keys),
+          asOf,
+        ),
+        costEur: round2(spreadOf(measures.map((m) => m.cost))),
+        costPer100kEur: round2(spreadOf(measures.map((m) => m.costPer100k))),
+        priceEur: round2(spreadOf(measures.map((m) => m.price))),
+        totalEur: round2(spreadOf(measures.map((m) => m.total))),
+      },
+      scoreEur: round2(conditional),
+    })
+  }
   const assumed = main.assumedRepayments.map((item) => item.debtId)
   if (assumed.length > 0) {
     score(

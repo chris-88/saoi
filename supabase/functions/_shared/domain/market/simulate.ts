@@ -17,6 +17,9 @@ import type { DepositTerms, SavingsFigures } from '../../contracts/market-tools.
 
 export const DIRT_RATE = 0.33
 
+/** How far a plan or a savings figure runs when the goal has no date: 12 months. */
+export const NO_DATE_HORIZON = 12
+
 export type DepositInput = {
   readonly lumpSum: number
   readonly monthly: number

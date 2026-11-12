@@ -29,12 +29,17 @@ import { suggestionsFor } from '@shared/domain/quotes/suitability.ts'
 import { isProduct, type Product } from '@shared/domain/journey.ts'
 import { describeProspect, wouldInvolve } from '@shared/domain/prospect.ts'
 import { describeGoals, goalContextFor } from '@shared/db/goals.ts'
-import { loadClaimedPlans, savedPlanDigestLines } from '@shared/db/saved-plans.ts'
+import {
+  arrivedWith,
+  type ClaimedPlan,
+  loadClaimedPlans,
+  savedPlanDigestLines,
+} from '@shared/db/saved-plans.ts'
 import { loadCaseAlerts, loadOpenReminders } from '@shared/db/alerts.ts'
 import { shortDate } from '@shared/domain/market/alerts.ts'
 import { loadHoldings } from '@shared/db/holdings.ts'
 import { holdingLine, planProgress } from '@shared/domain/market/holdings.ts'
-import { participantFor, type LoadedCase } from '@shared/db/loaded-case.ts'
+import { participantFor, type LoadedCase, type LoadedMessage } from '@shared/db/loaded-case.ts'
 
 /** The case and the catalogue Saoirse speaks from this turn. */
 export async function loadTurnContext(admin: Db, caseId: string) {
@@ -326,7 +331,8 @@ export async function buildGeneration(
   const claimedPlans = await loadClaimedPlans(admin, turn.caseId)
   const broughtPlans = claimedPlans.map((claimed) => ({
     title: claimed.plan.title,
-    lines: savedPlanDigestLines(claimed),
+    // The claim's first message (the card and the question) is in the transcript: say so.
+    lines: savedPlanDigestLines(claimed, arrivedWith(claimed, loaded.messages)),
   }))
 
   /*
@@ -477,21 +483,12 @@ export async function buildGeneration(
     'fills anything in for them, because it does not. It keeps what they have and lets them ' +
     'come back to it. Do not describe the card or name the button.'
 
-  const history = loaded.messages
-    .filter((message) => message.role !== 'system')
-    .map((message) => ({
-      role: message.role === 'customer' ? ('user' as const) : ('assistant' as const),
-      content: message.content,
-    }))
-
-  if (isCustomerTurn) {
-    history.push({
-      role: 'user',
-      content: offeringSignIn
-        ? `${customerMessage}\n\n(${SIGN_IN_INSTRUCTION.trim()})`
-        : customerMessage,
-    })
-  }
+  const { history } = conversationSoFar({
+    messages: loaded.messages,
+    claimedPlans,
+    customerMessage: isCustomerTurn ? customerMessage : null,
+    signIn: offeringSignIn ? SIGN_IN_INSTRUCTION.trim() : null,
+  })
 
   if (turn.trigger === 'action') {
     // Told as an event, not quoted as speech, so Saoirse does not answer a question nobody asked.
@@ -560,3 +557,77 @@ export async function buildGeneration(
 }
 
 export type Generation = Awaited<ReturnType<typeof buildGeneration>>
+
+/**
+ * The first reply after a claim (2026-11-12, "3. Arrival"): the customer has seen the plan card
+ * and Saoirse's first line, the question, and this is their reply. Answer it; no second
+ * welcome, no card again, no second question.
+ */
+export const ARRIVAL_ANSWER_INSTRUCTION =
+  'This is their reply to your first line, the question under the plan card. When it answers ' +
+  'it, say what the answer changes in their figures, working out with the tools anything that ' +
+  'needs working out; when it asks something else, answer that. Do not welcome them, introduce ' +
+  'yourself, show or describe the plan card again or repeat your first line, and do not ask ' +
+  'another question in this reply. It is a comparison, not advice: never pick a product, ' +
+  'lender or option for them.'
+
+/** How a conversation opened from a saved plan began, for the model, before Saoirse's first line. */
+export const ARRIVAL_OPENED_NOTE =
+  '(The customer opened, in this app, the comparison they saved in their own AI assistant. ' +
+  'The plan card, with their figures, was on screen before your first line.)'
+
+/**
+ * The conversation as the model reads it: what was said, then this turn's message with any
+ * asides for it. Pure, so the arrival's handling is tested without a database.
+ *
+ * A conversation opened from a saved plan starts with Saoirse's own message, written by the
+ * claim (the card and the question), so the model is first told how it began and the history
+ * starts on the customer's side. When the last thing said is that message, the customer's
+ * message is their reply to the question (`answeringArrival`), and it carries the instruction
+ * that keeps the turn to answering it.
+ */
+export function conversationSoFar(input: {
+  readonly messages: readonly LoadedMessage[]
+  readonly claimedPlans: readonly ClaimedPlan[]
+  /** This turn's message, when the customer typed one; null for a tap or a return. */
+  readonly customerMessage: string | null
+  /** The sign-in aside, when the offer is about to appear under the reply. */
+  readonly signIn: string | null
+}): { history: { role: 'user' | 'assistant'; content: string }[]; answeringArrival: boolean } {
+  const spoken = input.messages.filter((message) => message.role !== 'system')
+  const history = spoken.map((message) => ({
+    role: message.role === 'customer' ? ('user' as const) : ('assistant' as const),
+    content: message.content,
+  }))
+
+  const first = spoken[0]
+  if (
+    first !== undefined &&
+    first.role === 'assistant' &&
+    input.claimedPlans.some((claimed) => arrivedWith(claimed, [first]))
+  ) {
+    history.unshift({ role: 'user', content: ARRIVAL_OPENED_NOTE })
+  }
+
+  const last = spoken.at(-1)
+  const answeringArrival =
+    input.customerMessage !== null &&
+    last !== undefined &&
+    input.claimedPlans.some((claimed) => arrivedWith(claimed, [last]))
+
+  if (input.customerMessage !== null) {
+    const asides = [
+      ...(answeringArrival ? [ARRIVAL_ANSWER_INSTRUCTION] : []),
+      ...(input.signIn === null ? [] : [input.signIn]),
+    ]
+    history.push({
+      role: 'user',
+      content:
+        asides.length === 0
+          ? input.customerMessage
+          : `${input.customerMessage}\n\n(${asides.join(' ')})`,
+    })
+  }
+
+  return { history, answeringArrival }
+}

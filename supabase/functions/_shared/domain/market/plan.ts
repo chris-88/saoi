@@ -12,6 +12,7 @@ import {
 } from '../../contracts/market-tools.ts'
 import type { MarketPlan, PlanProduct } from '../../contracts/market-plan.ts'
 import { allocatable, allocate, type AllocationLine } from './allocate.ts'
+import { arrivalFor } from './arrival.ts'
 import { debtMonthlyRate, payoffOrder, repaymentOf } from './debt.ts'
 import { displayName, euro, interestToClear } from './figures.ts'
 import { HELP_TO_BUY, MORTGAGE_MEASURES } from '../../market/first-home-rules.ts'
@@ -25,7 +26,7 @@ import { questionsFor } from './questions.ts'
 import { project } from './projection.ts'
 import { monthlyOutgoings } from './review.ts'
 import { guaranteeFlag, SAVINGS_ASSUMPTIONS, UNCONFIRMED_RATE } from './search.ts'
-import { addMonths, monthsUntil, round2, simulateDeposit } from './simulate.ts'
+import { addMonths, monthsUntil, NO_DATE_HORIZON, round2, simulateDeposit } from './simulate.ts'
 import type { AsOf, Market } from './types.ts'
 import { CLOSING_LINE } from '../../market/disclosures.ts'
 
@@ -62,7 +63,8 @@ const SAVING_GOALS: ReadonlySet<Goal['kind']> = new Set([
 ])
 const DEFAULT_MAX_ACCOUNTS = 5
 const DEFAULT_EMERGENCY_MONTHS = 3
-export const NO_DATE_HORIZON = 12
+// In `simulate.ts`, so `home-market.ts` can read it without importing this file.
+export { NO_DATE_HORIZON }
 
 const clip = (text: string, max: number): string =>
   text.length <= max ? text : `${text.slice(0, max - 1)}…`
@@ -173,9 +175,12 @@ export function buildPlan(
   )
   const runnersUp = workOutRunnersUp(market, base, main, asOf, createdAt)
   const closing = main.presentation.at(-1)
+  const compared = withComparison(main.plan, main.home, main.routes)
+  // For a home: what the app shows on arrival, the host card's figures and the one question.
+  const arrival = arrivalFor(market, base, main, nextQuestion, asOf)
   return {
     ...main,
-    plan: withComparison(main.plan, main.home, main.routes),
+    plan: arrival === undefined ? compared : { ...compared, arrival },
     alternatives,
     runnersUp,
     nextQuestion,
