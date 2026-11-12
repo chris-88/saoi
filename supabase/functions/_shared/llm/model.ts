@@ -18,13 +18,15 @@ import type { ModelUsage } from '../domain/cost.ts'
  * second provider would be a decision, not a drop-in.
  */
 
-/** The five fields the loop sends. Passed to the SDK unchanged, so the types are the SDK's. */
+/** The fields the loop sends. Passed to the SDK unchanged, so the types are the SDK's. */
 export type ModelRequest = {
   readonly model: string
   readonly max_tokens: number
   readonly system: Anthropic.TextBlockParam[]
   readonly messages: Anthropic.MessageParam[]
   readonly tools: Anthropic.Tool[]
+  /** `none` on a text-only turn: the tools stay in the request, so the cached prefix holds. */
+  readonly tool_choice?: Anthropic.ToolChoice
 }
 
 /** The only streamed event the loop reads. Everything else the SDK emits is dropped upstream. */
