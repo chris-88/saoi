@@ -107,13 +107,22 @@ export function describeEvent(event: {
       return `${amount}${from} arrived in your ${to}.`
     }
     /*
-     * A plan made in the customer's own AI, opened in the app. Narrated so the first turn
-     * after the claim link is a return turn about it, the same way the bank moving is.
+     * A plan made in the customer's own AI, opened in the app. Since 2026-11-12 the claim
+     * writes Saoirse's first message itself (the card and the question, `opening` in the
+     * payload) and is not news for a return turn; the sentence says both are already on screen,
+     * for the pill and for any digest that still meets it, without quoting the question, which
+     * the digest's plan lines name. Claims from before then carry no
+     * `opening`, and keep the sentence they had.
      */
-    case 'plan_claimed':
-      return typeof event.payload['title'] === 'string'
-        ? `The plan you made with your AI assistant is here: ${event.payload['title']}.`
-        : 'The plan you made with your AI assistant is here.'
+    case 'plan_claimed': {
+      const here =
+        typeof event.payload['title'] === 'string'
+          ? `The plan you made with your AI assistant is here: ${event.payload['title']}.`
+          : 'The plan you made with your AI assistant is here.'
+      return typeof event.payload['opening'] === 'string'
+        ? `${here} Its card and my first question are already on screen.`
+        : here
+    }
     default:
       return null
   }

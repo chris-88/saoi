@@ -1,6 +1,11 @@
 import type { Database, Json } from '@shared/db/database.types.ts'
-import { mustWrite, writeEvent } from '@shared/db/case-repository.ts'
-import { type ClaimedPlan, factsFromPlan, loadClaimedPlans } from '@shared/db/saved-plans.ts'
+import { mustWrite, saveMessage, writeEvent } from '@shared/db/case-repository.ts'
+import {
+  arrivalMessage,
+  type ClaimedPlan,
+  factsFromPlan,
+  loadClaimedPlans,
+} from '@shared/db/saved-plans.ts'
 import { seedHoldingsFromPlan } from '@shared/db/holdings.ts'
 import { DATA_NOTICE_EVENT } from '@shared/llm/data-notice.ts'
 import type { MarketPlan } from '@shared/contracts/market-plan.ts'
@@ -51,8 +56,10 @@ export type PlanStore = {
   /**
    * Everything the claim records on the case: the situation's facts that map cleanly
    * (`customer_stated`, keys the case does not already hold), the first holdings from the
-   * situation's savings and debts (once per case), `plan_saved` and `plan_claimed`,
-   * and `last_seen_at` when the case has none, so the claim is news the next turn narrates.
+   * situation's savings and debts (once per case), `plan_saved` and `plan_claimed`, and
+   * Saoirse's first message: the plan card with the opening line (`arrivalMessage`). Then
+   * `last_seen_at` moves past every event, so the claim is not news for a return turn: the
+   * customer has seen the card and the question, and their answer is an ordinary turn.
    */
   recordClaim(input: {
     planId: string
@@ -151,18 +158,6 @@ export function supabasePlanStore(db: Db): PlanStore {
     },
 
     async recordClaim({ planId, caseId, participantId, plan, client, savedAt }) {
-      // Before the events, so they fall after it and the next start reports `hasUpdates`.
-      const theCase = await db.from('cases').select('last_seen_at').eq('id', caseId).maybeSingle()
-      if (!theCase.data?.last_seen_at) {
-        mustWrite(
-          await db
-            .from('cases')
-            .update({ last_seen_at: new Date(Date.now() - 1_000).toISOString() })
-            .eq('id', caseId),
-          'the case',
-        )
-      }
-
       // What the case already holds wins: the plan is a snapshot from somewhere else.
       const held = await db
         .from('facts')
@@ -231,6 +226,7 @@ export function supabasePlanStore(db: Db): PlanStore {
           title: plan.title,
           products: plan.combination.products.length,
           facts: fresh.length,
+          opening: arrivalMessage({ id: planId, plan }).content,
         },
       })
       // The app showed the data notice in the chat and the customer accepted it before the
@@ -241,6 +237,45 @@ export function supabasePlanStore(db: Db): PlanStore {
         actor: 'customer',
         payload: { accepted: 'saved_comparison' },
       })
+
+      /*
+       * Saoirse's first message (2026-11-12, "3. Arrival"): the card the customer saw in their
+       * AI, then the one question, as one row. The app shows it at once; nothing waits on a turn.
+       */
+      const first = arrivalMessage({ id: planId, plan })
+      await saveMessage(db, {
+        caseId,
+        participantId: null,
+        role: 'assistant',
+        content: first.content,
+        cards: first.cards,
+      })
+
+      /*
+       * Seen up to now, so `POST /api/sessions` does not report `hasUpdates` and the app does not
+       * run a return turn that would greet them over the question. The latest event's own time,
+       * when the database clock is ahead of this one, so no event of the claim falls after it.
+       */
+      const latest = await db
+        .from('events')
+        .select('created_at')
+        .eq('case_id', caseId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      const now = new Date().toISOString()
+      const eventAt = latest.data?.created_at ?? null
+      mustWrite(
+        await db
+          .from('cases')
+          // The event's own string when it is not earlier: Postgres keeps microseconds.
+          .update({
+            last_seen_at:
+              eventAt !== null && Date.parse(eventAt) >= Date.parse(now) ? eventAt : now,
+          })
+          .eq('id', caseId),
+        'the case',
+      )
 
       return { facts: fresh.map((fact) => fact.key) }
     },
