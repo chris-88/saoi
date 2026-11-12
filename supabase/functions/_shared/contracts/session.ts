@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { planRouteSchema } from './market-plan.ts'
+import { planArrivalViewSchema, planRouteSchema } from './market-plan.ts'
 
 /**
  * `session` — attaches the caller's anonymous auth user to a participant on a case (§12, §28).
@@ -205,6 +205,16 @@ export const previewPlanResponseSchema = z.object({
   products: z.array(z.object({ name: z.string(), provider: z.string(), line: z.string() })).max(3),
   /** For a home: every route to a home the comparison carried, in its order; empty otherwise. */
   routes: z.array(planRouteSchema).max(6),
+  /**
+   * For a home: the host card's figures and the question Saoirse opens with (2026-11-12), so the
+   * app shows the card the customer just saw. Null for other plans and plans saved before then.
+   */
+  arrival: planArrivalViewSchema.nullable(),
+  /**
+   * Saoirse's first line, verbatim: the hook question and what it moves, or a short line that
+   * invites them to carry on. The claim writes exactly this as the conversation's first message.
+   */
+  opening: z.string(),
   expiresAt: z.string(),
 })
 export type PreviewPlanResponse = z.infer<typeof previewPlanResponseSchema>

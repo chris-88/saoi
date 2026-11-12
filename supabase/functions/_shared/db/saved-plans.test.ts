@@ -8,9 +8,12 @@ import {
 } from '../contracts/market-plan.ts'
 import { exampleMarketPlan } from '../contracts/market-plan.example.ts'
 import {
+  arrivalMessage,
+  arrivedWith,
   dayOf,
   factsFromPlan,
   monthOf,
+  planOpening,
   savedPlanCard,
   savedPlanDigestLines,
   shownPlans,
@@ -335,5 +338,57 @@ describe('routes to a home on a saved plan', () => {
     const parsed = marketPlanSchema.parse(upgradeStoredPlan(old))
     expect(parsed.combination).toEqual(combination)
     expect(parsed.comparison).toBeUndefined()
+  })
+})
+
+describe('the arrival message (2026-11-12)', () => {
+  const arrival = {
+    keysOn: null,
+    readyLine: 'Not reached at this pace',
+    readyNote: null,
+    factParts: ['€40,000 deposit', '+ €4,000 stamp duty', '+ €3,000 legal and survey'],
+    progress: null,
+    tiles: [{ label: 'Savings', value: 'up to 3.11%', lines: ['17 accounts'] }],
+    assumptions: ['Rent not given'],
+    hookQuestion: {
+      key: 'home_price',
+      question: 'Roughly what price, or which area?',
+      why: 'The price sets the keys date and the loan.',
+    },
+  }
+  const withArrival = (): MarketPlan => marketPlanSchema.parse({ ...exampleMarketPlan(), arrival })
+
+  it('is the plan card, carrying the arrival, with the hook question and what it moves as text', () => {
+    const message = arrivalMessage({ id: PLAN_ID, plan: withArrival() })
+    expect(message.content).toBe(
+      'Roughly what price, or which area? The price sets the keys date and the loan.',
+    )
+    expect(message.content).toBe(planOpening(withArrival()))
+    expect(message.cards).toHaveLength(1)
+    const card = cardSchema.parse(message.cards[0])
+    expect(card.type === 'saved_plan' && card.arrival).toEqual(arrival)
+  })
+
+  it('is found in the transcript by its card and its words, and nothing else', () => {
+    const claimed = { id: PLAN_ID, plan: withArrival() }
+    const opening = planOpening(claimed.plan)
+    expect(
+      arrivedWith(claimed, [{ role: 'assistant', content: opening, cards: ['saved_plan'] }]),
+    ).toBe(true)
+    expect(arrivedWith(claimed, [{ role: 'assistant', content: opening, cards: [] }])).toBe(false)
+    expect(
+      arrivedWith(claimed, [
+        {
+          role: 'assistant',
+          content: 'Here it is. Where would you like to start?',
+          cards: ['saved_plan'],
+        },
+      ]),
+    ).toBe(false)
+  })
+
+  it('leaves the card without an arrival for a plan saved before it', () => {
+    const card = savedPlanCard({ id: PLAN_ID, plan: plan() })
+    expect(card.type === 'saved_plan' && card.arrival).toBeUndefined()
   })
 })

@@ -268,6 +268,58 @@ export const planRouteSchema = z.object({
 })
 export type PlanRoute = z.infer<typeof planRouteSchema>
 
+/**
+ * What the app shows when the customer arrives from their AI (2026-11-12, the first-home
+ * experience, "3. Arrival"): the host card's figures, worded once by saoi-api, so the app's card
+ * and the host's look like one thing, and the one question Saoirse opens with.
+ *
+ * - `keysOn`: the month the large headline names, or null when it is not reached.
+ * - `readyLine`: that month in words ("February 2028"), or "Not reached at this pace".
+ * - `readyNote`: the small note under it ("Before interest", "3 months after your date"), or null.
+ * - `factParts`: what the money needed at the keys is made of, one term each, in order.
+ * - `progress`: saved now against the money needed at the keys, and the monthly saving; the app
+ *   words the meter. Null when the money needed is not known.
+ * - `tiles`: Savings, Mortgage and Could afford, in that order, each a label, one value and up
+ *   to two small lines. A rate and a count, never a lender or a product.
+ * - `assumptions`: the chip texts, what was taken as given and can be changed.
+ * - `hookQuestion`: the one question whose answer moves their figures most (`nextQuestion`),
+ *   and one sentence on what it moves; null when no question moves a figure.
+ *
+ * Optional on the plan: plans without a home comparison, and plans saved before 2026-11-12,
+ * have none.
+ */
+export const planArrivalViewSchema = z.object({
+  keysOn: monthOrDay.nullable(),
+  readyLine: text(80),
+  readyNote: text(160).nullable(),
+  factParts: z.array(text(80)).max(6),
+  progress: z
+    .object({
+      savedEur: eur,
+      neededEur: eur,
+      monthlySavingEur: eur,
+    })
+    .nullable(),
+  tiles: z
+    .array(
+      z.object({
+        label: text(40),
+        value: text(60),
+        lines: z.array(text(120)).max(3),
+      }),
+    )
+    .max(3),
+  assumptions: z.array(text(160)).max(6),
+  hookQuestion: z
+    .object({
+      key: z.string().regex(/^[a-z][a-z_]{0,39}$/),
+      question: text(300),
+      why: text(400),
+    })
+    .nullable(),
+})
+export type PlanArrivalView = z.infer<typeof planArrivalViewSchema>
+
 export const RANKING_OBJECTIVES = [
   'highest_net_return',
   'lowest_total_cost',
@@ -359,6 +411,11 @@ export const marketPlanSchema = z
         routes: z.array(planRouteSchema).max(PLAN_ROUTE_IDS.length).default([]),
       })
       .optional(),
+    /**
+     * For a home: the host card's figures and the question Saoirse opens with, for the app's
+     * arrival (2026-11-12). Optional: other plans, and plans saved before then, have none.
+     */
+    arrival: planArrivalViewSchema.optional(),
     createdAt: isoDateTime,
     /** When the oldest market figure in the plan was last checked. */
     dataCheckedAt: isoDateTime,

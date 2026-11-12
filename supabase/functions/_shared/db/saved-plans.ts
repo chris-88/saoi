@@ -8,6 +8,7 @@ import {
   type PlanRoute,
 } from '../contracts/market-plan.ts'
 import { factCatalogue, type FactKey } from '../domain/facts.ts'
+import { arrivalOpening } from '../domain/market/arrival.ts'
 import type { Db } from './case-repository.ts'
 
 /**
@@ -182,9 +183,50 @@ export function savedPlanCard(claimed: ClaimedPlan): Card {
     figures: figuresLine(plan),
     ...(plan.comparison === undefined ? {} : { comparison: comparisonCard(plan.comparison) }),
     routes: routesOf(plan),
+    ...(plan.arrival === undefined ? {} : { arrival: plan.arrival }),
     createdAt: plan.createdAt,
     dataCheckedAt: plan.dataCheckedAt,
   }
+}
+
+/**
+ * The conversation's first message, written by the claim (2026-11-12, "3. Arrival"): the plan
+ * card, then Saoirse's first line as its text. One row, so a reload reads [card, question] and
+ * the model's history starts with the question it asked; the card goes first on screen
+ * (`buildHistory` leads with it).
+ */
+export function arrivalMessage(claimed: ClaimedPlan): { content: string; cards: Card[] } {
+  return { content: planOpening(claimed.plan), cards: [savedPlanCard(claimed)] }
+}
+
+/**
+ * Whether these messages hold the plan's arrival message: Saoirse's, with the plan card, saying
+ * the opening line word for word. Reads the loaded transcript (card types only).
+ */
+export function arrivedWith(
+  claimed: ClaimedPlan,
+  messages: readonly {
+    readonly role: string
+    readonly content: string
+    readonly cards: readonly string[]
+  }[],
+): boolean {
+  const opening = planOpening(claimed.plan)
+  return messages.some(
+    (message) =>
+      message.role === 'assistant' &&
+      message.cards.includes(SAVED_PLAN_CARD) &&
+      message.content === opening,
+  )
+}
+
+/**
+ * Saoirse's first line when the plan is opened, verbatim: the hook question and what it moves,
+ * or the short line that invites them to carry on. The preview returns it and the claim writes
+ * it as the conversation's first message, with the card.
+ */
+export function planOpening(plan: MarketPlan): string {
+  return arrivalOpening(plan.arrival)
 }
 
 const euroWhole = (value: number): string =>
@@ -271,7 +313,11 @@ export function comparisonCard(
  * The products in the plan's own order, so "what is next" is the first of them and the model
  * does not have to choose. Figures are the plan's; the model is told the card shows them.
  */
-export function savedPlanDigestLines(claimed: ClaimedPlan): string[] {
+export function savedPlanDigestLines(
+  claimed: ClaimedPlan,
+  /** True when the transcript holds the arrival message: the card, then Saoirse's first line. */
+  arrived = false,
+): string[] {
   const { plan } = claimed
   const first = plan.combination.products[0]
   const firstDebt = debtLines(plan)[0]
@@ -307,6 +353,11 @@ export function savedPlanDigestLines(claimed: ClaimedPlan): string[] {
           ),
           ...routeDigestLines(plan.comparison.routes),
         ]),
+    ...(arrived
+      ? [
+          `Already shown when they opened it in the app: this card, then your first line, word for word: "${planOpening(plan)}" Do not show the card again, welcome them or repeat that line.`,
+        ]
+      : []),
     // A comparison, not a plan to follow: the next step is theirs to choose (2026-11-10).
     `Next: offer them a choice, never a pick: talk through the options, change a figure or a filter, or how the figures were worked out.${first === undefined && firstDebt !== undefined ? ` The debt step in it: ${firstDebt}` : ''} Saoi cannot open any product for them; they apply with a provider directly.`,
   ]
