@@ -223,6 +223,10 @@ function savingsTile(savings: Summary['savings']): Tile {
     detail: [
       `Interest ${dirt} on the deposit money ${why}`,
       `Top rate among the ${accounts} that take this saving by then`,
+      // A bonus or introductory top rate names its end (2026-11-12).
+      ...(savings.topRatePeriod === null || savings.topRatePeriod === undefined
+        ? []
+        : [savings.topRatePeriod]),
     ],
   }
 }

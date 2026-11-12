@@ -1753,6 +1753,13 @@ export const homeMarketSchema = z
         basis: z
           .string()
           .describe('How the top rate and the interest are worked out, in one sentence.'),
+        topRatePeriod: z
+          .string()
+          .nullable()
+          .optional()
+          .describe(
+            'Where `topRatePct` is a bonus or introductory rate that ends before `by`, one line naming the end and what the interest counts after it ("3.11% is a bonus rate to 1 January; the interest figure counts the rate after it."), naming no provider. Null or absent: the rate holds to `by` (2026-11-12).',
+          ),
       })
       .nullable()
       .describe('Savings that fit the plan. Null: no account fits.'),

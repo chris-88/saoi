@@ -118,7 +118,15 @@ describe('the home calculator with the market beside it', () => {
   it('adds the two summaries after the existing lines, as facts', () => {
     const [savingsLine, mortgageLine] = result.market?.lines ?? []
     expect(savingsLine).toMatch(
-      /^Savings: the top rate on the market is \d+\.\d{2}% \(.+\), about €[\d,]+ interest after DIRT by April 2028 in that account; \d+ accounts fit\.$/,
+      /^Savings: the top rate on the market is \d+\.\d{2}% \(.+\), about €[\d,]+ interest after DIRT by April 2028 in that account; \d+ accounts fit\./,
+    )
+    // bunq's 3.11% is a bonus to the next reset: the line names its end, and the interest
+    // already counts the rate after it (2026-11-12).
+    expect(savingsLine).toMatch(
+      / 3\.11% is a bonus rate to 1 January; the interest figure counts the rate after it\.$/,
+    )
+    expect(result.market?.savings?.topRatePeriod).toBe(
+      '3.11% is a bonus rate to 1 January; the interest figure counts the rate after it.',
     )
     expect(mortgageLine).toMatch(
       /^Mortgages: \d+ fit €360,000 over 30 years, from €[\d,]+ to €[\d,]+ a month\.$/,

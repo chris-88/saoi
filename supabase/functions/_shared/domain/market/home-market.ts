@@ -9,6 +9,7 @@ import { euro } from './figures.ts'
 import { monthName } from './home-arithmetic.ts'
 import { homePathways, TERM_YEARS } from './pathways.ts'
 import { pct } from './product.ts'
+import { ratePeriod, ratePeriodLine } from './rate-period.ts'
 import {
   addMonths,
   bestRung,
@@ -137,9 +138,18 @@ function savingsSummary(
         ]),
     'no product is picked',
   ]
+  // A top rate that ends before `by` (bunq's bonus) says so: the interest already counts the
+  // rate after it, and a headline alone reads as a rate held throughout (2026-11-12).
+  const period = ratePeriod(
+    top.terms,
+    asOf,
+    horizon,
+    top.placed.lump + top.placed.monthly * Math.max(0, horizon - 1),
+  )
   return {
     topRatePct: top.rate,
     topRateProvider: top.product.providerName,
+    topRatePeriod: ratePeriodLine(period, top.rate),
     accounts,
     interestToTargetEur: round2(result.netInterest),
     by,
@@ -208,7 +218,10 @@ export function homeMarketSummary(
         ? `, about ${euro(Math.round(savings.interestToTargetEur))} interest ${savings.basis.includes('DIRT-free') ? 'DIRT-free' : 'after DIRT'} by ${monthName(savings.by)} in that account`
         : ''
     lines.push(
-      `Savings: the top rate on the market is ${pct(savings.topRatePct)} (${savings.topRateProvider})${interest}; ${String(savings.accounts)} account${savings.accounts === 1 ? ' fits' : 's fit'}.`,
+      `Savings: the top rate on the market is ${pct(savings.topRatePct)} (${savings.topRateProvider})${interest}; ${String(savings.accounts)} account${savings.accounts === 1 ? ' fits' : 's fit'}.` +
+        (savings.topRatePeriod === null || savings.topRatePeriod === undefined
+          ? ''
+          : ` ${savings.topRatePeriod}`),
     )
   }
   if (mortgage !== null) {
