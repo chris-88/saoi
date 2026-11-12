@@ -1,9 +1,24 @@
 import { describe, expect, it } from 'vitest'
 import { exampleMarketPlan } from '@shared/contracts/market-plan.example.ts'
-import { marketPlanSchema } from '@shared/contracts/market-plan.ts'
+import { marketPlanSchema, type MarketPlan } from '@shared/contracts/market-plan.ts'
+import { buildPlanRequestSchema } from '@shared/contracts/market-tools.ts'
 import type { LoadedMessage } from '@shared/db/loaded-case.ts'
-import { arrivalMessage, savedPlanDigestLines, type ClaimedPlan } from '@shared/db/saved-plans.ts'
-import { ARRIVAL_ANSWER_INSTRUCTION, ARRIVAL_OPENED_NOTE, conversationSoFar } from './context.ts'
+import {
+  arrivalMessage,
+  arrivedWith,
+  savedPlanDigestLines,
+  type ClaimedPlan,
+} from '@shared/db/saved-plans.ts'
+import { MARKET_FIXTURE } from '@shared/domain/market/fixture.ts'
+import { normaliseMarket } from '@shared/domain/market/normalise.ts'
+import { buildPlan } from '@shared/domain/market/plan.ts'
+import { applyPlanEdit } from '@shared/domain/market/plan-edit.ts'
+import {
+  ARRIVAL_ANSWER_INSTRUCTION,
+  ARRIVAL_OPENED_NOTE,
+  conversationSoFar,
+  returnInstruction,
+} from './context.ts'
 
 /**
  * The first turn after a claim (2026-11-12, "3. Arrival"): the claim wrote Saoirse's first
@@ -101,5 +116,86 @@ describe('the turn after the arrival', () => {
     expect(savedPlanDigestLines(claimed).some((line) => line.startsWith('Already shown'))).toBe(
       false,
     )
+  })
+})
+
+/**
+ * After a plan edit in the profile (2026-11-12, "6. The saving months"): the app has shown the
+ * edit's reading as Saoirse's line, then runs a return turn that builds on it.
+ */
+describe('the return turn after a plan edit', () => {
+  const reading =
+    'Moving the keys to March 2028 means €4,751 less saved by then at this pace; the 18-month deposits no longer fit, and deposits of up to one year still do.'
+  const edited = {
+    type: 'plan_edited',
+    payload: { reading, effects: { nowFit: [], noLongerFit: ['18-month deposits'] } },
+  }
+
+  it('builds on the reading already shown: no greeting, not the same words, no status card', () => {
+    const instruction = returnInstruction([edited])
+    expect(instruction).toContain(`The app has already shown them this line as yours: "${reading}"`)
+    expect(instruction).toContain('Do not greet them or welcome them back')
+    expect(instruction).toContain('do not say that line again in the same words')
+    expect(instruction).toContain('do not call show_status')
+    expect(instruction).toContain('which now fit and which no longer do, with their figures')
+    expect(instruction).toContain('never call the change or an option better or worse')
+    expect(instruction).not.toContain('Then name the other things')
+  })
+
+  it('still names anything else that happened while they were away', () => {
+    expect(returnInstruction([{ type: 'application_approved', payload: {} }, edited])).toContain(
+      'Then name the other things under "Changed since they were last here"',
+    )
+  })
+
+  it('leaves an ordinary return as it was', () => {
+    const instruction = returnInstruction([{ type: 'application_approved', payload: {} }])
+    expect(instruction).toContain('Then call show_status')
+    expect(instruction).not.toContain('changed their plan')
+  })
+})
+
+describe('the digest after a plan edit', () => {
+  const market = normaliseMarket(MARKET_FIXTURE)
+  const base: MarketPlan = buildPlan(
+    market,
+    buildPlanRequestSchema.parse({
+      situation: {
+        income: { annualGross: 110_000 },
+        monthlySaving: 1_500,
+        savings: [{ label: 'Deposit saved', balance: 32_000, access: 'instant' }],
+        firstTimeBuyer: true,
+      },
+      goals: [{ id: 'home', kind: 'house_deposit', label: 'Buying a home', targetDate: '2028-06' }],
+      homePrice: 400_000,
+      propertyKind: 'new_build',
+    }),
+    '2026-11-12',
+    '2026-11-12T09:00:00.000Z',
+  ).plan
+  const before: ClaimedPlan = { id: 'plan-1', plan: base }
+  const arrival = arrivalMessage(before)
+
+  it('states the rebuilt plan and the change, and still knows the arrival', () => {
+    const result = applyPlanEdit(
+      market,
+      base,
+      { targetDate: '2028-03' },
+      '2026-11-20',
+      '2026-11-20T10:00:00.000Z',
+    )
+    if (result === null) throw new Error('no edit')
+    const after: ClaimedPlan = { id: 'plan-1', plan: result.plan }
+    const messages = [message('assistant', arrival.content, ['saved_plan'])]
+    expect(arrivedWith(after, messages)).toBe(true)
+
+    const lines = savedPlanDigestLines(after, true)
+    expect(lines[0]).toBe('Title: Buying a home by March 2028')
+    expect(lines).toContain(
+      'Changed by them in the app since: the date from June 2028 to March 2028 (20 Nov 2026). Every figure below is the plan rebuilt on these; where the situation line says otherwise, these win.',
+    )
+    expect(lines).toContain('Goals: Buying a home (by March 2028)')
+    // The first line it opened with, word for word, as the transcript has it.
+    expect(lines.some((line) => line.includes(`word for word: "${arrival.content}"`))).toBe(true)
   })
 })

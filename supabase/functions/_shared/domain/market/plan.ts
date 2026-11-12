@@ -10,7 +10,7 @@ import {
   type ProductView,
   type Situation,
 } from '../../contracts/market-tools.ts'
-import type { MarketPlan, PlanProduct } from '../../contracts/market-plan.ts'
+import type { MarketPlan, PlanInputs, PlanProduct } from '../../contracts/market-plan.ts'
 import { allocatable, allocate, type AllocationLine } from './allocate.ts'
 import { arrivalFor } from './arrival.ts'
 import { debtMonthlyRate, payoffOrder, repaymentOf } from './debt.ts'
@@ -178,9 +178,14 @@ export function buildPlan(
   const compared = withComparison(main.plan, main.home, main.routes)
   // For a home: what the app shows on arrival, the host card's figures and the one question.
   const arrival = arrivalFor(market, base, main, nextQuestion, asOf)
+  const inputs = planInputsOf(base)
   return {
     ...main,
-    plan: arrival === undefined ? compared : { ...compared, arrival },
+    plan: {
+      ...compared,
+      ...(arrival === undefined ? {} : { arrival }),
+      ...(inputs === undefined ? {} : { inputs }),
+    },
     alternatives,
     runnersUp,
     nextQuestion,
@@ -198,6 +203,53 @@ export function buildPlan(
       ...(nextQuestion === null ? [] : [nextQuestionLine(nextQuestion)]),
     ],
   }
+}
+
+/**
+ * What the call was built on beyond the situation and goals, kept with the plan so an edit in
+ * the app rebuilds it on the same filters and choices (2026-11-12). Undefined when nothing was
+ * given beyond them.
+ */
+export function planInputsOf(base: Omit<BuildPlanRequest, 'alternatives'>): PlanInputs | undefined {
+  const { situation } = base
+  const savings = situation.savings.map((item) => ({
+    ...(item.access === undefined ? {} : { access: item.access }),
+    ...(item.fixedTermEndsOn === undefined ? {} : { fixedTermEndsOn: item.fixedTermEndsOn }),
+  }))
+  const debtPlans = situation.debts.flatMap((debt) =>
+    debt.plan === undefined ? [] : [{ debtId: debt.id, plan: debt.plan }],
+  )
+  const preferences = base.homePreferences
+  const inputs: PlanInputs = {
+    ...(base.homePrice === undefined ? {} : { homePrice: base.homePrice }),
+    ...(base.propertyKind === undefined ? {} : { propertyKind: base.propertyKind }),
+    ...(situation.firstTimeBuyer === undefined ? {} : { firstTimeBuyer: situation.firstTimeBuyer }),
+    ...(base.buyingTogether === undefined ? {} : { buyingTogether: base.buyingTogether }),
+    ...(base.taxPaidLastFourYearsEur === undefined
+      ? {}
+      : { taxPaidLastFourYearsEur: base.taxPaidLastFourYearsEur }),
+    ...(base.county === undefined ? {} : { county: base.county }),
+    ...(base.monthlyRentEur === undefined ? {} : { monthlyRentEur: base.monthlyRentEur }),
+    ...(preferences === undefined || Object.keys(preferences).length === 0
+      ? {}
+      : { homePreferences: { ...preferences } }),
+    ...(base.emergencyBufferEur === undefined
+      ? {}
+      : { emergencyBufferEur: base.emergencyBufferEur }),
+    ...((base.emergencyBufferMonths ?? base.emergencyFundMonths) === undefined
+      ? {}
+      : { emergencyBufferMonths: base.emergencyBufferMonths ?? base.emergencyFundMonths }),
+    ...(base.keepAccessible === undefined ? {} : { keepAccessible: base.keepAccessible }),
+    ...(base.goalDateCertain === undefined ? {} : { goalDateCertain: base.goalDateCertain }),
+    ...(base.minLockGainEur === undefined ? {} : { minLockGainEur: base.minLockGainEur }),
+    ...(base.minLockGainPctPerYear === undefined
+      ? {}
+      : { minLockGainPctPerYear: base.minLockGainPctPerYear }),
+    ...(base.maxAccounts === undefined ? {} : { maxAccounts: base.maxAccounts }),
+    ...(savings.some((item) => Object.keys(item).length > 0) ? { savings } : {}),
+    ...(debtPlans.length === 0 ? {} : { debtPlans }),
+  }
+  return Object.keys(inputs).length === 0 ? undefined : inputs
 }
 
 /** The home options the customer saw, carried in the plan so the app can show them again. */

@@ -92,6 +92,21 @@ describe('the digest reaches the prompt', () => {
  * answer to "how long does this take" is not a number — it is that there is nothing to turn up
  * to and nothing to have ready, and nothing in the prompt said so.
  */
+describe('what changed since they were last here', () => {
+  it('carries a plan edit’s reading and says how to speak about it', () => {
+    const prompt = compose({
+      eventsSinceLastSeen: [
+        'You changed the plan in the app. Moving the keys to March 2028 means €4,751 less saved by then at this pace.',
+      ],
+    })
+    expect(prompt).toContain('## Changed since they were last here')
+    expect(prompt).toContain('Moving the keys to March 2028 means €4,751 less saved by then')
+    expect(prompt).toContain(
+      'A change they made to their plan in the app: say what changed and which options now fit or no longer fit, as facts in their figures. Never call it better or worse, never pick.',
+    )
+  })
+})
+
 describe('how applying works', () => {
   const prompt = compose()
 

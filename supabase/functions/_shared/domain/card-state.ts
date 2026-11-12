@@ -57,6 +57,12 @@ export type CaseState = {
     readonly amount: number
     readonly state: string
   }[]
+  /**
+   * The plan card as the stored plan reads now, by plan id, for plans changed in the app since
+   * they were shown (2026-11-12, "6. The saving months"): a reload shows the rebuilt figures,
+   * not the ones it was first shown with (Invariant 2). Absent: cards render as stored.
+   */
+  readonly savedPlans?: ReadonlyMap<string, Card>
 }
 
 /**
@@ -388,13 +394,17 @@ export function buildHistory(
           // A card that no longer parses is dropped rather than breaking the whole transcript.
           const parsed = cardSchema.safeParse(upgradeStoredCard(raw))
           if (!parsed.success) return []
+          const card =
+            parsed.data.type === 'saved_plan'
+              ? (state.savedPlans?.get(parsed.data.planId) ?? parsed.data)
+              : parsed.data
 
-          const settled = settledState(parsed.data, state)
+          const settled = settledState(card, state)
           return [
             {
               kind: 'card',
               id: `${message.id}-card-${String(index)}`,
-              card: parsed.data,
+              card,
               ...(settled === undefined ? {} : { settled }),
             },
           ]

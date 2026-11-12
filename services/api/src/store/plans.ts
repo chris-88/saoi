@@ -8,6 +8,7 @@ import {
 } from '@shared/db/saved-plans.ts'
 import { seedHoldingsFromPlan } from '@shared/db/holdings.ts'
 import { DATA_NOTICE_EVENT } from '@shared/llm/data-notice.ts'
+import { PLAN_EDITED_EVENT } from '@shared/domain/narration.ts'
 import type { MarketPlan } from '@shared/contracts/market-plan.ts'
 import type { Db } from './client.ts'
 
@@ -69,6 +70,17 @@ export type PlanStore = {
     client: string | null
     savedAt: string
   }): Promise<{ facts: readonly string[] }>
+  /**
+   * An edit in the app (2026-11-12, "6. The saving months"): the rebuilt plan replaces the
+   * claimed plan's document (the previous one travels in the event, not a new table), and
+   * `plan_edited` is written with `event`, which the next return turn narrates.
+   */
+  saveEdit(input: {
+    planId: string
+    caseId: string
+    plan: MarketPlan
+    event: Record<string, unknown>
+  }): Promise<void>
 }
 
 type Row = Database['public']['Tables']['saved_plans']['Row']
@@ -155,6 +167,23 @@ export function supabasePlanStore(db: Db): PlanStore {
         .select('id')
       if (result.error) throw new Error(`Could not claim the plan: ${result.error.message}`)
       return (result.data ?? []).length === 1
+    },
+
+    async saveEdit({ planId, caseId, plan, event }) {
+      const result = await db
+        .from('saved_plans')
+        .update({ document: plan, title: plan.title })
+        .eq('id', planId)
+        .eq('case_id', caseId)
+        .select('id')
+      if (result.error) throw new Error(`Could not save the plan: ${result.error.message}`)
+      if ((result.data ?? []).length !== 1) throw new Error('Could not save the plan: no row')
+      await writeEvent(db, {
+        caseId,
+        type: PLAN_EDITED_EVENT,
+        actor: 'customer',
+        payload: event,
+      })
     },
 
     async recordClaim({ planId, caseId, participantId, plan, client, savedAt }) {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { marketPlanSchema } from '../contracts/market-plan.ts'
 import { exampleMarketPlan } from '../contracts/market-plan.example.ts'
-import { arrivalMessage } from '../db/saved-plans.ts'
+import { arrivalMessage, savedPlanCard } from '../db/saved-plans.ts'
 import { signInPromptCard } from '../llm/sign-in-prompt.ts'
 import { buildHistory, type CaseState } from './card-state.ts'
 
@@ -52,5 +52,30 @@ describe('the transcript on reload', () => {
     // Ids stay the stored positions, so a card keeps its key across the reorder.
     expect(history[0]?.id).toBe('m1-card-0')
     expect(history[2]?.id).toBe('m1-card-1')
+  })
+
+  /** A plan changed in the profile (2026-11-12): its card shows the rebuilt figures on reload. */
+  it('shows a plan card as the stored plan reads now, when the case says it changed', () => {
+    const plan = marketPlanSchema.parse(exampleMarketPlan())
+    const arrival = arrivalMessage({ id: PLAN_ID, plan })
+    const rebuilt = marketPlanSchema.parse({
+      ...exampleMarketPlan(),
+      title: 'House deposit by March 2028',
+      situation: { ...plan.situation, monthlySaving: 1_000 },
+    })
+    const rows = [
+      { id: 'm1', role: 'assistant' as const, content: arrival.content, cards: arrival.cards },
+    ]
+    const live = buildHistory(rows, {
+      ...state,
+      savedPlans: new Map([[PLAN_ID, savedPlanCard({ id: PLAN_ID, plan: rebuilt })]]),
+    })
+    const card = live[0]?.kind === 'card' ? live[0].card : null
+    expect(card?.type === 'saved_plan' ? card.title : null).toBe('House deposit by March 2028')
+    // Without it, the card renders as it was stored.
+    const stored = buildHistory(rows, state)[0]
+    expect(
+      stored?.kind === 'card' && stored.card.type === 'saved_plan' ? stored.card.title : null,
+    ).toBe(plan.title)
   })
 })

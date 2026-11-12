@@ -1,3 +1,4 @@
+import { loadClaimedPlans, type ClaimedPlan } from '@shared/db/saved-plans.ts'
 import { must, type Db } from './client.ts'
 import { supabaseActionStore, type CaseActionStore } from './actions.ts'
 import type { MessageRow } from '@shared/domain/card-state.ts'
@@ -70,6 +71,8 @@ export type CaseReadStore = {
   loadSnapshotRows(caseId: string): Promise<SnapshotRows>
   /** The newest messages, oldest first. */
   loadMessages(caseId: string, limit: number): Promise<readonly MessageRow[]>
+  /** The plans claimed into the case, oldest first, as stored now. */
+  claimedPlans(caseId: string): Promise<readonly ClaimedPlan[]>
   /** Newest first. */
   recentEvents(caseId: string, limit: number): Promise<readonly EventRow[]>
   /** Events created at or after the instant, oldest first. */
@@ -196,6 +199,8 @@ function supabaseReadStore(db: Db): CaseReadStore {
         notifications: must(notifications, 'notifications'),
       }
     },
+
+    claimedPlans: (caseId) => loadClaimedPlans(db, caseId),
 
     async loadMessages(caseId, limit) {
       const result = await db

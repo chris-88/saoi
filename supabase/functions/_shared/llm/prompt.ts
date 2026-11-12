@@ -1091,6 +1091,8 @@ function digestSection(digest: CaseDigest): string {
       '## Changed since they were last here',
       'If they are returning, lead with these and name each one. Do not summarise them as',
       '"things have moved on", the customer wants to know what actually happened.',
+      'A change they made to their plan in the app: say what changed and which options now fit',
+      'or no longer fit, as facts in their figures. Never call it better or worse, never pick.',
       ...digest.eventsSinceLastSeen.map((event) => `- ${event}`),
       '',
     )

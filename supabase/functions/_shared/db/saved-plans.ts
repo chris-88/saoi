@@ -4,6 +4,7 @@ import {
   marketPlanSchema,
   upgradeStoredPlan,
   type MarketPlan,
+  type PlanEdit,
   type PlanProduct,
   type PlanRoute,
 } from '../contracts/market-plan.ts'
@@ -223,10 +224,11 @@ export function arrivedWith(
 /**
  * Saoirse's first line when the plan is opened, verbatim: the hook question and what it moves,
  * or the short line that invites them to carry on. The preview returns it and the claim writes
- * it as the conversation's first message, with the card.
+ * it as the conversation's first message, with the card. A plan rebuilt by an edit keeps the
+ * line it opened with (`openedWith`), so the transcript still reads as the arrival.
  */
 export function planOpening(plan: MarketPlan): string {
-  return arrivalOpening(plan.arrival)
+  return plan.openedWith ?? arrivalOpening(plan.arrival)
 }
 
 const euroWhole = (value: number): string =>
@@ -324,6 +326,7 @@ export function savedPlanDigestLines(
   return [
     `Title: ${plan.title}`,
     `Made: ${dayOf(plan.createdAt)}, in their own AI assistant, with Saoi's market data (checked ${dayOf(plan.dataCheckedAt)}).`,
+    ...editLines(plan),
     `Their situation, as they described it: ${plan.situation.summary}`,
     `Goals: ${plan.goals
       .map((goal) => {
@@ -360,6 +363,48 @@ export function savedPlanDigestLines(
       : []),
     // A comparison, not a plan to follow: the next step is theirs to choose (2026-11-10).
     `Next: offer them a choice, never a pick: talk through the options, change a figure or a filter, or how the figures were worked out.${first === undefined && firstDebt !== undefined ? ` The debt step in it: ${firstDebt}` : ''} Saoi cannot open any product for them; they apply with a provider directly.`,
+  ]
+}
+
+const EDIT_LABELS: Record<PlanEdit['field'], string> = {
+  targetDate: 'the date',
+  homePrice: 'the price',
+  monthlySaving: 'the monthly saving',
+  propertyKind: 'the kind of home',
+  firstTimeBuyer: 'first-time buyer',
+  buyingTogether: 'buying together',
+}
+const KIND_LABELS: Record<string, string> = {
+  new_build: 'new build',
+  second_hand: 'second-hand',
+  self_build: 'self-build',
+}
+
+function editValue(field: PlanEdit['field'], value: PlanEdit['from']): string {
+  if (value === null) return 'not given'
+  if (typeof value === 'boolean') return value ? 'yes' : 'no'
+  if (typeof value === 'number') return euro(value)
+  if (field === 'targetDate') return monthOf(value)
+  return KIND_LABELS[value] ?? value
+}
+
+/**
+ * The changes made in the app's profile (2026-11-12, "6. The saving months"), for the digest:
+ * the plan's lines below them are the plan rebuilt on them, and the situation line is still as
+ * they first described it.
+ */
+function editLines(plan: MarketPlan): string[] {
+  const edits = plan.edits ?? []
+  if (edits.length === 0) return []
+  return [
+    `Changed by them in the app since: ${edits
+      .map(
+        (edit) =>
+          `${EDIT_LABELS[edit.field]} from ${editValue(edit.field, edit.from)} to ${editValue(edit.field, edit.to)} (${dayOf(edit.at)})`,
+      )
+      .join(
+        '; ',
+      )}. Every figure below is the plan rebuilt on these; where the situation line says otherwise, these win.`,
   ]
 }
 

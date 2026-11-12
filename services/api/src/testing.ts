@@ -1,3 +1,4 @@
+import type { ClaimedPlan } from '@shared/db/saved-plans.ts'
 import { SignJWT } from 'jose'
 import type { CaseReadStore, CaseStore, EventRow, SnapshotRows } from './store/cases.ts'
 import { fakeActions, type FakeActions } from './testing.actions.ts'
@@ -48,6 +49,7 @@ export function fakeStore(
     rows?: Partial<SnapshotRows>
     messages?: MessageRow[]
     events?: EventRow[]
+    claimedPlans?: ClaimedPlan[]
   } = {},
 ): CaseStore & { events: EventRow[]; actions: FakeActions } {
   const events = init.events ?? []
@@ -73,6 +75,7 @@ export function fakeStore(
     },
     loadSnapshotRows: () => Promise.resolve({ ...emptyRows, ...init.rows }),
     loadMessages: (_caseId, limit) => Promise.resolve((init.messages ?? []).slice(-limit)),
+    claimedPlans: () => Promise.resolve(init.claimedPlans ?? []),
     recentEvents: (_caseId, limit) => Promise.resolve([...events].reverse().slice(0, limit)),
     eventsSince: (_caseId, since) =>
       Promise.resolve(events.filter((event) => event.created_at >= since)),
