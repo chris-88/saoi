@@ -220,6 +220,8 @@ export function buildCaseDigest(
     readonly holdings?: CaseDigest['holdings']
     /** The products cards already shown: arrangement and when, never the rows. */
     readonly productsShown?: CaseDigest['productsShown']
+    /** What each row's money figure counts on the most recent products cards. */
+    readonly productsBasis?: CaseDigest['productsBasis']
     /** Where the customer is trying to get to, from the Goal Engine. */
     readonly goals?: readonly string[]
     /** Whether what they are looking at is what suits them. */
@@ -325,6 +327,7 @@ export function buildCaseDigest(
     ...(options.alerts === undefined ? {} : { alerts: options.alerts }),
     ...(options.holdings === undefined ? {} : { holdings: options.holdings }),
     ...(options.productsShown === undefined ? {} : { productsShown: options.productsShown }),
+    ...(options.productsBasis === undefined ? {} : { productsBasis: options.productsBasis }),
     ...(options.goals === undefined ? {} : { goals: options.goals }),
     ...(options.suitability === undefined ? {} : { suitability: options.suitability }),
     ...(options.prospect === undefined ? {} : { prospect: options.prospect }),

@@ -99,7 +99,13 @@ export type CaseFigures = {
  * can quote when asked whether a figure will be realised ("€581 counts 3.11% to 1 January, then
  * 1.51%."). Rows whose figure is not interest (a mortgage's cost) carry none.
  */
-export type RowBasis = { readonly id: string; readonly lead: string; readonly line: string }
+export type RowBasis = {
+  readonly id: string
+  readonly lead: string
+  /** The row's value as the card shows it ("3.11% to 1 Jan"). */
+  readonly value: string
+  readonly line: string
+}
 
 export type ProductsResult =
   | {
@@ -699,6 +705,7 @@ function heldVsMarket(
   const heldBasis: RowBasis[] = held.map(({ account, rate }, index) => ({
     id: `held:${String(index + 1)}`,
     lead: ownLabel(account),
+    value: rate === null ? 'rate not given' : pct(rate),
     line:
       rate === null
         ? 'No money figure: the rate was not given.'
@@ -748,7 +755,12 @@ function heldVsMarket(
     },
     figureBasis: [
       ...heldBasis.slice(0, PRODUCTS_CARD_MAX_ROWS),
-      ...shown.map((item) => ({ id: item.row.id, lead: item.row.lead, line: item.figureBasis })),
+      ...shown.map((item) => ({
+        id: item.row.id,
+        lead: item.row.lead,
+        value: item.row.value,
+        line: item.figureBasis,
+      })),
     ],
   }
 }
@@ -824,6 +836,7 @@ function byAccess(
     figureBasis: [...instantShown, ...fixedShown].map((item) => ({
       id: item.row.id,
       lead: item.row.lead,
+      value: item.row.value,
       line: item.figureBasis,
     })),
   }
@@ -1068,6 +1081,7 @@ function fitsDate(
     figureBasis: shown.map((fit) => ({
       id: fit.row.id,
       lead: fit.row.lead,
+      value: fit.row.value,
       line: fit.figureBasis,
     })),
   }

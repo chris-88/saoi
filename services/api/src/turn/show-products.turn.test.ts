@@ -3,19 +3,25 @@ import type { StreamEvent } from '@shared/contracts/stream.ts'
 import { marketProductsCardSchema } from '@shared/contracts/cards.ts'
 import { saveMessage, writeEvent } from '@shared/db/case-repository.ts'
 import { loadHoldings } from '@shared/db/holdings.ts'
+import { buildCaseDigest } from '@shared/db/digest.ts'
 import { messageRow } from '@shared/db/rows.ts'
 import { loadClaimedPlans } from '@shared/db/saved-plans.ts'
 import { adviceWordsIn } from '@shared/market/disclosures.ts'
 import { MARKET_FIXTURE } from '@shared/domain/market/fixture.ts'
 import { normaliseMarket } from '@shared/domain/market/normalise.ts'
-import { productsHoldings, productsPlan } from '@shared/domain/market/products-card.fixture.ts'
+import {
+  PRODUCTS_AS_OF,
+  productsHoldings,
+  productsPlan,
+} from '@shared/domain/market/products-card.fixture.ts'
 import { fixtureProvider, fixtureTurnSchema } from '@shared/llm/fixture-provider.ts'
 import { slidersFor } from '@shared/llm/persona.ts'
+import { composeSystemPrompt } from '@shared/llm/prompt.ts'
 import { runSaoirseTurn } from '@shared/llm/saoirse.ts'
 import { demoDomainConfig } from '@shared/tenants/demo/domain-config.ts'
 import { knowledgeBaseSection } from '@shared/tenants/demo/kb-prompt.ts'
 import { loadedCase } from '../testing.actions.ts'
-import { productsShownLines } from './context.ts'
+import { productsBasisLines, productsShownLines } from './context.ts'
 import { persistReply } from './persist.ts'
 import { toolsForTurn } from './stage.ts'
 import { createToolExecutor } from './tools.ts'
@@ -192,6 +198,86 @@ describe('a turn that shows products', () => {
       .mock.calls.find((call) => call[1].type === 'products_shown')?.[1]
     const recorded = shown?.payload?.['figureBasis'] as readonly { id: string }[] | undefined
     expect(recorded?.map((row) => row.id)).toContain('bunq:savings.bunq_savings')
+  })
+
+  it('the turn after a card sees what each row’s money figure counts in its digest', async () => {
+    // The tool works from today in Dublin; the fixture's figures are for 2026-11-12.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(`${PRODUCTS_AS_OF}T12:00:00Z`))
+    try {
+      const executeTool = createToolExecutor(toolContext({ market: () => Promise.resolve(MARKET) }))
+      await executeTool('show_products', { arrangement: 'held_vs_market' })
+    } finally {
+      vi.useRealTimers()
+    }
+    const recorded = vi
+      .mocked(writeEvent)
+      .mock.calls.flatMap((call) => (call[1].type === 'products_shown' ? [call[1]] : []))
+    expect(recorded).toHaveLength(1)
+
+    // The next turn: the card is in the transcript, the event in the case's events.
+    const loaded = loadedCase(CASE, {
+      messages: [
+        {
+          role: 'customer',
+          content: 'Against the market?',
+          cards: [],
+          createdAt: '',
+          timing: null,
+        },
+        {
+          role: 'assistant',
+          content: 'Here it is.',
+          cards: ['market_products'],
+          productsShown: [{ kind: 'held_vs_market', title: 'Your account against the market' }],
+          createdAt: '',
+          timing: null,
+        },
+      ],
+    })
+    const productsBasis = productsBasisLines(
+      recorded.map((event) => ({ payload: event.payload })).reverse(),
+    )
+    const digest = buildCaseDigest(loaded, {
+      holdings: { lines: [], progress: null },
+      productsShown: productsShownLines(loaded.messages),
+      productsBasis,
+    })
+    const prompt = composeSystemPrompt({
+      domainConfig: demoDomainConfig,
+      productCatalogue: knowledgeBaseSection(),
+      sliders: slidersFor('default'),
+      digest,
+    })
+    expect(prompt).toContain(
+      '- bunq Savings Account, 3.11% to 1 Jan (held_vs_market): €456 counts 3.11% to 1 January, then 1.61% to €10,000 and 1.51% above.',
+    )
+    expect(prompt).toContain(
+      '€456 counts 3.11% to 1 January, then 1.61% to €10,000 and 1.51% above.',
+    )
+    expect(prompt).toMatch(/- Your BoI savings, 0\.50% \(held_vs_market\): €\d+ counts 0\.50%/)
+  })
+
+  it('keeps the figure basis to the newest card of each arrangement, two at most', () => {
+    const card = (arrangement: string, lead: string) => ({
+      payload: {
+        arrangement,
+        figureBasis: [{ id: lead, lead, value: '1.00%', line: `${lead} line.` }],
+      },
+    })
+    // Newest first, as the events are read.
+    const lines = productsBasisLines([
+      card('by_access', 'Newest'),
+      card('held_vs_market', 'Second'),
+      card('by_access', 'Older by access'),
+      card('fits_date', 'Third arrangement'),
+      { payload: { arrangement: 'mortgage_by_sort' } },
+    ])
+    expect(lines).toEqual([
+      'Newest, 1.00% (by_access): Newest line.',
+      'Second, 1.00% (held_vs_market): Second line.',
+    ])
+    expect(productsBasisLines([{ payload: null }, { payload: { arrangement: 'x' } }])).toEqual([])
   })
 
   it('reads a stored products card back as its arrangement and title only', () => {

@@ -378,14 +378,29 @@ export async function buildGeneration(
 
   /*
    * The products cards already shown (`show_products`), newest last: the arrangement and how
-   * long ago, never the rows, so a follow-up ("by access instead") calls the tool again.
+   * long ago, so a follow-up ("by access instead") calls the tool again. The rows' figures are
+   * not repeated; only what each figure counts is, below.
    */
   const productsShown = productsShownLines(loaded.messages)
+  /*
+   * What each row's money figure counts on the most recent cards, from the `products_shown`
+   * events (2026-11-12: asked in the next turn whether bunq's €581 would be realised, Saoirse
+   * had only the card's arrangement and said it would not). Unreadable, it is left out.
+   */
+  const shownEvents = await admin
+    .from('events')
+    .select('payload')
+    .eq('case_id', turn.caseId)
+    .eq('type', 'products_shown')
+    .order('created_at', { ascending: false })
+    .limit(PRODUCTS_BASIS_EVENTS)
+  const productsBasis = shownEvents.error === null ? productsBasisLines(shownEvents.data ?? []) : []
 
   const digest = buildCaseDigest(loaded, {
     ...(alerts === undefined ? {} : { alerts }),
     ...(holdings === undefined ? {} : { holdings }),
     ...(productsShown.length === 0 ? {} : { productsShown }),
+    ...(productsBasis.length === 0 ? {} : { productsBasis }),
     sensitiveDisclosure: gate.suppressHumour,
     stage,
     acting: turn.trigger === 'action',
@@ -564,6 +579,40 @@ export async function buildGeneration(
 }
 
 export type Generation = Awaited<ReturnType<typeof buildGeneration>>
+
+/** How many `products_shown` events are read for the figure basis, newest first. */
+export const PRODUCTS_BASIS_EVENTS = 10
+
+/** The most recent cards whose rows' figure basis goes in the digest: one per arrangement. */
+export const PRODUCTS_BASIS_CARDS = 2
+
+/**
+ * What each row's money figure counts on the most recent products cards, one line a row, read
+ * from `products_shown` payloads (newest first): the newest card of each arrangement, at most
+ * `PRODUCTS_BASIS_CARDS` of them, so the digest stays short. Rows recorded without a lead or a
+ * line are left out. Pure.
+ */
+export function productsBasisLines(events: readonly { readonly payload: unknown }[]): string[] {
+  const seen = new Set<string>()
+  const lines: string[] = []
+  for (const { payload } of events) {
+    if (seen.size >= PRODUCTS_BASIS_CARDS) break
+    if (typeof payload !== 'object' || payload === null) continue
+    const { arrangement, figureBasis } = payload as { arrangement?: unknown; figureBasis?: unknown }
+    if (typeof arrangement !== 'string' || seen.has(arrangement)) continue
+    if (!Array.isArray(figureBasis)) continue
+    seen.add(arrangement)
+    for (const row of figureBasis as unknown[]) {
+      if (typeof row !== 'object' || row === null) continue
+      const { lead, value, line } = row as { lead?: unknown; value?: unknown; line?: unknown }
+      if (typeof lead !== 'string' || typeof line !== 'string') continue
+      lines.push(
+        `${lead}${typeof value === 'string' ? `, ${value}` : ''} (${arrangement}): ${line}`,
+      )
+    }
+  }
+  return lines
+}
 
 /**
  * The products cards shown so far, newest last, at most three: "Your account against the market

@@ -100,7 +100,14 @@ export const showProductsTool: ToolModule<'show_products'> = {
         ...(input.filters === undefined ? {} : { filters: input.filters }),
         rows: card.rows.length,
         more: card.more,
-        figureBasis: outcome.figureBasis.map((row) => ({ id: row.id, line: row.line })),
+        // Read back by the next turns' digest (`productsBasisLines`): the rows' figure basis
+        // outlives the tool result, which only the turn that called it sees.
+        figureBasis: outcome.figureBasis.map((row) => ({
+          id: row.id,
+          lead: row.lead,
+          value: row.value,
+          line: row.line,
+        })),
       },
     }).catch(() => undefined)
 
