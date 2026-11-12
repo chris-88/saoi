@@ -218,6 +218,8 @@ export function buildCaseDigest(
     readonly alerts?: CaseDigest['alerts']
     /** What they hold and the progress line against the claimed plan. */
     readonly holdings?: CaseDigest['holdings']
+    /** The products cards already shown: arrangement and when, never the rows. */
+    readonly productsShown?: CaseDigest['productsShown']
     /** Where the customer is trying to get to, from the Goal Engine. */
     readonly goals?: readonly string[]
     /** Whether what they are looking at is what suits them. */
@@ -322,6 +324,7 @@ export function buildCaseDigest(
     ...(options.broughtPlans === undefined ? {} : { broughtPlans: options.broughtPlans }),
     ...(options.alerts === undefined ? {} : { alerts: options.alerts }),
     ...(options.holdings === undefined ? {} : { holdings: options.holdings }),
+    ...(options.productsShown === undefined ? {} : { productsShown: options.productsShown }),
     ...(options.goals === undefined ? {} : { goals: options.goals }),
     ...(options.suitability === undefined ? {} : { suitability: options.suitability }),
     ...(options.prospect === undefined ? {} : { prospect: options.prospect }),

@@ -357,6 +357,7 @@ export async function loadCase(
         role: message.role,
         content: message.content,
         cards: message.cards,
+        productsShown: message.productsShown,
         createdAt: message.created_at,
         timing: rows.toUsage(message.usage)?.timing ?? null,
       })),

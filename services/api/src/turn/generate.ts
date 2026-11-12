@@ -157,7 +157,11 @@ export function generate(args: {
      * a tool it will eventually try, and on a case with no form-backed application every call
      * would be refused by the server and spend a round doing it.
      */
-    enabledTools: toolsForTurn(generation.stage, generation.digest.forms !== undefined),
+    enabledTools: toolsForTurn(
+      generation.stage,
+      generation.digest.forms !== undefined,
+      generation.hasFigures,
+    ),
     onToolRejected: (rejection) => args.rejections.push(rejection),
     onToolCalled: (name) => args.called.push(name),
     onUsage: (used) => args.meter.recordModel(used),

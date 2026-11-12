@@ -91,6 +91,7 @@ const app = createApp({
       limits: { wallClockMs: env.TURN_TIMEOUT_MS, maxOutputTokens: env.TURN_MAX_OUTPUT_TOKENS },
       log,
       models: turnModels,
+      market: () => marketStore.load(),
     }),
   },
   config: { presenterKey: env.PRESENTER_KEY, audienceMaxCases: env.AUDIENCE_MAX_CASES },

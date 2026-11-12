@@ -76,21 +76,39 @@ export const productInterestRow = z.object({
   reason: z.string().nullable(),
 })
 
-export const messageRow = z.object({
-  role: z.enum(['customer', 'assistant', 'system']),
-  content: z.string(),
-  created_at: z.string(),
-  /** Measured on Saoirse's turns only; absent, null or malformed all mean nobody measured it. */
-  usage: z.unknown().optional(),
-  /**
-   * The cards rendered with this turn. Only their types are needed here — enough to know a
-   * card is already on screen without carrying its whole payload through the loader.
-   */
-  cards: z
-    .array(z.object({ type: z.string() }).loose())
-    .default([])
-    .transform((cards) => cards.map((card) => card.type)),
-})
+export const messageRow = z
+  .object({
+    role: z.enum(['customer', 'assistant', 'system']),
+    content: z.string(),
+    created_at: z.string(),
+    /** Measured on Saoirse's turns only; absent, null or malformed all mean nobody measured it. */
+    usage: z.unknown().optional(),
+    /**
+     * The cards rendered with this turn. Only their types are needed here — enough to know a
+     * card is already on screen without carrying its whole payload through the loader.
+     */
+    cards: z.array(z.object({ type: z.string() }).loose()).default([]),
+  })
+  .transform(({ cards, ...message }) => ({
+    ...message,
+    cards: cards.map((card) => card.type),
+    /**
+     * The products cards shown with this turn, as their arrangement and title: the digest says a
+     * card was shown and how it was arranged, never its rows, so a follow-up ("by access instead")
+     * calls the tool again rather than reading figures out of the transcript.
+     */
+    productsShown: cards.flatMap((card) => {
+      const arrangement = card['arrangement']
+      if (
+        card.type !== 'market_products' ||
+        typeof arrangement !== 'object' ||
+        arrangement === null
+      )
+        return []
+      const { kind, title } = arrangement as { kind?: unknown; title?: unknown }
+      return typeof kind === 'string' && typeof title === 'string' ? [{ kind, title }] : []
+    }),
+  }))
 
 export const eventRow = z.object({
   type: z.string(),

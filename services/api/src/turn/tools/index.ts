@@ -19,6 +19,7 @@ import { showMortgageRatesTool } from './show-mortgage-rates.ts'
 import { showComparisonTool } from './show-comparison.ts'
 import { showQuoteTool } from './show-quote.ts'
 import { requestUploadTool } from './request-upload.ts'
+import { showProductsTool } from './show-products.ts'
 import type { ToolName } from '@shared/llm/tools.ts'
 import type { ToolModule } from './_shared.ts'
 
@@ -45,4 +46,5 @@ export const TOOL_MODULES: { readonly [N in ToolName]: ToolModule<N> } = {
   show_comparison: showComparisonTool,
   show_quote: showQuoteTool,
   request_upload: requestUploadTool,
+  show_products: showProductsTool,
 }

@@ -32,6 +32,7 @@ export function toolContext(over: Partial<ToolContext> = {}): ToolContext {
     currentAccountPick: null,
     needContext: null,
     customerMessage: '',
+    market: () => Promise.resolve({ products: [], recordsOf: new Map(), viewOfRow: new Map() }),
     rejections: [],
     ...over,
   }

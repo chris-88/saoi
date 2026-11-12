@@ -1,4 +1,6 @@
 import type { Db } from '@shared/db/case-repository.ts'
+import { loadHoldings } from '@shared/db/holdings.ts'
+import { loadClaimedPlans } from '@shared/db/saved-plans.ts'
 
 /** Reads of past cards and events that the turn decides things from. */
 
@@ -62,4 +64,19 @@ export async function caseHasEvent(admin: Db, caseId: string, type: string): Pro
     .limit(1)
     .maybeSingle()
   return Boolean(found.data)
+}
+
+/**
+ * The case holds the customer's figures for the market: a plan claimed from their own AI, or
+ * holdings. It is the one test for both `show_products` being offered and the gate letting a
+ * question about other providers through (2026-11-12), so a customer with holdings and no plan
+ * who asks how their account compares is not turned away. A holdings read that fails counts as
+ * none; the claimed plans read is the turn's own and fails as it always has.
+ */
+export async function holdsMarketFigures(admin: Db, caseId: string): Promise<boolean> {
+  const [claimed, held] = await Promise.all([
+    loadClaimedPlans(admin, caseId),
+    loadHoldings(admin, caseId).catch(() => []),
+  ])
+  return claimed.length > 0 || held.length > 0
 }

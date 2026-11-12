@@ -1,4 +1,3 @@
-import { loadClaimedPlans } from '@shared/db/saved-plans.ts'
 import type { SaoirseTurnRequest } from '@shared/contracts/saoirse-turn.ts'
 import { withdraw, type StreamEvent } from '@shared/contracts/stream.ts'
 import { loadCase, writeEvent, type Db } from '@shared/db/case-repository.ts'
@@ -15,10 +14,12 @@ import type { Logger } from '../log.ts'
 import { buildGeneration, loadTurnContext } from './context.ts'
 import { admit, type GateAllowed } from './gate.ts'
 import { createMeter, generate, type ModelFactory } from './generate.ts'
-import { caseHasEvent } from './lookups.ts'
+import { caseHasEvent, holdsMarketFigures } from './lookups.ts'
 import { persistBlocked, persistReply, recordCustomerTurn } from './persist.ts'
 import { markAlertsSeen } from '@shared/db/alerts.ts'
 import { just } from './stream.ts'
+import type { Market } from '@shared/domain/market/types.ts'
+import { supabaseMarketStore } from '../store/market.ts'
 import { createToolExecutor } from './tools.ts'
 
 /**
@@ -48,6 +49,11 @@ export type TurnDeps = {
   readonly appBaseUrl: string
   readonly limits?: Partial<TurnLimits>
   readonly log?: Logger
+  /**
+   * The whole market for `show_products`, shared with the comparison API's store so both read
+   * one cached load. Unset: a store of the turn's own over the same table.
+   */
+  readonly market?: () => Promise<Market>
 }
 
 export type TurnInput = {
@@ -62,10 +68,17 @@ export type TurnRunner = (input: TurnInput) => Promise<AsyncGenerator<StreamEven
 
 export class TurnTimeout extends Error {}
 
+/** A cached market store over the case database, for a runner not handed one. */
+function marketLoader(db: Db): () => Promise<Market> {
+  const store = supabaseMarketStore(db)
+  return () => store.load()
+}
+
 const TIMED_OUT = 'That took too long and I lost the thread. Say it again and I will pick it up.'
 
 export function createTurnRunner(deps: TurnDeps): TurnRunner {
   const limits: TurnLimits = { ...DEFAULT_TURN_LIMITS, ...deps.limits }
+  const market = deps.market ?? marketLoader(deps.db)
 
   return async (input) => {
     // Everything below is timed from here, so a slow turn can say where the time went.
@@ -103,7 +116,7 @@ export function createTurnRunner(deps: TurnDeps): TurnRunner {
       loaded,
       classify: handle.classify,
       tone,
-      comparesProviders: isCustomerTurn && (await loadClaimedPlans(admin, caseId)).length > 0,
+      comparesProviders: isCustomerTurn && (await holdsMarketFigures(admin, caseId)),
     })
     meter.gateDone()
 
@@ -169,6 +182,7 @@ export function createTurnRunner(deps: TurnDeps): TurnRunner {
           currentAccountPick: generation.currentAccountPick,
           needContext: generation.needContext,
           customerMessage,
+          market,
           rejections,
         })
 
