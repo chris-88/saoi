@@ -20,8 +20,9 @@ import {
  * `saoi_savings_projection`, `saoi_mortgage`, `saoi_debt`, `saoi_build_plan`).
  *
  * Every figure is worked out by `_shared/domain/market/` from the market data in
- * `market_products`; nothing is stored except a plan, held as a 24-hour draft, and one anonymous,
- * banded record per home-calculator run (no figures). The descriptions here become the OpenAPI document, and
+ * `market_products`. Nothing sent is stored except a plan from build-plan or money-check (24
+ * hours behind its link unless opened) and one anonymous, banded record per home-calculator run
+ * (no figures, no identifiers). The descriptions here become the OpenAPI document, and
  * the MCP tool descriptions are generated from that, so they are written for a model reading
  * them cold: what the field is, its unit, and what an absent value means.
  *
@@ -614,7 +615,7 @@ export const situationSchema = z
     firstTimeBuyer: z.boolean().optional(),
   })
   .describe(
-    'The customer’s circumstances, sent with each call. Only a plan is ever held, as a 24-hour draft behind a single-use link. Every figure is what they said.',
+    'The customer’s circumstances, sent with each call. Every figure is what they said.',
   )
 export type Situation = z.infer<typeof situationSchema>
 
@@ -1406,7 +1407,7 @@ export const buildPlanRequestSchema = z.object({
     .max(3)
     .optional()
     .describe(
-      'Up to three named variations to compare with the main plan in this same call (a debt kept or cleared, another monthly amount or date, or a buffer the customer raised). Each comes back with its net figure. Use this to compare options rather than calling again.',
+      'Up to three named variations to compare with the main plan in this same call (a debt kept or cleared, another monthly amount or date, or a buffer the customer raised). Each comes back with its own net figure.',
     ),
 })
 export type BuildPlanRequest = z.infer<typeof buildPlanRequestSchema>
@@ -1929,7 +1930,7 @@ export const buildPlanResponseSchema = z.object({
     .array(z.string())
     .max(3)
     .describe(
-      'The two or three questions that would sharpen the plan (the same as saoi_money_check asks), for the host to ask in its own words. Call again once the customer answers, in a later message.',
+      'The two or three questions that would sharpen the plan (the same as saoi_money_check asks), for the host to ask in its own words.',
     ),
   position: planPositionSchema,
   saveLink: z
@@ -1939,7 +1940,7 @@ export const buildPlanResponseSchema = z.object({
     })
     .nullable()
     .describe(
-      'The plan held as a draft for 24 hours behind a single-use link, then deleted unless opened. Null when the draft could not be held (the daily or per-address limit); saoi_save_plan can then save it.',
+      'The plan held for 24 hours behind a single-use link: deleted then if not opened, kept with the Saoi app conversation it opens into once opened. Null when the draft could not be held (the daily or per-address limit); saoi_save_plan can then save it.',
     ),
   helpToBuy: z
     .object({
@@ -2062,7 +2063,7 @@ export const buildPlanResponseSchema = z.object({
       lines: z
         .array(z.string())
         .describe(
-          'The what-ifs in words, with their figures, for the host to relay. To compare one properly, pass it as an `alternative` in the same call; do not adjust the figures by hand.',
+          'The what-ifs in words, with their figures, for the host to relay. Each can be worked out in full as an `alternative`.',
         ),
     })
     .describe('How the result moves when one input changes.'),
@@ -2104,7 +2105,7 @@ export const moneyCheckResponseSchema = z.object({
     .array(z.string())
     .max(3)
     .describe(
-      'The two or three questions that would unlock or sharpen the plan, for the host to ask in its own words. Call this tool again once the customer answers, in a later message.',
+      'The two or three questions that would unlock or sharpen the plan, for the host to ask in its own words.',
     ),
   review: reviewResponseSchema,
   plan: buildPlanResponseSchema
