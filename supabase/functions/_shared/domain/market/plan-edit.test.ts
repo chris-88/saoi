@@ -127,10 +127,56 @@ describe('an edit', () => {
   it('moving the keys so close that no term ends by then', SLOW, () => {
     const result = applyPlanEdit(market, PLAN, { targetDate: '2027-03' }, AS_OF, EDITED)
     expect(result?.reading).toMatch(
-      /^Moving the keys to March 2027 means €[\d,]+ less saved by then at this pace; the six-month, one-year and 18-month deposits no longer fit, and instant-access accounts do\.$/,
+      /^Moving the keys to March 2027 means €[\d,]+ less saved by then at this pace, six months short of the money for the keys, which is there in September 2027; the six-month, one-year and 18-month deposits no longer fit, and instant-access accounts do\.$/,
     )
     factual(result?.reading ?? '')
   })
+
+  /*
+   * The live run after PR #74: the keys moved to a month before the money for them is held, and
+   * the reading did not say so. The plan's keys month at this pace is September 2027.
+   */
+  it('moving the keys before the money for them is held states the gap', SLOW, () => {
+    expect(PLAN.arrival?.keysOn?.slice(0, 7)).toBe('2027-09')
+    const result = applyPlanEdit(market, PLAN, { targetDate: '2027-06' }, AS_OF, EDITED)
+    expect(result?.effects.keysOn).toEqual({ from: '2027-09', to: '2027-09' })
+    expect(result?.reading).toMatch(
+      /^Moving the keys to June 2027 means €[\d,]+ less saved by then at this pace, three months short of the money for the keys, which is there in September 2027; the one-year and 18-month deposits no longer fit, and deposits of up to six months still do\.$/,
+    )
+    factual(result?.reading ?? '')
+  })
+
+  it('moving the keys to the month the money is held says nothing extra', SLOW, () => {
+    const result = applyPlanEdit(market, PLAN, { targetDate: '2027-09' }, AS_OF, EDITED)
+    expect(result?.reading).toMatch(
+      /^Moving the keys to September 2027 means €[\d,]+ less saved by then at this pace; the one-year and 18-month deposits no longer fit, and deposits of up to six months still do\.$/,
+    )
+    expect(result?.reading).not.toMatch(/short of/)
+  })
+
+  it(
+    'lowering the saving so the money for the keys comes after the date states the gap',
+    SLOW,
+    () => {
+      const result = applyPlanEdit(market, PLAN, { monthlySaving: 500 }, AS_OF, EDITED)
+      expect(result?.effects.keysOn).toEqual({ from: '2027-09', to: '2029-05' })
+      expect(result?.reading).toMatch(
+        /^Lowering the monthly saving to €500 means €[\d,]+ less saved by June 2028, eleven months short of the money for the keys, which is there in May 2029\.$/,
+      )
+      factual(result?.reading ?? '')
+    },
+  )
+
+  it(
+    'lowering the saving so the money comes in the date’s own month says nothing extra',
+    SLOW,
+    () => {
+      const result = applyPlanEdit(market, PLAN, { monthlySaving: 800 }, AS_OF, EDITED)
+      expect(result?.reading).toMatch(
+        /^Lowering the monthly saving to €800 means €[\d,]+ less saved by June 2028 and the keys month moves from September 2027 to June 2028\.$/,
+      )
+    },
+  )
 
   it('moving the keys later: more saved by then, longer terms now fit', SLOW, () => {
     const result = applyPlanEdit(market, PLAN, { targetDate: '2029-06' }, AS_OF, EDITED)

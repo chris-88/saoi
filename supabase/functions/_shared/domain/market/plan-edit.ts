@@ -316,6 +316,7 @@ export function applyPlanEdit(
       changes,
       effects,
       home: isHome(plan),
+      targetOn: editGoal(rebuilt)?.targetDate?.slice(0, 7) ?? null,
       terms: { gone: termsGone, new: termsNew, stillFit: fitAfter },
       options: {
         gone: optionsGone,
@@ -361,6 +362,21 @@ function changePhrase(change: PlanChange, home: boolean): string {
   }
 }
 
+/** "one month", "four months", "18 months". */
+const monthsWords = (n: number): string => `${numberWord(n)} month${n === 1 ? '' : 's'}`
+
+/**
+ * The date set short of the money for the keys (2026-11-12, after the live run of PR #74): when
+ * a date or saving edit leaves the goal's month before the month the cash at the keys is held
+ * at this pace, the gap as a fact, "four months short of the money for the keys, which is there
+ * in July 2028". Null when the date is at or after the keys month, or either is unknown.
+ */
+function shortOfKeys(targetOn: string | null, keysOn: string | null): string | null {
+  if (targetOn === null || keysOn === null || targetOn >= keysOn) return null
+  const gap = monthsBetween(targetOn, keysOn)
+  return `${monthsWords(gap)} short of the money for the keys, which is there in ${monthName(keysOn)}`
+}
+
 const lowerFirst = (text: string): string => `${text.charAt(0).toLowerCase()}${text.slice(1)}`
 
 /** "a", "a and b", "a, b and c". */
@@ -379,13 +395,17 @@ function listed(names: readonly string[]): string {
 /**
  * One or two sentences of fact in their figures, in the spec's shape: "Moving the keys to March
  * 2028 means €6,000 less saved by then at this pace; the six-month deposits no longer fit, and
- * instant-access accounts do." Then, when the mortgage comparison changed, which lender options
- * left it and which came in.
+ * instant-access accounts do." When the date is now before the month the money for the keys is
+ * held, the gap in the same sentence: "…at this pace, four months short of the money for the
+ * keys, which is there in July 2028; …". Then, when the mortgage comparison changed, which lender
+ * options left it and which came in.
  */
 function readingOf(input: {
   readonly changes: readonly PlanChange[]
   readonly effects: PlanEditEffects
   readonly home: boolean
+  /** The goal's month after the edit. */
+  readonly targetOn: string | null
   readonly terms: {
     readonly gone: readonly number[]
     readonly new: readonly number[]
@@ -425,7 +445,13 @@ function readingOf(input: {
     )
   }
   const keys = effects.keysOn
-  if (keys.from !== keys.to && !input.options.none) {
+  // A date or saving edit that leaves the date before the keys month says so; the gap names
+  // the keys month, so the keys month's own move is not said again.
+  const short =
+    fields.has('targetDate') || fields.has('monthlySaving')
+      ? shortOfKeys(input.targetOn, keys.to)
+      : null
+  if (keys.from !== keys.to && !input.options.none && short === null) {
     parts.push(
       keys.to === null
         ? 'the money needed is not reached at this pace'
@@ -453,10 +479,12 @@ function readingOf(input: {
   const subject = joinAnd(phrases)
   const first =
     parts.length > 0
-      ? `${subject} means ${joinAnd(parts)}${fits === null ? '' : `; ${fits}`}.`
-      : effects.keysOn.to !== null && effects.neededAtKeysEur.to !== null
-        ? `${subject} leaves the keys month at ${monthName(effects.keysOn.to)} and the money needed at the keys at ${euro(effects.neededAtKeysEur.to)}${fits === null ? '' : `; ${fits}`}.`
-        : `${subject} leaves the figures as they were${fits === null ? '' : `; ${fits}`}.`
+      ? `${subject} means ${joinAnd(parts)}${short === null ? '' : `, ${short}`}${fits === null ? '' : `; ${fits}`}.`
+      : short !== null
+        ? `${subject} leaves the date ${short}${fits === null ? '' : `; ${fits}`}.`
+        : effects.keysOn.to !== null && effects.neededAtKeysEur.to !== null
+          ? `${subject} leaves the keys month at ${monthName(effects.keysOn.to)} and the money needed at the keys at ${euro(effects.neededAtKeysEur.to)}${fits === null ? '' : `; ${fits}`}.`
+          : `${subject} leaves the figures as they were${fits === null ? '' : `; ${fits}`}.`
 
   const options = input.options
   const verb = (names: readonly string[], one: string, many: string) =>
