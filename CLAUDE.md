@@ -693,7 +693,12 @@ Every tool input is Zod-validated before any effect. Invalid input returns a too
   (`bonusTiming`): the MortgageSaver bonus is paid after drawdown, and a bonus with no stated
   payment date is not assumed; both are a note, not a figure. The same test as the tool
   (`holdsMarketFigures`: a claimed plan or holdings) lets questions about other providers
-  through the gate.
+  through the gate. A savings row's value names the end of a bonus or introductory rate that
+  ends before the date ("3.11% to 1 Jan") and its note what follows (the rate after, which the
+  money already counts, or that it is not stated and the money stops there; a rate for new
+  accounts says how long it holds is not stated), the basis says once what the money column
+  counts, and the tool result, not the card, gives the model each row's `figureBasis` to quote
+  (`rate-period.ts`, 2026-11-12).
 
 Twenty-two tools. **Which ones a turn is offered is decided by the conversation's stage** - the
 form tools are gated further on a form existing, and `show_products` is offered in any stage
