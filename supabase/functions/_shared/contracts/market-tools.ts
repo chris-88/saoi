@@ -1896,6 +1896,7 @@ export const QUESTION_KEYS = [
   'current_account_bank',
   'goal',
   'tax_paid',
+  'first_time_buyer',
 ] as const
 
 export const planQuestionSchema = z.object({

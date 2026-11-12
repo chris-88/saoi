@@ -130,3 +130,27 @@ describe('what a question moves, said in their figures (2026-11-12)', () => {
     }
   })
 })
+
+describe('the next question: first-time buyer', () => {
+  it('asks the one thing assumed when everything else is given, scored by the limits it moves', () => {
+    const result = single({ income: { annualGross: 80_000 } })
+    expect(result.nextQuestion).toMatchObject({
+      key: 'first_time_buyer',
+      question: 'Is this your first home, never having owned one before?',
+      scoreEur: 40_000,
+    })
+    expect(result.nextQuestion?.why).toMatch(
+      /^It sets the Central Bank limit on €80,000 a year: €320,000 as a first-time buyer, €280,000 otherwise/,
+    )
+    expect(result.plan.arrival?.hookQuestion?.key).toBe('first_time_buyer')
+  })
+
+  it('words it for both, and is not asked once it is given', () => {
+    expect(
+      single({ income: { annualGross: 80_000 } }, { buyingTogether: true }).nextQuestion?.question,
+    ).toBe('Is this a first home for both of you, neither having owned one before?')
+    expect(keys(single({ income: { annualGross: 80_000 }, firstTimeBuyer: false }))).not.toContain(
+      'first_time_buyer',
+    )
+  })
+})

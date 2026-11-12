@@ -204,6 +204,41 @@ export function rankQuestions(
       scoreEur: round2(conditional),
     })
   }
+  /*
+   * First-time buyer (2026-11-12): assumed when not said, and it sets the Central Bank limit
+   * (4 times income for a first home, 3.5 times otherwise) and whether Help to Buy can apply.
+   * Scored by the larger of what the plan moves between the two and the difference in the loan
+   * the limits allow on the income given, so a buyer whose figures are otherwise complete is
+   * still asked the one thing assumed.
+   */
+  if (home && situation.firstTimeBuyer === undefined) {
+    const income = situation.income?.annualGross
+    const first = MORTGAGE_MEASURES.first_time_buyer.loanToIncome
+    const other = MORTGAGE_MEASURES.second_and_subsequent.loanToIncome
+    const limitSpread = income === undefined ? 0 : round2(income * (first - other))
+    const before = candidates.length
+    score(
+      'first_time_buyer',
+      base.buyingTogether === true
+        ? 'Is this a first home for both of you, neither having owned one before?'
+        : 'Is this your first home, never having owned one before?',
+      ([true, false] as const).map((firstTimeBuyer) =>
+        run({ ...base, situation: { ...situation, firstTimeBuyer } }),
+      ),
+      (s) => {
+        const limit =
+          income === undefined
+            ? `It sets the Central Bank limit: ${String(first)} times gross income for a first home, ${String(other)} times otherwise`
+            : `It sets the Central Bank limit on ${euro(income)} a year: ${euro(Math.round(income * first))} as a first-time buyer, ${euro(Math.round(income * other))} otherwise`
+        const parts = movedParts(s)
+        return parts.length === 0 ? `${limit}.` : `${limit}; here it moves ${listed(parts)}.`
+      },
+    )
+    const added = candidates[before]
+    if (added !== undefined && limitSpread > added.scoreEur) {
+      candidates[before] = { ...added, scoreEur: limitSpread }
+    }
+  }
   const assumed = main.assumedRepayments.map((item) => item.debtId)
   if (assumed.length > 0) {
     score(
