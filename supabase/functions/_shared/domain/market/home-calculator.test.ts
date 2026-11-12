@@ -157,3 +157,154 @@ describe('the home calculator', () => {
     expect(result.figures.targetDateMet).toBe(true)
   })
 })
+
+describe('the core-information gate', () => {
+  const CORE = {
+    depositSavedEur: 30_000,
+    monthlySavingEur: 1_000,
+    annualGrossIncomeEur: 80_000,
+  }
+  const asked = (result: ReturnType<typeof calc>) =>
+    result.gate.missing.filter((item) => item.askNow).map((item) => item.key)
+  const holdsTheLine = (result: ReturnType<typeof calc>) => {
+    expect(() => homeCalculatorResponseSchema.parse(result)).not.toThrow()
+    for (const item of result.gate.missing) {
+      expect(adviceWordsIn(`${item.question} ${item.moves}`)).toEqual([])
+      expect(item.question).toMatch(/\?/)
+      expect(item.moves).not.toMatch(/\?|€|\b(you should|tell|give|enter|share|add)\b/i)
+    }
+    for (const line of result.presentation) expect(adviceWordsIn(line)).toEqual([])
+    expect(asked(result).length).toBeLessThanOrEqual(2)
+  }
+
+  it('is ready with all four in, and presents the figures as before', () => {
+    const result = calc({ ...CORE, targetPriceEur: 350_000, targetDate: '2028-06' })
+    holdsTheLine(result)
+    expect(result.gate).toEqual({ ready: true, missing: [] })
+    expect(result.presentation.slice(0, result.lines.length)).toEqual(result.lines)
+    expect(result.presentation).toEqual(expect.arrayContaining([...MORTGAGE_WARNINGS]))
+  })
+
+  it('is ready with a date and no price, when the other three are in', () => {
+    const result = calc({ ...CORE, targetDate: '2028-06' })
+    holdsTheLine(result)
+    expect(result.gate.ready).toBe(true)
+    expect(result.figures.priceFrom).toBe('limits')
+    expect(result.presentation.join(' ')).toMatch(/€/)
+  })
+
+  it('is ready with a price and no date, when the other three are in', () => {
+    const result = calc({ ...CORE, targetPriceEur: 350_000 })
+    holdsTheLine(result)
+    expect(result.gate.ready).toBe(true)
+    // The date stays a chip for the card, never a gate.
+    expect(result.questions.map((q) => q.key)).toContain('targetDate')
+  })
+
+  it('is not ready on a date alone, and asks the income and the price', () => {
+    const result = calc({ targetDate: '2028-06' })
+    holdsTheLine(result)
+    expect(result.gate.ready).toBe(false)
+    expect(result.gate.missing.map((item) => item.key)).not.toContain('targetDate')
+    expect(asked(result)).toEqual(['annualGrossIncomeEur', 'depositSavedEur'])
+  })
+
+  it('holds the figures back when the income is missing, and asks it with what it moves', () => {
+    const result = calc({
+      depositSavedEur: 30_000,
+      monthlySavingEur: 1_000,
+      targetPriceEur: 350_000,
+    })
+    holdsTheLine(result)
+    expect(result.gate.ready).toBe(false)
+    expect(result.gate.missing).toEqual([
+      {
+        key: 'annualGrossIncomeEur',
+        question: 'What is your gross income a year, before tax?',
+        moves: 'It sets what the Central Bank limits allow.',
+        askNow: true,
+      },
+    ])
+    expect(result.presentation).toEqual([
+      'What is your gross income a year, before tax? It sets what the Central Bank limits allow.',
+      RESULT_STATEMENT,
+    ])
+    // The card still gets its figures and rules.
+    expect(result.figures.neededAtKeysEur).toBe(41_500)
+    expect(result.rules.loanToIncome).toBe(4)
+    expect(result.inputs.targetPriceEur).toBe(350_000)
+  })
+
+  it('with nothing given, asks two plain questions and quotes no figure', () => {
+    const result = calc({})
+    holdsTheLine(result)
+    expect(result.gate.ready).toBe(false)
+    expect(result.gate.missing.map((item) => item.key)).toEqual([
+      'annualGrossIncomeEur',
+      'targetPriceEur',
+      'targetDate',
+      'depositSavedEur',
+      'monthlySavingEur',
+    ])
+    expect(asked(result)).toEqual(['annualGrossIncomeEur', 'targetPriceEur'])
+    expect(result.presentation).toHaveLength(3)
+    expect(result.presentation[1]).toMatch(/A month for the keys works instead/)
+    const text = result.presentation.join(' ')
+    expect(text).not.toMatch(/€|\d/)
+    expect(text).not.toMatch(/Still to know|First-time buyer|Save this|Show my options|routes/i)
+    expect(result.presentation.at(-1)).toBe(RESULT_STATEMENT)
+    // The chips stay for the card.
+    expect(result.questions).toHaveLength(10)
+  })
+
+  it('asks the price, not the date, when both are missing', () => {
+    const result = calc(CORE)
+    holdsTheLine(result)
+    expect(result.gate.ready).toBe(false)
+    expect(result.gate.missing.map((item) => [item.key, item.askNow])).toEqual([
+      ['targetPriceEur', true],
+      ['targetDate', false],
+    ])
+  })
+
+  it('never blocks on the kind of home, first-time status, bank, rate type or rent', () => {
+    const result = calc({ ...CORE, targetPriceEur: 350_000 })
+    expect(result.gate.ready).toBe(true)
+    expect(result.questions.map((q) => q.key)).toEqual(
+      expect.arrayContaining(['firstTimeBuyer', 'propertyKind', 'currentBank', 'rateType']),
+    )
+  })
+
+  it('is ready on one income when not buying together, or when not said', () => {
+    expect(calc({ ...CORE, targetPriceEur: 350_000 }).gate.ready).toBe(true)
+    expect(calc({ ...CORE, targetPriceEur: 350_000, buyingTogether: false }).gate.ready).toBe(true)
+  })
+
+  it('when buying together, waits for the second income and asks it', () => {
+    const one = calc({ ...CORE, targetPriceEur: 350_000, buyingTogether: true })
+    holdsTheLine(one)
+    expect(one.gate.ready).toBe(false)
+    expect(one.gate.missing).toEqual([
+      {
+        key: 'secondIncomeEur',
+        question: 'What is the other buyer’s gross income a year, before tax?',
+        moves: 'Both incomes together set what the Central Bank limits allow.',
+        askNow: true,
+      },
+    ])
+    const both = calc({
+      ...CORE,
+      secondIncomeEur: 40_000,
+      targetPriceEur: 350_000,
+      buyingTogether: true,
+    })
+    expect(both.gate.ready).toBe(true)
+    expect(both.figures.incomeEur).toBe(120_000)
+  })
+
+  it('when buying together with nothing given, asks both incomes first', () => {
+    const result = calc({ buyingTogether: true })
+    holdsTheLine(result)
+    expect(asked(result)).toEqual(['annualGrossIncomeEur', 'secondIncomeEur'])
+  })
+})
