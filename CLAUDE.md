@@ -392,7 +392,11 @@ The engine behind the Saoi MCP tools, in `_shared/domain/market/` (pure; contrac
   of a bigger home, and not the price when the price is what is asked), and the
   largest is asked; the rest are `laterQuestions`. On a new build with Help to Buy conditional,
   tax paid (`tax_paid`) is a candidate scored by the Help to Buy at stake, worded for both when
-  `buyingTogether` (2026-11-12). The presentation ends with that one question.
+  `buyingTogether` (2026-11-12). First-time buyer (`first_time_buyer`), when assumed, is scored
+  by the larger of its spread and the difference in the loan the limits allow (4 against 3.5
+  times income). Each `why` names only what moves in their figures (with a price given, the
+  income's says whether the limits reach it), never a spread of nothing. The presentation ends
+  with that one question.
   `completeness` counts answered and assumed inputs; `saveCall` is always "Save this comparison"
   (`ready` once, for a home, income and the kind of home are known) and lists what the app does
   today and what is coming (never offered as available).
