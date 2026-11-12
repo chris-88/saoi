@@ -1,4 +1,3 @@
-import { loadClaimedPlans } from '@shared/db/saved-plans.ts'
 import type { SaoirseTurnRequest } from '@shared/contracts/saoirse-turn.ts'
 import { withdraw, type StreamEvent } from '@shared/contracts/stream.ts'
 import { loadCase, writeEvent, type Db } from '@shared/db/case-repository.ts'
@@ -15,7 +14,7 @@ import type { Logger } from '../log.ts'
 import { buildGeneration, loadTurnContext } from './context.ts'
 import { admit, type GateAllowed } from './gate.ts'
 import { createMeter, generate, type ModelFactory } from './generate.ts'
-import { caseHasEvent } from './lookups.ts'
+import { caseHasEvent, holdsMarketFigures } from './lookups.ts'
 import { persistBlocked, persistReply, recordCustomerTurn } from './persist.ts'
 import { markAlertsSeen } from '@shared/db/alerts.ts'
 import { just } from './stream.ts'
@@ -117,7 +116,7 @@ export function createTurnRunner(deps: TurnDeps): TurnRunner {
       loaded,
       classify: handle.classify,
       tone,
-      comparesProviders: isCustomerTurn && (await loadClaimedPlans(admin, caseId)).length > 0,
+      comparesProviders: isCustomerTurn && (await holdsMarketFigures(admin, caseId)),
     })
     meter.gateDone()
 
