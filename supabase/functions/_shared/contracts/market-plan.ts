@@ -288,6 +288,30 @@ export type PlanRoute = z.infer<typeof planRouteSchema>
  * Optional on the plan: plans without a home comparison, and plans saved before 2026-11-12,
  * have none.
  */
+/**
+ * One tile (Chris, 2026-11-12, after the arrival card on the phone): the headline number alone,
+ * with its qualifier above it, so every tile's number starts at the same height.
+ *
+ * - `qualifier`: the small word above the value ("up to", "from"), or null.
+ * - `value`: the headline alone ("3.11%", "€1,751/mo", "€666,000").
+ * - `sub`: the darker secondary lines, one short phrase each (about 14 characters: the app
+ *   breaks only between them on a tile about 95px wide): "€1,014 interest", "by Jul 2028".
+ * - `quiet`: the one small quiet line, a count ("28 accounts"), or none.
+ * - `detail`: what the tile shows when tapped open: the horizon, the basis, the term.
+ *
+ * Plans and cards stored before 2026-11-12 carry `{ label, value, lines }`;
+ * `upgradeStoredArrival` reads them into this shape.
+ */
+export const planArrivalTileSchema = z.object({
+  label: text(40),
+  qualifier: text(20).nullable(),
+  value: text(40),
+  sub: z.array(text(40)).max(2),
+  quiet: z.array(text(80)).max(1),
+  detail: z.array(text(300)).max(4),
+})
+export type PlanArrivalTile = z.infer<typeof planArrivalTileSchema>
+
 export const planArrivalViewSchema = z.object({
   keysOn: monthOrDay.nullable(),
   readyLine: text(80),
@@ -300,15 +324,7 @@ export const planArrivalViewSchema = z.object({
       monthlySavingEur: eur,
     })
     .nullable(),
-  tiles: z
-    .array(
-      z.object({
-        label: text(40),
-        value: text(60),
-        lines: z.array(text(120)).max(3),
-      }),
-    )
-    .max(3),
+  tiles: z.array(planArrivalTileSchema).max(3),
   assumptions: z.array(text(160)).max(6),
   hookQuestion: z
     .object({
@@ -465,7 +481,44 @@ export function upgradeStoredPlan(document: unknown): unknown {
   if (isRecord(comparison) && comparison['routes'] === undefined) {
     record = { ...record, comparison: { ...comparison, routes: [] } }
   }
+  if (record['arrival'] !== undefined) {
+    record = { ...record, arrival: upgradeStoredArrival(record['arrival']) }
+  }
   return record
+}
+
+/**
+ * An arrival stored before 2026-11-12 has tiles of `{ label, value, lines }`. Each becomes the
+ * structured tile: a leading "up to " or "from " moves into `qualifier`, the rest of the value
+ * stays as it was, lines short enough for a tile (16 characters) become `sub` (two at most) and
+ * the rest `detail`; nothing is quiet.
+ * Anything else passes through untouched. Used for stored plans and for stored `saved_plan`
+ * cards (`upgradeStoredCard` in `cards.ts`).
+ */
+export function upgradeStoredArrival(arrival: unknown): unknown {
+  if (!isRecord(arrival) || !Array.isArray(arrival['tiles'])) return arrival
+  const tiles: unknown[] = arrival['tiles']
+  return {
+    ...arrival,
+    tiles: tiles.map((tile) => {
+      if (!isRecord(tile) || tile['sub'] !== undefined || !Array.isArray(tile['lines'])) {
+        return tile
+      }
+      const { lines, value, ...rest } = tile
+      const all = (lines as unknown[]).filter((line): line is string => typeof line === 'string')
+      const short = all.filter((line) => line.length <= 16)
+      const long = all.filter((line) => line.length > 16)
+      const lead = typeof value === 'string' ? /^(up to|from) (.+)$/.exec(value) : null
+      return {
+        ...rest,
+        qualifier: lead?.[1] ?? null,
+        value: lead?.[2] ?? value,
+        sub: short.slice(0, 2),
+        quiet: [],
+        detail: [...short.slice(2), ...long].slice(0, 4),
+      }
+    }),
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

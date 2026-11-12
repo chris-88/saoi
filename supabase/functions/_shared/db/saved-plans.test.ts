@@ -348,7 +348,16 @@ describe('the arrival message (2026-11-12)', () => {
     readyNote: null,
     factParts: ['€40,000 deposit', '+ €4,000 stamp duty', '+ €3,000 legal and survey'],
     progress: null,
-    tiles: [{ label: 'Savings', value: 'up to 3.11%', lines: ['17 accounts'] }],
+    tiles: [
+      {
+        label: 'Savings',
+        qualifier: 'up to',
+        value: '3.11%',
+        sub: [],
+        quiet: ['17 accounts'],
+        detail: [],
+      },
+    ],
     assumptions: ['Rent not given'],
     hookQuestion: {
       key: 'home_price',

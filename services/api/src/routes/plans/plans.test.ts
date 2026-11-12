@@ -158,13 +158,40 @@ const ARRIVAL = {
   ],
   progress: { savedEur: 32_000, neededEur: 47_000, monthlySavingEur: 1_500 },
   tiles: [
-    { label: 'Savings', value: 'up to 3.11%', lines: ['€879 interest by Jun 2028', '17 accounts'] },
+    {
+      label: 'Savings',
+      qualifier: 'up to',
+      value: '3.11%',
+      sub: ['€409 interest', 'by Sep 2027'],
+      quiet: ['15 accounts'],
+      detail: [
+        'Interest after DIRT on the deposit money to September 2027, the month the keys are reached',
+        'Top rate among the 15 accounts that take this saving by then',
+      ],
+    },
     {
       label: 'Mortgage',
-      value: '€360,000',
-      lines: ['from 3.25%, €1,567/mo', '5 options, 30 years'],
+      qualifier: 'from',
+      value: '€1,567/mo',
+      sub: ['€360,000 loan', 'from 3.25%'],
+      quiet: ['5 options'],
+      detail: [
+        '30-year term',
+        'Lowest rate among 5 first-time-buyer options at 90% loan-to-value',
+        'Lenders decide; the three statutory warnings apply',
+      ],
     },
-    { label: 'Could afford', value: 'up to €488,000', lines: ['4× income, 90% loan', '30 years'] },
+    {
+      label: 'Could afford',
+      qualifier: 'up to',
+      value: '€488,000',
+      sub: ['4× income', '90% loan'],
+      quiet: [],
+      detail: [
+        'The most the Central Bank limits allow: 4 times income at 90% loan, over 30 years',
+        'Needs a €48,800 deposit',
+      ],
+    },
   ],
   assumptions: ['First-time buyer', 'New build', 'Rent not given'],
   hookQuestion: {

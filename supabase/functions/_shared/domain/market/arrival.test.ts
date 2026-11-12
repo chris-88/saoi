@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { marketPlanSchema } from '../../contracts/market-plan.ts'
+import { cardSchema, upgradeStoredCard } from '../../contracts/cards.ts'
+import { marketPlanSchema, upgradeStoredPlan } from '../../contracts/market-plan.ts'
 import { buildPlanRequestSchema } from '../../contracts/market-tools.ts'
 import { adviceWordsIn } from '../../market/disclosures.ts'
 import { ARRIVAL_FALLBACK_OPENING, arrivalOpening } from './arrival.ts'
@@ -58,25 +59,79 @@ describe('the arrival on a home plan', () => {
     })
   })
 
-  it('gives the three tiles in order, a rate and a count, never a lender', () => {
+  it('gives the three tiles in order, the headline number alone, never a lender', () => {
     expect(arrival?.tiles.map((tile) => tile.label)).toEqual([
       'Savings',
       'Mortgage',
       'Could afford',
     ])
-    expect(arrival?.tiles[0]?.value).toMatch(/^up to \d+\.\d{2}%$/)
-    expect(arrival?.tiles[0]?.lines[0]).toMatch(/^€[\d,]+ interest by [A-Z][a-z]{2} \d{4}$/)
-    expect(arrival?.tiles[0]?.lines[1]).toMatch(/^\d+ accounts?$/)
-    expect(arrival?.tiles[1]?.value).toBe('€360,000')
-    expect(arrival?.tiles[1]?.lines[0]).toMatch(/^from \d+\.\d{2}%, €[\d,]+\/mo$/)
-    expect(arrival?.tiles[1]?.lines[1]).toMatch(/^\d+ options?, 30 years$/)
-    expect(arrival?.tiles[2]).toEqual({
+    const [savings, mortgage, afford] = arrival?.tiles ?? []
+    // Savings: "up to" above the rate; the interest to the keys month darker; the count quiet.
+    expect(savings?.qualifier).toBe('up to')
+    expect(savings?.value).toMatch(/^\d+\.\d{2}%$/)
+    expect(savings?.sub).toHaveLength(2)
+    expect(savings?.sub[0]).toMatch(/^€[\d,]+ interest$/)
+    expect(savings?.sub[1]).toMatch(/^by [A-Z][a-z]{2} \d{4}$/)
+    expect(savings?.quiet[0]).toMatch(/^\d+ accounts?$/)
+    expect(savings?.detail[0]).toMatch(
+      /^Interest after DIRT on the deposit money to [A-Z][a-z]+ \d{4}, the month the keys are reached$/,
+    )
+    expect(savings?.detail[1]).toMatch(/^Top rate among the \d+ accounts? that take this saving/)
+    // Mortgage: the lowest monthly repayment, the loan and the lowest rate under it.
+    expect(mortgage?.qualifier).toBe('from')
+    expect(mortgage?.value).toMatch(/^€[\d,]+\/mo$/)
+    expect(mortgage?.sub[0]).toBe('€360,000 loan')
+    expect(mortgage?.sub[1]).toMatch(/^from \d+\.\d{2}%$/)
+    expect(mortgage?.quiet[0]).toMatch(/^\d+ options?$/)
+    expect(mortgage?.detail).toEqual([
+      '30-year term',
+      expect.stringMatching(
+        /^Lowest rate among \d+ first-time-buyer options? at 90% loan-to-value$/,
+      ) as unknown as string,
+      'Lenders decide; the three statutory warnings apply',
+    ])
+    expect(afford).toEqual({
       label: 'Could afford',
-      value: 'up to €488,000',
-      lines: ['4× income, 90% loan', '30 years'],
+      qualifier: 'up to',
+      value: '€488,000',
+      sub: ['4× income', '90% loan'],
+      quiet: [],
+      detail: [
+        'The most the Central Bank limits allow: 4 times income at 90% loan, over 30 years',
+        'Needs a €48,800 deposit',
+      ],
     })
     const tiles = JSON.stringify(arrival?.tiles)
     for (const view of market.products) expect(tiles).not.toContain(view.providerName)
+    for (const tile of arrival?.tiles ?? []) {
+      expect(tile.value).not.toMatch(/up to|from/)
+      // One short phrase per line: the app breaks only between them on a ~95px tile.
+      for (const line of [...tile.sub, ...tile.quiet])
+        expect(line.length, line).toBeLessThanOrEqual(16)
+      expect(adviceWordsIn(JSON.stringify(tile))).toEqual([])
+    }
+  })
+
+  it('runs the savings to the keys month, the month the headline names', () => {
+    const savings = arrival?.tiles[0]
+    // "September 2027" on the headline is "Sep 2027" on the tile.
+    const [month = '', year = ''] = (arrival?.readyLine ?? '').split(' ')
+    const short = `${month.slice(0, 3)} ${year}`
+    expect(savings?.sub[1]).toBe(`by ${short}`)
+    expect(savings?.detail[0]).toContain(arrival?.readyLine ?? 'missing')
+  })
+
+  it('runs the savings to the date given when the keys are not reached at this pace', () => {
+    const slow = home({
+      situation: {
+        income: { annualGross: 110_000 },
+        savings: [{ label: 'Deposit saved', balance: 32_000, access: 'instant' }],
+        firstTimeBuyer: true,
+      },
+    }).plan.arrival
+    expect(slow?.keysOn).toBeNull()
+    expect(slow?.tiles[0]?.sub[1]).toBe('by Jun 2028')
+    expect(slow?.tiles[0]?.detail[0]).toMatch(/to June 2028, the date given for the keys$/)
   })
 
   it('names what was taken as given, and the question the app opens with', () => {
@@ -144,5 +199,57 @@ describe('the arrival on a home plan', () => {
     expect(savings.plan.arrival).toBeUndefined()
     const { arrival: _dropped, ...stored } = result.plan
     expect(marketPlanSchema.parse(stored).arrival).toBeUndefined()
+  })
+})
+
+/** The tiles a plan or card stored before 2026-11-12 carries. */
+const OLD_TILES = [
+  { label: 'Savings', value: 'up to 3.11%', lines: ['€879 interest by Jun 2028', '17 accounts'] },
+  { label: 'Mortgage', value: '€360,000', lines: ['from 3.25%, €1,567/mo', '5 options, 30 years'] },
+  { label: 'Could afford', value: 'up to €488,000', lines: ['4× income, 90% loan', '30 years'] },
+]
+
+describe('arrivals stored before the structured tiles', () => {
+  const stored = { ...home().plan, arrival: { ...home().plan.arrival, tiles: OLD_TILES } }
+
+  it('fails the new contract as stored, and reads through the upgrade', () => {
+    expect(marketPlanSchema.safeParse(stored).success).toBe(false)
+    const tiles = marketPlanSchema.parse(upgradeStoredPlan(stored)).arrival?.tiles
+    expect(tiles?.[0]).toEqual({
+      label: 'Savings',
+      qualifier: 'up to',
+      value: '3.11%',
+      sub: ['17 accounts'],
+      quiet: [],
+      detail: ['€879 interest by Jun 2028'],
+    })
+    expect(tiles?.[1]).toMatchObject({ qualifier: null, value: '€360,000' })
+    expect(tiles?.[2]).toMatchObject({ qualifier: 'up to', value: '€488,000' })
+  })
+
+  it('reads a stored saved_plan card the same way, and leaves new tiles and other cards alone', () => {
+    const card = {
+      type: 'saved_plan',
+      planId: '99999999-9999-4999-8999-999999999999',
+      title: 'Buying a home',
+      summary: 'From the card.',
+      goals: [],
+      products: [],
+      debts: [],
+      basis: 'The basis.',
+      assumptions: [],
+      attributions: [],
+      routes: [],
+      arrival: stored.arrival,
+      createdAt: '2026-11-12T09:00:00.000Z',
+      dataCheckedAt: '2026-11-12T09:00:00.000Z',
+    }
+    expect(cardSchema.safeParse(card).success).toBe(false)
+    const parsed = cardSchema.parse(upgradeStoredCard(card))
+    expect(parsed.type === 'saved_plan' && parsed.arrival?.tiles[0]?.value).toBe('3.11%')
+    const current = home().plan.arrival
+    expect(upgradeStoredPlan({ arrival: current })).toEqual({ arrival: current })
+    const other = { type: 'status' }
+    expect(upgradeStoredCard(other)).toBe(other)
   })
 })

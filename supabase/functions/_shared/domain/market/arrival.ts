@@ -7,6 +7,7 @@ import type {
 import type { PlanArrivalView } from '../../contracts/market-plan.ts'
 import { homeCalculator } from './home-calculator.ts'
 import { monthName, monthsBetween } from './home-arithmetic.ts'
+import { homeMarketSummary } from './home-market.ts'
 import type { AsOf, Market } from './types.ts'
 
 /**
@@ -114,7 +115,8 @@ export function arrivalFor(
   const home = main.home
   if (home === null || home.pathways.length === 0) return undefined
   const request = calculatorRequest(base, home)
-  const calculator = homeCalculator(request, asOf, market)
+  // The market is summarised below, once the keys month is known, so the savings run to it.
+  const calculator = homeCalculator(request, asOf, null)
   const { figures } = calculator
   const firstTimeBuyer = request.firstTimeBuyer ?? true
   const limits = firstTimeBuyer ? calculator.rules.firstTimeBuyer : calculator.rules.otherBuyer
@@ -149,42 +151,14 @@ export function arrivalFor(
             : []),
         ]
 
-  // ---- The three tiles, as the host card words them -----------------------------------------------
-  const savings = calculator.market?.savings ?? null
-  const mortgage = calculator.market?.mortgage ?? null
-  const none = { value: 'Not available', lines: ['No market figures today'] }
+  // ---- The three tiles (Chris, 2026-11-12, after the card on the phone) --------------------------
+  // The headline number alone, its qualifier above it; the secondary lines darker; counts quiet;
+  // the horizon, the basis and the term behind a tap. The savings run to the keys month.
+  const summary = market === null ? null : homeMarketSummary(market, request, figures, asOf, ready)
   const tiles: PlanArrivalView['tiles'] = [
-    savings === null
-      ? { label: 'Savings', ...none }
-      : {
-          label: 'Savings',
-          value: `up to ${pct2(savings.topRatePct)}`,
-          lines: [
-            `${eur(savings.interestToTargetEur)} interest by ${shortMonth(savings.by)}`,
-            count(savings.accounts, 'account', 'accounts'),
-          ],
-        },
-    {
-      label: 'Mortgage',
-      value: eur(figures.loanEur ?? home.loan),
-      lines:
-        mortgage === null
-          ? none.lines
-          : [
-              `from ${pct2(mortgage.lowestRatePct)}, ${eur(mortgage.lowestMonthlyEur)}/mo`,
-              `${count(mortgage.options, 'option', 'options')}, ${String(mortgage.termYears)} years`,
-            ],
-    },
-    figures.maxPriceEur === null
-      ? { label: 'Could afford', ...none, lines: ['Needs the income'] }
-      : {
-          label: 'Could afford',
-          value: `up to ${eur(figures.maxPriceEur)}`,
-          lines: [
-            `${String(limits.loanToIncome)}× income, ${String(limits.maxLtvPct)}% loan`,
-            `${String(figures.termYears)} years`,
-          ],
-        },
+    savingsTile(summary?.savings ?? null),
+    mortgageTile(summary?.mortgage ?? null, figures.loanEur ?? home.loan, firstTimeBuyer, figures),
+    affordTile(figures, limits),
   ]
 
   return {
@@ -206,5 +180,106 @@ export function arrivalFor(
       hook === null || hook.scoreEur <= 0
         ? null
         : { key: hook.key, question: hook.question, why: hook.why },
+  }
+}
+
+type Calculated = ReturnType<typeof homeCalculator>
+type Summary = NonNullable<ReturnType<typeof homeMarketSummary>>
+type Tile = PlanArrivalView['tiles'][number]
+
+const NOT_AVAILABLE = 'Not available'
+
+/** Savings: the top rate, its interest to the month the figures run to, how many accounts fit. */
+function savingsTile(savings: Summary['savings']): Tile {
+  if (savings === null) {
+    return {
+      label: 'Savings',
+      qualifier: null,
+      value: NOT_AVAILABLE,
+      sub: [],
+      quiet: [],
+      detail: ['No savings account in the market figures takes this saving.'],
+    }
+  }
+  const dirt = savings.basis.includes('DIRT-free') ? 'DIRT-free' : 'after DIRT'
+  const accounts = count(savings.accounts, 'account', 'accounts')
+  const why =
+    savings.runsTo === 'keys_month'
+      ? `to ${monthName(savings.by)}, the month the keys are reached`
+      : savings.runsTo === 'date_given'
+        ? `to ${monthName(savings.by)}, the date given for the keys`
+        : `over the next 12 months, as no date is known`
+  return {
+    label: 'Savings',
+    qualifier: 'up to',
+    value: pct2(savings.topRatePct),
+    sub: [`${eur(savings.interestToTargetEur)} interest`, `by ${shortMonth(savings.by)}`],
+    quiet: [accounts],
+    detail: [
+      `Interest ${dirt} on the deposit money ${why}`,
+      `Top rate among the ${accounts} that take this saving by then`,
+    ],
+  }
+}
+
+/** Mortgage: the lowest monthly repayment, the loan and the lowest rate under it. */
+function mortgageTile(
+  mortgage: Summary['mortgage'],
+  loan: number,
+  firstTimeBuyer: boolean,
+  figures: Calculated['figures'],
+): Tile {
+  if (mortgage === null) {
+    return {
+      label: 'Mortgage',
+      qualifier: null,
+      value: NOT_AVAILABLE,
+      sub: [`${eur(loan)} loan`],
+      quiet: [],
+      detail: ['No mortgage in the market figures fits this loan.'],
+    }
+  }
+  const ltv = figures.ltvPct === null ? null : Math.round(figures.ltvPct)
+  return {
+    label: 'Mortgage',
+    qualifier: 'from',
+    value: `${eur(mortgage.lowestMonthlyEur)}/mo`,
+    sub: [`${eur(mortgage.loanEur)} loan`, `from ${pct2(mortgage.lowestRatePct)}`],
+    quiet: [count(mortgage.options, 'option', 'options')],
+    detail: [
+      `${String(mortgage.termYears)}-year term`,
+      `Lowest rate among ${count(mortgage.options, firstTimeBuyer ? 'first-time-buyer option' : 'option', firstTimeBuyer ? 'first-time-buyer options' : 'options')}${ltv === null ? '' : ` at ${String(ltv)}% loan-to-value`}`,
+      'Lenders decide; the three statutory warnings apply',
+    ],
+  }
+}
+
+/** Could afford: the most the Central Bank limits allow, the limits, and the deposit it needs. */
+function affordTile(
+  figures: Calculated['figures'],
+  limits: { readonly loanToIncome: number; readonly maxLtvPct: number },
+): Tile {
+  if (figures.maxPriceEur === null || figures.maxLoanEur === null) {
+    return {
+      label: 'Could afford',
+      qualifier: null,
+      value: NOT_AVAILABLE,
+      sub: ['Needs the income'],
+      quiet: [],
+      detail: [],
+    }
+  }
+  const price = figures.maxPriceEur
+  const deposit = price - Math.min((price * limits.maxLtvPct) / 100, figures.maxLoanEur)
+  return {
+    label: 'Could afford',
+    qualifier: 'up to',
+    value: eur(price),
+    sub: [`${String(limits.loanToIncome)}× income`, `${String(limits.maxLtvPct)}% loan`],
+    quiet: [],
+    detail: [
+      `The most the Central Bank limits allow: ${String(limits.loanToIncome)} times income at ${String(limits.maxLtvPct)}% loan, over ${String(figures.termYears)} years`,
+      `Needs a ${eur(deposit)} deposit`,
+    ],
   }
 }
