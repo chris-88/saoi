@@ -390,7 +390,9 @@ The engine behind the Saoi MCP tools, in `_shared/domain/market/` (pure; contrac
   plausible answers, scored in euro on the goal (the spread in the price that can be bought, keys
   months × monthly saving, what is held, and cost per €100,000 borrowed; never the absolute cost
   of a bigger home, and not the price when the price is what is asked), and the
-  largest is asked; the rest are `laterQuestions`. The presentation ends with that one question.
+  largest is asked; the rest are `laterQuestions`. On a new build with Help to Buy conditional,
+  tax paid (`tax_paid`) is a candidate scored by the Help to Buy at stake, worded for both when
+  `buyingTogether` (2026-11-12). The presentation ends with that one question.
   `completeness` counts answered and assumed inputs; `saveCall` is always "Save this comparison"
   (`ready` once, for a home, income and the kind of home are known) and lists what the app does
   today and what is coming (never offered as available).
@@ -466,7 +468,10 @@ amounts, projections and unknowns, the payoff order, the ranking basis, assumpti
   a host reads first: money found, the position with its parts, one net figure per scenario (everything held less what is still owed,
   never a gross pot alone), the split, the liquidity call, Help to Buy for a home, the questions, the save link,
   and that the customer decides. No imperatives.
-- **The link** is `https://app.saoi.ie/?plan=<token>` (2026-11-10: opened from claude.ai's card on a phone, a `#/plan/<token>` fragment never reached the app; the app moves `?plan=` into its route and strips it). `POST /api/plans/preview` (public, by token, not spent) gives the app's welcome the title, the figures in one line and a home comparison's first three options (`plan.comparison`, every option the customer saw, carried in the `MarketPlan`), before the data notice and the claim.
+- **The link** is `https://app.saoi.ie/?plan=<token>` (2026-11-10: opened from claude.ai's card on a phone, a `#/plan/<token>` fragment never reached the app; the app moves `?plan=` into its route and strips it). `POST /api/plans/preview` (public, by token, not spent) gives the app's welcome the title, the figures in one line and a home comparison's first three options (`plan.comparison`, every option the customer saw, carried in the `MarketPlan`), before the data notice and the claim. A home plan carries `arrival` (2026-11-12,
+  `domain/market/arrival.ts`): the host card's month, breakdown, progress, three tiles and
+  assumption chips, worded once by `buildPlan`, and `hookQuestion` (the `nextQuestion`); the
+  preview returns it with `opening`, Saoirse's first line verbatim (the hook, or a fixed line).
 - **Claiming** (`#/plan/<token>` in saoi-web, after the welcome and the data notice) puts it in the browser's current conversation when
   that is empty, otherwise a new one (`source: 'plan'`, under the audience cap, refused before
   the token is spent). It records the situation's figures that map cleanly onto the fact
@@ -475,11 +480,12 @@ amounts, projections and unknowns, the payoff order, the ranking basis, assumpti
   date; never gross income) as `customer_stated`, skipping keys the case holds, and writes
   `plan_saved` and `plan_claimed`. The same browser opening its link again lands in the same
   conversation; another browser gets 409, an expired link 410 `expired`, an unknown one 404.
-- **Opening**: `plan_claimed` is narratable, so the next `POST /api/sessions` says `hasUpdates`
-  and the app runs a `return` turn. That turn shows the `saved_plan` card before Saoirse speaks
-  (built from the stored plan, once per plan, like the account welcome), the digest carries "The
-  plan they brought" on every turn, and the return instruction asks for what it is and what is
-  next (its `Next:` line), no figures.
+- **Opening** (2026-11-12, "3. Arrival"): the claim writes Saoirse's first message itself, one
+  row with the `saved_plan` card (and its `arrival`) and `opening` as the text, then moves
+  `last_seen_at` past its events, so no `hasUpdates` and no return turn. The customer's answer is
+  an ordinary turn told it is the reply to that question (no welcome, no card again, no second
+  question); the digest carries "The plan they brought" on every turn and quotes the opening.
+  Plans claimed before then still open on the old `return` turn.
 - `npm run plan:sample` saves the worked example against the live API and prints a link.
 
 ### Plan alerts and reminders
