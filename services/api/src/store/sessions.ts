@@ -73,6 +73,25 @@ type SeatRow = {
   participants: { id: string; case_id: string; role: string } | null
 }
 
+/**
+ * Whether anything worth telling them happened since they were last seen: a narratable event
+ * (`NARRATABLE_EVENTS`: the bank moving, a plan claimed, a plan edited in the profile) after
+ * `last_seen_at`. True until a turn marks them seen; the app runs a return turn on it.
+ */
+export async function hasUpdatesSince(db: Db, caseId: string): Promise<boolean> {
+  const theCase = await db.from('cases').select('last_seen_at').eq('id', caseId).maybeSingle()
+  const lastSeen = theCase.data?.last_seen_at
+  if (!lastSeen) return false
+
+  const since = await db
+    .from('events')
+    .select('id', { count: 'exact', head: true })
+    .eq('case_id', caseId)
+    .in('type', NARRATABLE_EVENTS as unknown as string[])
+    .gt('created_at', lastSeen)
+  return (since.count ?? 0) > 0
+}
+
 export function supabaseSessionStore(db: Db): SessionStore {
   async function primaryMappings(userId: string): Promise<Mapping[]> {
     const result = await db
@@ -95,19 +114,7 @@ export function supabaseSessionStore(db: Db): SessionStore {
     )
   }
 
-  async function updatesSince(caseId: string): Promise<boolean> {
-    const theCase = await db.from('cases').select('last_seen_at').eq('id', caseId).maybeSingle()
-    const lastSeen = theCase.data?.last_seen_at
-    if (!lastSeen) return false
-
-    const since = await db
-      .from('events')
-      .select('id', { count: 'exact', head: true })
-      .eq('case_id', caseId)
-      .in('type', NARRATABLE_EVENTS as unknown as string[])
-      .gt('created_at', lastSeen)
-    return (since.count ?? 0) > 0
-  }
+  const updatesSince = (caseId: string): Promise<boolean> => hasUpdatesSince(db, caseId)
 
   /**
    * Somebody who has signed in since they last called: the case says `anonymous` and the

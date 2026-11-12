@@ -22,7 +22,11 @@ export const NARRATABLE_EVENTS = [
   'accounts_linked',
   'transfer_settled',
   'plan_claimed',
+  'plan_edited',
 ] as const
+
+/** A claimed plan changed in the app's profile and rebuilt (`PATCH /api/cases/{id}/plan`). */
+export const PLAN_EDITED_EVENT = 'plan_edited' as const
 
 export type NarratableEvent = (typeof NARRATABLE_EVENTS)[number]
 
@@ -122,6 +126,37 @@ export function describeEvent(event: {
       return typeof event.payload['opening'] === 'string'
         ? `${here} Its card and my first question are already on screen.`
         : here
+    }
+    /*
+     * A change made to the plan in the app's profile (2026-11-12, "6. The saving months"). The
+     * edit wrote `reading`, what changed and which options now fit as facts in their figures;
+     * it is the sentence, so the pill and Saoirse's opening say the same. Where the reading
+     * shortened a list ("and 2 more"), every name follows.
+     */
+    case 'plan_edited': {
+      const reading = typeof event.payload['reading'] === 'string' ? event.payload['reading'] : null
+      const effects = event.payload['effects']
+      const names = (key: string): string[] => {
+        if (typeof effects !== 'object' || effects === null) return []
+        const list = (effects as Record<string, unknown>)[key]
+        return Array.isArray(list)
+          ? list.filter((item): item is string => typeof item === 'string')
+          : []
+      }
+      const nowFit = names('nowFit')
+      const noLongerFit = names('noLongerFit')
+      const full =
+        nowFit.length > 3 || noLongerFit.length > 3
+          ? [
+              ...(nowFit.length === 0 ? [] : [`Now fit: ${nowFit.join(', ')}.`]),
+              ...(noLongerFit.length === 0 ? [] : [`No longer fit: ${noLongerFit.join(', ')}.`]),
+            ]
+          : []
+      return [
+        'You changed the plan in the app.',
+        ...(reading === null ? [] : [reading]),
+        ...full,
+      ].join(' ')
     }
     default:
       return null

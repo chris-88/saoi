@@ -1,5 +1,6 @@
 import { OpenAPIHono, createRoute } from '@hono/zod-openapi'
 import { caseHistorySchema } from '@shared/contracts/case-read.ts'
+import { savedPlanCard } from '@shared/db/saved-plans.ts'
 import { buildHistory, caseStateFromSnapshot } from '@shared/domain/card-state.ts'
 import type { AppEnv } from '../../context.ts'
 import { authenticatedErrors, errorResponse, security } from '../common.ts'
@@ -32,10 +33,19 @@ const route = createRoute({
 export const historyRoutes = new OpenAPIHono<AppEnv>().openapi(route, async (c) => {
   const { caseId } = c.get('caseAccess')
   const store = c.get('store')
-  const [rows, messages] = await Promise.all([
+  const [rows, messages, claimed] = await Promise.all([
     store.loadSnapshotRows(caseId),
     store.loadMessages(caseId, HISTORY_LIMIT),
+    store.claimedPlans(caseId),
   ])
-  const state = caseStateFromSnapshot(buildSnapshot(caseId, !c.get('user').isAnonymous, rows))
+  const state = {
+    ...caseStateFromSnapshot(buildSnapshot(caseId, !c.get('user').isAnonymous, rows)),
+    // A plan changed in the profile shows its rebuilt figures wherever its card was shown.
+    savedPlans: new Map(
+      claimed
+        .filter((entry) => (entry.plan.edits ?? []).length > 0)
+        .map((entry) => [entry.id, savedPlanCard(entry)] as const),
+    ),
+  }
   return c.json({ caseId, entries: [...buildHistory(messages, state)] }, 200)
 })

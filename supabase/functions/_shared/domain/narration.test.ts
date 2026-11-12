@@ -77,6 +77,42 @@ describe('saying what happened', () => {
     )
   })
 
+  /** A change made in the profile: the edit's reading, what changed and which options now fit. */
+  it('says what a plan edit changed, in the edit’s own words', () => {
+    const reading =
+      'Moving the keys to March 2028 means €4,751 less saved by then at this pace; the 18-month deposits no longer fit, and deposits of up to one year still do.'
+    expect(
+      describeEvent({
+        type: 'plan_edited',
+        payload: {
+          reading,
+          effects: { nowFit: [], noLongerFit: ['18-month deposits'] },
+        },
+      }),
+    ).toBe(`You changed the plan in the app. ${reading}`)
+    expect(isNarratable('plan_edited')).toBe(true)
+  })
+
+  it('lists every option when the reading shortened the list', () => {
+    expect(
+      describeEvent({
+        type: 'plan_edited',
+        payload: {
+          reading: 'Counting you as having bought before means …',
+          effects: {
+            nowFit: [],
+            noLongerFit: ['A 3-year fixed', 'B variable', 'C 4-year fixed', 'D 5-year fixed'],
+          },
+        },
+      }),
+    ).toBe(
+      'You changed the plan in the app. Counting you as having bought before means … No longer fit: A 3-year fixed, B variable, C 4-year fixed, D 5-year fixed.',
+    )
+    expect(describeEvent({ type: 'plan_edited', payload: {} })).toBe(
+      'You changed the plan in the app.',
+    )
+  })
+
   /** Nobody wrote copy for it, so nobody reads a raw event name. */
   it('says nothing for an event it has no words for', () => {
     expect(describeEvent({ type: 'turn_tools', payload: {} })).toBeNull()

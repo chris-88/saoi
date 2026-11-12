@@ -39,6 +39,7 @@ import { loadCaseAlerts, loadOpenReminders } from '@shared/db/alerts.ts'
 import { shortDate } from '@shared/domain/market/alerts.ts'
 import { loadHoldings } from '@shared/db/holdings.ts'
 import { holdingLine, planProgress } from '@shared/domain/market/holdings.ts'
+import { isNarratable, PLAN_EDITED_EVENT } from '@shared/domain/narration.ts'
 import { participantFor, type LoadedCase, type LoadedMessage } from '@shared/db/loaded-case.ts'
 
 /** The case and the catalogue Saoirse speaks from this turn. */
@@ -530,14 +531,7 @@ export async function buildGeneration(
     })
   } else if (turn.trigger === 'return') {
     // §36 — the customer did not ask anything; they came back. Lead with what changed.
-    history.push({
-      role: 'user',
-      content:
-        '(The customer has just come back after being away. Open by naming each thing under ' +
-        '"Changed since they were last here" — say what actually happened, in your own words, ' +
-        'not that something "moved on". Then call show_status and ask what they want to deal ' +
-        'with first. This is the one turn where a short list is right.)',
-    })
+    history.push({ role: 'user', content: returnInstruction(loaded.eventsSinceLastSeen) })
   }
 
   if (history.length === 0) {
@@ -597,6 +591,46 @@ export const ARRIVAL_ANSWER_INSTRUCTION =
   'lender or option for them.'
 
 /** How a conversation opened from a saved plan began, for the model, before Saoirse's first line. */
+/**
+ * What a return turn is told to do (§36). Ordinarily: name each thing under "Changed since they
+ * were last here", then the status card. Right after a plan edit in the profile (2026-11-12,
+ * "6. The saving months") the app has already shown the edit's `reading` as Saoirse's line, so
+ * the turn builds on it: no greeting, not the same words again, no status card; what the change
+ * means for the options they compare, which now fit and which no longer do, as facts in their
+ * figures, never "better" and never a pick.
+ */
+export function returnInstruction(
+  events: readonly { readonly type: string; readonly payload: Record<string, unknown> }[],
+): string {
+  const edits = events.filter((event) => event.type === PLAN_EDITED_EVENT)
+  const latest = edits.at(-1)
+  if (latest === undefined) {
+    return (
+      '(The customer has just come back after being away. Open by naming each thing under ' +
+      '"Changed since they were last here" — say what actually happened, in your own words, ' +
+      'not that something "moved on". Then call show_status and ask what they want to deal ' +
+      'with first. This is the one turn where a short list is right.)'
+    )
+  }
+  const reading = typeof latest.payload['reading'] === 'string' ? latest.payload['reading'] : null
+  const others = events.some(
+    (event) => event.type !== PLAN_EDITED_EVENT && isNarratable(event.type),
+  )
+  return (
+    '(The customer has just changed their plan in the app and come back to the conversation. ' +
+    (reading === null ? '' : `The app has already shown them this line as yours: "${reading}" `) +
+    'Do not greet them or welcome them back, do not say that line again in the same words, ' +
+    'and do not call show_status. Build on it from "Changed since they were last here" and ' +
+    'the plan lines in the digest, which are already the rebuilt plan: in a sentence or two, ' +
+    'what the change means for the options they compare, in their order, which now fit and ' +
+    'which no longer do, with their figures. Facts only: never call the change or an option ' +
+    'better or worse, and never pick one for them. If savings accounts now fit the date, ' +
+    'show_products with fits_date shows them. ' +
+    (others ? 'Then name the other things under "Changed since they were last here". ' : '') +
+    'End by asking what they would like to look at next.)'
+  )
+}
+
 export const ARRIVAL_OPENED_NOTE =
   '(The customer opened, in this app, the comparison they saved in their own AI assistant. ' +
   'The plan card, with their figures, was on screen before your first line.)'

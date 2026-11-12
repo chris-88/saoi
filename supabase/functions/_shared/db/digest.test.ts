@@ -241,6 +241,24 @@ describe('what changed since last time (§36)', () => {
     ])
   })
 
+  /** A plan edited in the profile: the turn after it builds on the edit's own reading. */
+  it('carries a plan edit’s reading', () => {
+    const reading =
+      'Moving the keys to March 2028 means €4,751 less saved by then at this pace; the 18-month deposits no longer fit, and deposits of up to one year still do.'
+    const digest = buildCaseDigest(
+      loaded({
+        eventsSinceLastSeen: [
+          {
+            type: 'plan_edited',
+            createdAt: '2026-11-20T10:00:00Z',
+            payload: { reading, effects: { nowFit: [], noLongerFit: ['18-month deposits'] } },
+          },
+        ],
+      }),
+    )
+    expect(digest.eventsSinceLastSeen).toEqual([`You changed the plan in the app. ${reading}`])
+  })
+
   it('omits an event type nobody has written copy for, rather than guessing', () => {
     const digest = buildCaseDigest(
       loaded({
