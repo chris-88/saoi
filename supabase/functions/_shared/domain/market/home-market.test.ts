@@ -41,11 +41,13 @@ describe('the home calculator with the market beside it', () => {
     )
   })
 
-  it('gives the top savings rate for money reachable by the date, and its interest after DIRT', () => {
+  it('gives the top savings rate for money reachable by the keys month, and its interest after DIRT', () => {
     const savings = result.market?.savings
     expect(savings).not.toBeNull()
     if (savings === null || savings === undefined) return
-    const horizon = monthsUntil(AS_OF, '2028-06')
+    // €47,000 needed at the keys from €30,000 at €1,000 a month: April 2028, before the date given.
+    expect(result.figures.depositReachedOn).toBe('2028-04')
+    const horizon = monthsUntil(AS_OF, '2028-04')
     // The highest rate among the accounts the plan engine allows that take this saving whole.
     const rates = allocatable(MARKET.products, { horizonMonths: horizon, lockAllowed: true })
       .flatMap((product) => {
@@ -65,7 +67,8 @@ describe('the home calculator with the market beside it', () => {
     if (top === undefined || top.product.terms.kind !== 'deposit') return
     expect(savings.topRatePct).toBe(top.rate)
     expect(savings.topRateProvider).toBe(top.product.providerName)
-    expect(savings.by).toBe('2028-06')
+    expect(savings.by).toBe('2028-04')
+    expect(savings.runsTo).toBe('keys_month')
     expect(savings.accounts).toBeGreaterThan(1)
     expect(savings.accounts).toBeLessThanOrEqual(rates.length)
 
@@ -115,7 +118,7 @@ describe('the home calculator with the market beside it', () => {
   it('adds the two summaries after the existing lines, as facts', () => {
     const [savingsLine, mortgageLine] = result.market?.lines ?? []
     expect(savingsLine).toMatch(
-      /^Savings: the top rate on the market is \d+\.\d{2}% \(.+\), about €[\d,]+ interest after DIRT by June 2028 in that account; \d+ accounts fit\.$/,
+      /^Savings: the top rate on the market is \d+\.\d{2}% \(.+\), about €[\d,]+ interest after DIRT by April 2028 in that account; \d+ accounts fit\.$/,
     )
     expect(mortgageLine).toMatch(
       /^Mortgages: \d+ fit €360,000 over 30 years, from €[\d,]+ to €[\d,]+ a month\.$/,
@@ -125,6 +128,37 @@ describe('the home calculator with the market beside it', () => {
     const text = JSON.stringify(result.market)
     expect(adviceWordsIn(text)).toEqual([])
     expect(text).not.toMatch(/\b(best|should)\b/i)
+  })
+
+  it('runs the savings to the keys month a plan names, to the date given without one, else 12 months', () => {
+    // A plan's keys month (counting savings interest) is passed in and wins over the calculator's.
+    const planned = homeMarketSummary(MARKET, REQUEST, result.figures, AS_OF, '2028-03')
+    expect(planned?.savings?.by).toBe('2028-03')
+    expect(planned?.savings?.runsTo).toBe('keys_month')
+    expect(planned?.savings?.basis).toMatch(
+      /by March 2028, the month the money for the keys is there/,
+    )
+    expect(planned?.savings?.interestToTargetEur).toBeLessThan(
+      result.market?.savings?.interestToTargetEur ?? 0,
+    )
+
+    // Nothing saved a month: the keys are not reached, so the figures run to the date given.
+    const stalled = homeCalculatorRequestSchema.parse({ ...REQUEST, monthlySavingEur: 0 })
+    const stalledResult = homeCalculator(stalled, AS_OF, MARKET)
+    expect(stalledResult.figures.depositReachedOn).toBeNull()
+    expect(stalledResult.market?.savings?.by).toBe('2028-06')
+    expect(stalledResult.market?.savings?.runsTo).toBe('date_given')
+    expect(stalledResult.market?.savings?.basis).toMatch(/by June 2028, the date given/)
+
+    // Neither: 12 months on, as before.
+    const undated = homeCalculatorRequestSchema.parse({
+      ...REQUEST,
+      monthlySavingEur: 0,
+      targetDate: undefined,
+    })
+    const undatedResult = homeCalculator(undated, AS_OF, MARKET)
+    expect(undatedResult.market?.savings?.by).toBe('2027-11')
+    expect(undatedResult.market?.savings?.runsTo).toBe('no_date')
   })
 
   it('is null without market data', () => {

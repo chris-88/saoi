@@ -65,7 +65,7 @@ describe('the arrival on a home plan', () => {
       'Could afford',
     ])
     expect(arrival?.tiles[0]?.value).toMatch(/^up to \d+\.\d{2}%$/)
-    expect(arrival?.tiles[0]?.lines[0]).toMatch(/^€[\d,]+ interest by [A-Z][a-z]{2} 2028$/)
+    expect(arrival?.tiles[0]?.lines[0]).toMatch(/^€[\d,]+ interest by [A-Z][a-z]{2} \d{4}$/)
     expect(arrival?.tiles[0]?.lines[1]).toMatch(/^\d+ accounts?$/)
     expect(arrival?.tiles[1]?.value).toBe('€360,000')
     expect(arrival?.tiles[1]?.lines[0]).toMatch(/^from \d+\.\d{2}%, €[\d,]+\/mo$/)
