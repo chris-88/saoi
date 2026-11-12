@@ -4,6 +4,8 @@ import { FACT_KEYS, type FactKey } from '../domain/facts.ts'
 import { PRODUCTS } from '../domain/journey.ts'
 import { REMINDER_KINDS } from '../contracts/alerts.ts'
 import { HOLDING_KINDS } from '../contracts/holdings.ts'
+import { MARKET_ARRANGEMENT_KINDS } from '../contracts/cards.ts'
+import { HOME_SORTS } from '../contracts/market-tools.ts'
 
 /**
  * The tools Saoirse may call.
@@ -302,6 +304,27 @@ export const recordHoldingInput = z.object({
   productId: z.string().trim().min(1).max(80).optional(),
 })
 
+/**
+ * The product card that follows the question asked: the model names the arrangement the
+ * question implies (and, for a mortgage, the sort and the customer's own filters); the server
+ * reads their figures from the case, runs the engine over the whole market and builds every row.
+ */
+export const showProductsInput = z.object({
+  arrangement: z.enum(MARKET_ARRANGEMENT_KINDS),
+  /** Narrows a savings card to monthly saving accounts or lump-sum deposits. */
+  category: z.enum(['savings', 'deposits', 'mortgages']).optional(),
+  /** Mortgages: the order the customer asked for. Default: the order their plan uses. */
+  sortBy: z.enum(HOME_SORTS).optional(),
+  /** Mortgages: only filters the customer asked for. */
+  filters: z
+    .object({
+      stayWithBank: z.boolean().optional(),
+      rateType: z.enum(['fixed', 'variable', 'either']).optional(),
+      green: z.boolean().optional(),
+    })
+    .optional(),
+})
+
 export const TOOL_INPUTS = {
   record_facts: recordFactsInput,
   set_reminder: setReminderInput,
@@ -324,6 +347,7 @@ export const TOOL_INPUTS = {
   show_connect_accounts: showConnectAccountsInput,
   show_accounts: showAccountsInput,
   show_transfer: showTransferInput,
+  show_products: showProductsInput,
 } as const
 
 export type ToolName = keyof typeof TOOL_INPUTS
@@ -336,6 +360,25 @@ export type ToolDefinition = {
 }
 
 export const TOOLS: readonly ToolDefinition[] = [
+  {
+    name: 'show_products',
+    description:
+      'Show the products the customer asked to see, from the whole Irish market and their own ' +
+      'figures, arranged by what the question implies. Pick the arrangement from the question: ' +
+      '"what does my savings account earn against the market", "is my rate any good", "what ' +
+      'could my money earn elsewhere" is held_vs_market; "how soon can I get at the money", ' +
+      '"instant access or fixed", "what does locking it away get me" is by_access; "where can ' +
+      'the deposit sit until the keys", "what fits my date", "accounts for the next two years" ' +
+      'is fits_date; "what would the mortgage cost", "show me the mortgages", "which lenders", ' +
+      '"lowest monthly" is mortgage_by_sort (pass sortBy when they name an order: ' +
+      'five_year_cost, keys_date or monthly_repayment; filters only when they asked for one: ' +
+      'stay with their bank, fixed or variable, green). A follow-up such as "by access instead" ' +
+      'calls it again with that arrangement. The server reads their figures from the case and ' +
+      'builds every row; you pass no figures and name no product. Say one line about the card ' +
+      'and ask nothing else; do not read the rows out, and never call one the pick for them. If ' +
+      'it returns questions instead of a card, ask the first one.',
+    schema: showProductsInput,
+  },
   {
     name: 'record_holding',
     description:

@@ -40,6 +40,7 @@ function context(over: Partial<ToolContext> = {}): ToolContext {
     currentAccountPick: null,
     needContext: [] as never,
     customerMessage: '',
+    market: () => Promise.resolve({ products: [], recordsOf: new Map(), viewOfRow: new Map() }),
     rejections: [],
     ...over,
   }

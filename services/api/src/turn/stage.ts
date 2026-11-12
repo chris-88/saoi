@@ -20,8 +20,20 @@ import { type LoadedCase } from '@shared/db/loaded-case.ts'
  * a tool it will eventually try, and on a case with no form-backed application every call
  * would be refused by the server and spend a whole round doing it.
  */
-export function toolsForTurn(stage: Stage, hasForm: boolean): readonly ToolName[] {
-  const allowed = CONVERSATION[stage].tools
+export function toolsForTurn(
+  stage: Stage,
+  hasForm: boolean,
+  /**
+   * The case has the customer's figures for the market (a claimed plan, or holdings).
+   *
+   * `show_products` is offered on that, in whatever stage: the stages are the Demo Bank arc, and
+   * a customer who brought a plan from their own AI asks to see products from the first reply
+   * on. Without either it is withheld, as a card would have nothing to run on.
+   */
+  hasFigures = false,
+): readonly ToolName[] {
+  const staged = CONVERSATION[stage].tools
+  const allowed: readonly ToolName[] = hasFigures ? [...staged, 'show_products'] : staged
   if (hasForm) return allowed
 
   return allowed.filter(

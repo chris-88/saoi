@@ -94,6 +94,10 @@ describe('the model has no tool that takes an action', () => {
     // `record_holding` is the twenty-first and records too: an account or a debt the customer
     // stated, with its balance. It opens, moves and closes nothing; progress against the plan
     // is worked out from it by the server and stated as a fact.
+    //
+    // `show_products` is the twenty-second and shows: the model names the arrangement the
+    // customer's question implies, and the server reads their figures from the case and builds
+    // every row from the market. It starts nothing and names no product of its own choosing.
     expect([...TOOL_NAMES].sort()).toEqual([
       'propose_plan',
       'record_facts',
@@ -112,6 +116,7 @@ describe('the model has no tool that takes an action', () => {
       'show_partner_invite',
       'show_pause_prompt',
       'show_product_options',
+      'show_products',
       'show_quote',
       'show_review',
       'show_status',

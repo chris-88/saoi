@@ -11,6 +11,7 @@ import type { describeGoals, goalContextFor } from '@shared/db/goals.ts'
 import type { LoadedCase } from '@shared/db/loaded-case.ts'
 import type { ToolOutcome } from '@shared/llm/saoirse.ts'
 import type { ToolName, TOOL_INPUTS } from '@shared/llm/tools.ts'
+import type { Market } from '@shared/domain/market/types.ts'
 import type { z } from 'zod'
 
 /** Everything a tool call reads: the case as this turn loaded it, and what was worked out from it. */
@@ -30,6 +31,12 @@ export type ToolContext = {
   readonly currentAccountPick: ReturnType<typeof suitableCurrentAccount>
   readonly needContext: ReturnType<typeof needContextFor>
   readonly customerMessage: string
+  /**
+   * The whole market, normalised (the comparison API's store, held ten minutes). Read only by
+   * the tools that compare across providers (`show_products`); every other tool speaks from the
+   * Demo Bank catalogue as before.
+   */
+  readonly market: () => Promise<Market>
   /** Refusals, written as events once the stream is done. */
   readonly rejections: { name: string; error: string }[]
 }

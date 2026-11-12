@@ -375,9 +375,16 @@ export async function buildGeneration(
           progress: progress?.line ?? null,
         }
 
+  /*
+   * The products cards already shown (`show_products`), newest last: the arrangement and how
+   * long ago, never the rows, so a follow-up ("by access instead") calls the tool again.
+   */
+  const productsShown = productsShownLines(loaded.messages)
+
   const digest = buildCaseDigest(loaded, {
     ...(alerts === undefined ? {} : { alerts }),
     ...(holdings === undefined ? {} : { holdings }),
+    ...(productsShown.length === 0 ? {} : { productsShown }),
     sensitiveDisclosure: gate.suppressHumour,
     stage,
     acting: turn.trigger === 'action',
@@ -545,6 +552,8 @@ export async function buildGeneration(
     alertIds: unseenAlerts.map((alert) => alert.id),
     primary,
     signInForPlan,
+    /** The case holds the customer's figures for the market: `show_products` is offered. */
+    hasFigures: claimedPlans.length > 0 || heldNow.length > 0,
     goals,
     goalContext,
     digest,
@@ -557,6 +566,22 @@ export async function buildGeneration(
 }
 
 export type Generation = Awaited<ReturnType<typeof buildGeneration>>
+
+/**
+ * The products cards shown so far, newest last, at most three: "Your account against the market
+ * (held_vs_market), your last reply". Pure.
+ */
+export function productsShownLines(messages: readonly LoadedMessage[]): string[] {
+  const replies = messages.filter((message) => message.role === 'assistant')
+  return replies
+    .flatMap((message, index) =>
+      (message.productsShown ?? []).map((shown) => {
+        const ago = replies.length - index
+        return `${shown.title} (${shown.kind}), ${ago === 1 ? 'your last reply' : `${String(ago)} replies ago`}`
+      }),
+    )
+    .slice(-3)
+}
 
 /**
  * The first reply after a claim (2026-11-12, "3. Arrival"): the customer has seen the plan card
