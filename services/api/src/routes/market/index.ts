@@ -184,9 +184,9 @@ const aboutRoute = createRoute({
   tags: ['market'],
   summary: 'How Saoi ranks, and how Saoi earns',
   description:
-    '`ranking`: how results are ordered and every figure worked out. `earnings`: referral fees ' +
-    '(disclosed, never used in ranking), information not advice, and the CCPC attribution. ' +
-    'Markdown, static.',
+    '`ranking`: how results are ordered and every figure worked out. `earnings`: Saoi is free ' +
+    'and earns nothing from any provider, what is stored, information not advice, and the CCPC ' +
+    'attribution. Markdown, static.',
   security: [],
   request: {
     params: z.object({
