@@ -1075,6 +1075,11 @@ function digestSection(digest: CaseDigest): string {
       'month (fits_date), or the mortgage options in the order they asked for (mortgage_by_sort).',
       'One line with the card and nothing asked beside it, unless the tool returns questions: then',
       'ask the first one. Never "best", never "recommended", never what they should take.',
+      'The money figures on a savings card already count bonus and introductory periods as the',
+      'product states them, and the rate after where it is stated. When asked whether a figure will',
+      "be realised, answer from that row's `figureBasis` in the tool result. Never say a figure will",
+      'not be realised unless the row says the rate after is not stated, and never tell them to',
+      "check with the provider: the row's note is the fact to relay.",
       ...(digest.productsShown === undefined || digest.productsShown.length === 0
         ? []
         : [

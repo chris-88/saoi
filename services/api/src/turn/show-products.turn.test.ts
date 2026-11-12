@@ -5,6 +5,7 @@ import { saveMessage, writeEvent } from '@shared/db/case-repository.ts'
 import { loadHoldings } from '@shared/db/holdings.ts'
 import { messageRow } from '@shared/db/rows.ts'
 import { loadClaimedPlans } from '@shared/db/saved-plans.ts'
+import { adviceWordsIn } from '@shared/market/disclosures.ts'
 import { MARKET_FIXTURE } from '@shared/domain/market/fixture.ts'
 import { normaliseMarket } from '@shared/domain/market/normalise.ts'
 import { productsHoldings, productsPlan } from '@shared/domain/market/products-card.fixture.ts'
@@ -118,6 +119,79 @@ describe('a turn that shows products', () => {
       expect.anything(),
       expect.objectContaining({ caseId: CASE, role: 'assistant', cards: [card] }),
     )
+  })
+
+  it('hands the model each row’s figureBasis beside the card, never on it', async () => {
+    const enabledTools = toolsForTurn('opening', false, true)
+    const provider = fixtureProvider(
+      fixtureTurnSchema.parse({
+        rounds: [
+          {
+            deltas: [],
+            toolUses: [{ name: 'show_products', input: { arrangement: 'held_vs_market' } }],
+          },
+          { deltas: ['Here is your account beside what the market pays for the same money.'] },
+        ],
+      }),
+    )
+    const inner = createToolExecutor(toolContext({ market: () => Promise.resolve(MARKET) }))
+    const results: string[] = []
+    const executeTool: typeof inner = async (name, input) => {
+      const outcome = await inner(name, input)
+      results.push(outcome.result)
+      return outcome
+    }
+
+    const events: StreamEvent[] = []
+    for await (const event of runSaoirseTurn({
+      provider,
+      model: 'test-model',
+      prompt: {
+        domainConfig: demoDomainConfig,
+        productCatalogue: knowledgeBaseSection(),
+        sliders: slidersFor('default'),
+        digest: {
+          customerName: null,
+          authLevel: 'anonymous',
+          facts: [],
+          applications: [],
+          declinedProducts: [],
+          advisories: [],
+          partner: null,
+          eventsSinceLastSeen: [],
+        } as never,
+      },
+      history: [{ role: 'user', content: 'What does my savings account earn against the market?' }],
+      executeTool,
+      enabledTools,
+    })) {
+      events.push(event)
+    }
+
+    expect(results).toHaveLength(1)
+    const result = results[0] ?? ''
+    expect(result).toContain('figureBasis')
+    expect(result).toMatch(
+      /- bunq Savings Account: €[\d,]+ counts 3\.11% to 1 January, then 1\.61% to €10,000 and 1\.51% above\./,
+    )
+    expect(result).toMatch(/- MoCo EasySaver: €[\d,]+ counts 2\.10%, the rate for new accounts,/)
+    expect(adviceWordsIn(result)).toEqual([])
+
+    // The card carries the period on the value and the note, and no figureBasis.
+    const card = marketProductsCardSchema.parse(
+      events.flatMap((event) => (event.type === 'card' ? [event.card] : []))[0],
+    )
+    const bunq = card.rows.find((row) => row.id === 'bunq:savings.bunq_savings')
+    expect(bunq?.value).toBe('3.11% to 1 Jan')
+    expect(bunq?.note).toBe('then 1.61% to €10,000 and 1.51% above; the money counts both')
+    expect(JSON.stringify(card)).not.toContain('figureBasis')
+
+    // The event records what the model was handed.
+    const shown = vi
+      .mocked(writeEvent)
+      .mock.calls.find((call) => call[1].type === 'products_shown')?.[1]
+    const recorded = shown?.payload?.['figureBasis'] as readonly { id: string }[] | undefined
+    expect(recorded?.map((row) => row.id)).toContain('bunq:savings.bunq_savings')
   })
 
   it('reads a stored products card back as its arrangement and title only', () => {
