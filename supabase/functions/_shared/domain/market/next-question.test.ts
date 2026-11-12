@@ -67,3 +67,121 @@ describe('the next question: tax paid', () => {
     expect(keys(couple({ propertyKind: 'second_hand' }))).not.toContain('tax_paid')
   })
 })
+
+/** One buyer, a price and the kind of home given; the rest varies by test. */
+const single = (situation: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
+  buildPlan(
+    market,
+    buildPlanRequestSchema.parse({
+      situation: {
+        monthlySaving: 1_000,
+        savings: [{ label: 'Deposit saved', balance: 25_000, access: 'instant' }],
+        ...situation,
+      },
+      goals: [{ id: 'home', kind: 'house_deposit', label: 'Buying a home', targetDate: '2028-06' }],
+      homePrice: 350_000,
+      propertyKind: 'second_hand',
+      ...extra,
+    }),
+    AS_OF,
+    CREATED,
+  )
+
+const allQuestions = (result: ReturnType<typeof single>) =>
+  [result.nextQuestion, ...result.laterQuestions].filter((item) => item !== null)
+
+/** A spread of nothing, quoted: "by up to €0", "by 0 months". */
+const ZERO = /€0(?![\d,.])|\b0 months?\b|nothing in these figures/
+
+describe('what a question moves, said in their figures (2026-11-12)', () => {
+  it('says whether the limits reach the price when the price is given and the income is not', () => {
+    const income = allQuestions(single({ firstTimeBuyer: true })).find(
+      (item) => item.key === 'income',
+    )
+    expect(income?.why).toMatch(
+      /^It decides whether the Central Bank limits reach the €350,000: a €315,000 mortgage \(90%\) needs about €79,000 a year at 4 times income/,
+    )
+    expect(income?.why).not.toMatch(ZERO)
+  })
+
+  it('never quotes a spread of nothing, whichever question it is', () => {
+    const results = [
+      single({ firstTimeBuyer: true }),
+      single({ income: { annualGross: 80_000 } }),
+      single({ income: { annualGross: 80_000 }, firstTimeBuyer: true }),
+      single(
+        { income: { annualGross: 80_000 }, firstTimeBuyer: true },
+        { propertyKind: undefined },
+      ),
+      single({ income: { annualGross: 80_000 } }, { homePrice: undefined }),
+      single({
+        income: { annualGross: 80_000 },
+        firstTimeBuyer: true,
+        debts: [{ id: 'car', label: 'Car loan', kind: 'car_finance', balance: 9_000, ratePct: 9 }],
+      }),
+      couple(),
+      couple({ propertyKind: undefined, homePrice: undefined }),
+    ]
+    for (const result of results) {
+      for (const item of allQuestions(result)) {
+        expect(item.why, item.key).not.toMatch(ZERO)
+        expect(adviceWordsIn(`${item.question} ${item.why}`), item.key).toEqual([])
+      }
+    }
+  })
+})
+
+describe('the next question: first-time buyer', () => {
+  it('asks the one thing assumed when it decides whether the limits reach the price', () => {
+    // €350,000 needs a €315,000 mortgage: €320,000 at 4 times €80,000 covers it, €280,000 at
+    // 3.5 times does not, so €35,000 of the €40,000 gap moves their figures.
+    const result = single({ income: { annualGross: 80_000 } })
+    expect(result.nextQuestion).toMatchObject({
+      key: 'first_time_buyer',
+      question: 'Is this your first home, never having owned one before?',
+    })
+    expect(result.nextQuestion?.scoreEur).toBeGreaterThanOrEqual(35_000)
+    expect(result.nextQuestion?.scoreEur).toBeLessThan(40_000)
+    expect(result.nextQuestion?.why).toMatch(
+      /^It sets the Central Bank limit on €80,000 a year: €320,000 as a first-time buyer, €280,000 otherwise, and only the first covers the €315,000 mortgage the €350,000 needs/,
+    )
+    expect(result.plan.arrival?.hookQuestion?.key).toBe('first_time_buyer')
+  })
+
+  it('counts nothing from the limits when both cover the price: the couple still opens on tax paid', () => {
+    // €110,000: €440,000 at 4 times, €385,000 at 3.5 times; the €400,000 needs €360,000.
+    const result = couple({
+      situation: {
+        income: { annualGross: 110_000 },
+        monthlySaving: 1_500,
+        savings: [{ label: 'Deposit saved', balance: 32_000, access: 'instant' }],
+      },
+    })
+    expect(result.nextQuestion?.key).toBe('tax_paid')
+    expect(result.plan.arrival?.hookQuestion?.key).toBe('tax_paid')
+    const first = result.laterQuestions.find((item) => item.key === 'first_time_buyer')
+    expect(first?.scoreEur).toBeLessThan(35_000)
+    expect(first?.why).toMatch(
+      /^It sets the Central Bank limit on €110,000 a year: €440,000 as a first-time buyer, €385,000 otherwise, and both cover the €360,000 mortgage the €400,000 needs/,
+    )
+    expect(first?.why).not.toMatch(/rates lenders/)
+  })
+
+  it('scores the spread in the most the limits allow when no price is given', () => {
+    // €320,000 and €280,000 at 90%: €355,000 against €311,000.
+    const result = single({ income: { annualGross: 80_000 } }, { homePrice: undefined })
+    const first = [result.nextQuestion, ...result.laterQuestions].find(
+      (item) => item?.key === 'first_time_buyer',
+    )
+    expect(first?.scoreEur).toBeGreaterThanOrEqual(44_000)
+  })
+
+  it('words it for both, and is not asked once it is given', () => {
+    expect(
+      single({ income: { annualGross: 80_000 } }, { buyingTogether: true }).nextQuestion?.question,
+    ).toBe('Is this a first home for both of you, neither having owned one before?')
+    expect(keys(single({ income: { annualGross: 80_000 }, firstTimeBuyer: false }))).not.toContain(
+      'first_time_buyer',
+    )
+  })
+})

@@ -251,7 +251,9 @@ describe('the core-information gate', () => {
     expect(result.presentation[1]).toMatch(/A month for the keys works instead/)
     const text = result.presentation.join(' ')
     expect(text).not.toMatch(/€|\d/)
-    expect(text).not.toMatch(/Still to know|First-time buyer|Save this|Show my options|routes/i)
+    expect(text).not.toMatch(
+      /Still to know|First-time buyer|Save this|Show my options|Compare all product options|routes/i,
+    )
     expect(result.presentation.at(-1)).toBe(RESULT_STATEMENT)
     // The chips stay for the card.
     expect(result.questions).toHaveLength(10)

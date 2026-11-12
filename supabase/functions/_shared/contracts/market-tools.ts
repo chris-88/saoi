@@ -1876,7 +1876,7 @@ export const homeCalculatorResponseSchema = z.object({
   next: z
     .string()
     .describe(
-      'How to see the options: the card’s "Show my options" button, or saoi_build_plan with these inputs.',
+      'How to see the options: the card’s "Compare all product options and supports" button, or saoi_build_plan with these inputs.',
     ),
   presentation: z
     .array(z.string())
@@ -1896,6 +1896,7 @@ export const QUESTION_KEYS = [
   'current_account_bank',
   'goal',
   'tax_paid',
+  'first_time_buyer',
 ] as const
 
 export const planQuestionSchema = z.object({

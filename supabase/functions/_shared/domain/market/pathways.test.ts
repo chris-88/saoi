@@ -437,7 +437,14 @@ describe('the next question is the one that moves the plan most', () => {
       q === null ? [] : [q],
     )
     expect(all.map((q) => q.key).sort()).toEqual(
-      ['current_account_bank', 'debt_repayment', 'home_price', 'income', 'property_kind'].sort(),
+      [
+        'current_account_bank',
+        'debt_repayment',
+        'first_time_buyer',
+        'home_price',
+        'income',
+        'property_kind',
+      ].sort(),
     )
     const scores = all.map((q) => q.scoreEur)
     expect([...scores].sort((a, b) => b - a)).toEqual(scores)
