@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { DOCUMENT_TYPES, PRODUCTS } from '../domain/journey.ts'
 import { APPLICATION_STATES } from '../domain/state-machine.ts'
-import { planArrivalViewSchema, planRouteSchema } from './market-plan.ts'
+import { planArrivalViewSchema, planRouteSchema, upgradeStoredArrival } from './market-plan.ts'
 
 /**
  * Cards are what the model asks for and the server renders.
@@ -762,4 +762,17 @@ const AWAITING: ReadonlySet<string> = new Set(AWAITING_CARDS)
  */
 export function awaitsCustomer(type: string): boolean {
   return AWAITING.has(type)
+}
+
+/**
+ * A card as stored, read into today's shape before it is parsed: a `saved_plan` card stored
+ * before 2026-11-12 carries arrival tiles of `{ label, value, lines }` (`upgradeStoredArrival`).
+ * Anything else passes through untouched.
+ */
+export function upgradeStoredCard(raw: unknown): unknown {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return raw
+  const card = raw as Record<string, unknown>
+  return card['type'] === 'saved_plan' && card['arrival'] !== undefined
+    ? { ...card, arrival: upgradeStoredArrival(card['arrival']) }
+    : raw
 }

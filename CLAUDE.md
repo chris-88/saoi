@@ -352,7 +352,8 @@ The engine behind the Saoi MCP tools, in `_shared/domain/market/` (pure; contrac
   cash at the keys and the month it is saved, the missing inputs as questions, and `rules` so
   the MCP calculator card recomputes as sliders move. It also carries `figures.maxPriceEur`
   (the limits' most, to €1,000) and `market` (`home-market.ts`, as the card cannot call a second
-  tool): the top savings rate among accounts reachable by the date with its interest after DIRT,
+  tool): the top savings rate among accounts reachable by the keys month (else the date given,
+  else 12 months; `savings.runsTo` says which, 2026-11-12) with its interest after DIRT,
   and the count and monthly range of mortgage options from `homePathways` with no filters, each
   with its basis and a fact line; `null` when the market cannot be loaded. `gate` (`homeGate`,
   Chris 2026-11-12) is the core information: the funds saved, the monthly saving, the income
@@ -476,7 +477,11 @@ amounts, projections and unknowns, the payoff order, the ranking basis, assumpti
   and that the customer decides. No imperatives.
 - **The link** is `https://app.saoi.ie/?plan=<token>` (2026-11-10: opened from claude.ai's card on a phone, a `#/plan/<token>` fragment never reached the app; the app moves `?plan=` into its route and strips it). `POST /api/plans/preview` (public, by token, not spent) gives the app's welcome the title, the figures in one line and a home comparison's first three options (`plan.comparison`, every option the customer saw, carried in the `MarketPlan`), before the data notice and the claim. A home plan carries `arrival` (2026-11-12,
   `domain/market/arrival.ts`): the host card's month, breakdown, progress, three tiles and
-  assumption chips, worded once by `buildPlan`, and `hookQuestion` (the `nextQuestion`); the
+  assumption chips, worded once by `buildPlan`, and `hookQuestion` (the `nextQuestion`). Each
+  tile is structured (Chris, 2026-11-12): `qualifier` above the headline `value`, darker `sub`
+  lines, one `quiet` count and the tap-open `detail`; the savings run to the keys month, the
+  mortgage leads with the monthly repayment, and `upgradeStoredArrival` reads tiles stored as
+  `{ label, value, lines }`. The
   preview returns it with `opening`, Saoirse's first line verbatim (the hook, or a fixed line).
 - **Claiming** (`#/plan/<token>` in saoi-web, after the welcome and the data notice) puts it in the browser's current conversation when
   that is empty, otherwise a new one (`source: 'plan'`, under the audience cap, refused before

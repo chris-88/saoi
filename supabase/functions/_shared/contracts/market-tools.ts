@@ -1743,7 +1743,12 @@ export const homeMarketSchema = z
         by: z
           .string()
           .describe(
-            'YYYY-MM the interest runs to: the date given, else the month the money at the keys is saved, else 12 months on.',
+            'YYYY-MM the interest runs to: the keys month (the month the money at the keys is saved) when it is at least a month away, else the date given, else 12 months on (2026-11-12).',
+          ),
+        runsTo: z
+          .enum(['keys_month', 'date_given', 'no_date'])
+          .describe(
+            'Which month `by` is: the keys month, the date given, or 12 months on as no date is known.',
           ),
         basis: z
           .string()

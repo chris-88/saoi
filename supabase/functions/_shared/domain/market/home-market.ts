@@ -44,17 +44,47 @@ function rateFor(product: ProductView, horizonMonths: number): number | null {
   return terms.aerPct ?? (banded.length === 0 ? null : Math.max(...banded))
 }
 
+/**
+ * The month the savings figures run to (Chris, 2026-11-12: "€1,014 interest by Nov 2028" beside
+ * "Ready to buy July 2028" was two periods on one card). The keys month when there is one at
+ * least a month away: `keysOn` when the caller knows it (the plan's), else the calculator's own
+ * (`figures.depositReachedOn`). Else the date given, else 12 months on.
+ */
+export function savingsHorizon(
+  request: HomeCalculatorRequest,
+  figures: Figures,
+  asOf: AsOf,
+  keysOn?: string | null,
+): { by: string; months: number; dated: boolean; runsTo: 'keys_month' | 'date_given' | 'no_date' } {
+  const keys = (keysOn === undefined ? figures.depositReachedOn : keysOn)?.slice(0, 7) ?? null
+  if (keys !== null && monthsUntil(asOf, keys) >= 1) {
+    return { by: keys, months: monthsUntil(asOf, keys), dated: true, runsTo: 'keys_month' }
+  }
+  const target = request.targetDate?.slice(0, 7)
+  if (target !== undefined && monthsUntil(asOf, target) >= 1) {
+    return { by: target, months: monthsUntil(asOf, target), dated: true, runsTo: 'date_given' }
+  }
+  return {
+    by: addMonths(asOf, NO_DATE_HORIZON),
+    months: NO_DATE_HORIZON,
+    dated: false,
+    runsTo: 'no_date',
+  }
+}
+
 function savingsSummary(
   market: Market,
   request: HomeCalculatorRequest,
   figures: Figures,
   asOf: AsOf,
+  keysOn: string | null | undefined,
 ): HomeMarket['savings'] {
   const saved = request.depositSavedEur ?? 0
   const monthly = request.monthlySavingEur ?? 0
-  const dated = request.targetDate?.slice(0, 7) ?? figures.depositReachedOn
-  const by = dated ?? addMonths(asOf, NO_DATE_HORIZON)
-  const horizon = dated === null ? NO_DATE_HORIZON : monthsUntil(asOf, by)
+  const runs = savingsHorizon(request, figures, asOf, keysOn)
+  const by = runs.by
+  const horizon = runs.months
+  const dated = runs.dated ? by : null
 
   // The plan engine's pool, then each product's own limits: it takes the whole deposit saved or
   // the whole monthly amount (a regular saver within its monthly cap).
@@ -88,9 +118,11 @@ function savingsSummary(
   })
   const result = simulation.figures
   const until =
-    dated === null
+    runs.runsTo === 'no_date'
       ? `over the next ${String(NO_DATE_HORIZON)} months, as no date is known`
-      : `by ${monthName(by)}`
+      : runs.runsTo === 'keys_month'
+        ? `by ${monthName(by)}, the month the money for the keys is there`
+        : `by ${monthName(by)}, the date given`
   const notes = [
     top.terms.dirtApplies ? 'interest after DIRT' : 'interest DIRT-free (a State Savings product)',
     ...(result.notPlaced.lumpSum > 0 || result.notPlaced.monthly > 0
@@ -111,6 +143,7 @@ function savingsSummary(
     accounts,
     interestToTargetEur: round2(result.netInterest),
     by,
+    runsTo: runs.runsTo,
     basis: `The highest rate on the market for money that can be reached ${until}, among ${String(accounts)} account${accounts === 1 ? '' : 's'} that take this saving; ${notes.join('; ')}.`,
   }
 }
@@ -162,9 +195,11 @@ export function homeMarketSummary(
   request: HomeCalculatorRequest,
   figures: Figures,
   asOf: AsOf,
+  /** The keys month when the caller knows it (a plan's); else the calculator's own is used. */
+  keysOn?: string | null,
 ): HomeMarket | null {
   if (market.products.length === 0) return null
-  const savings = savingsSummary(market, request, figures, asOf)
+  const savings = savingsSummary(market, request, figures, asOf, keysOn)
   const mortgage = mortgageSummary(market, request, figures, asOf)
   const lines: string[] = []
   if (savings !== null) {

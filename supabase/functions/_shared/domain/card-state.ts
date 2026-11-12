@@ -1,4 +1,4 @@
-import { cardSchema, LINKABLE_BANKS, type Card } from '../contracts/cards.ts'
+import { cardSchema, LINKABLE_BANKS, upgradeStoredCard, type Card } from '../contracts/cards.ts'
 import type { CaseSnapshot } from '../contracts/case-read.ts'
 
 /**
@@ -385,7 +385,7 @@ export function buildHistory(
       const cards = message.cards.flatMap(
         (raw, index): Extract<HistoryEntry, { kind: 'card' }>[] => {
           // A card that no longer parses is dropped rather than breaking the whole transcript.
-          const parsed = cardSchema.safeParse(raw)
+          const parsed = cardSchema.safeParse(upgradeStoredCard(raw))
           if (!parsed.success) return []
 
           const settled = settledState(parsed.data, state)
