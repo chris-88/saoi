@@ -1393,6 +1393,12 @@ export const buildPlanRequestSchema = z.object({
     .describe(
       'Income Tax and DIRT paid over the last four tax years (not USC or PRSI): the most Help to Buy can be.',
     ),
+  buyingTogether: z
+    .boolean()
+    .optional()
+    .describe(
+      'For a house deposit: true when two people are buying (the gross income is then joint). Changes no figure; questions are worded for both.',
+    ),
   homePreferences: homePreferencesSchema.optional(),
   county: countySchema.optional(),
   monthlyRentEur: monthlyRentSchema
@@ -1843,6 +1849,7 @@ export const QUESTION_KEYS = [
   'debt_repayment',
   'current_account_bank',
   'goal',
+  'tax_paid',
 ] as const
 
 export const planQuestionSchema = z.object({
