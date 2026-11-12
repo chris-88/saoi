@@ -1876,7 +1876,7 @@ export const homeCalculatorResponseSchema = z.object({
   next: z
     .string()
     .describe(
-      'How to see the options: the card’s "Show my options" button, or saoi_build_plan with these inputs.',
+      'How to see the options: the card’s "Compare all product options and supports" button, or saoi_build_plan with these inputs.',
     ),
   presentation: z
     .array(z.string())

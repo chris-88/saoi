@@ -253,7 +253,7 @@ export function homeCalculator(
   const gate = homeGate(request)
 
   const next =
-    'To see every eligible option, sorted by keys date, cost over the first 5 years or monthly repayment: the card’s "Show my options" button, or saoi_build_plan with a house_deposit goal, these figures, `homePrice`, `propertyKind` and `homePreferences`.'
+    'To see every eligible option, sorted by keys date, cost over the first 5 years or monthly repayment: the card’s "Compare all product options and supports" button, or saoi_build_plan with a house_deposit goal, these figures, `homePrice`, `propertyKind` and `homePreferences`.'
 
   return {
     inputs: request,
