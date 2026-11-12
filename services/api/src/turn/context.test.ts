@@ -18,6 +18,7 @@ import {
   ARRIVAL_OPENED_NOTE,
   conversationSoFar,
   returnInstruction,
+  returnsAfterPlanEdit,
 } from './context.ts'
 
 /**
@@ -140,6 +141,21 @@ describe('the return turn after a plan edit', () => {
     expect(instruction).toContain('which now fit and which no longer do, with their figures')
     expect(instruction).toContain('never call the change or an option better or worse')
     expect(instruction).not.toContain('Then name the other things')
+  })
+
+  it('is text only: no show_products or other card unless they ask', () => {
+    const instruction = returnInstruction([edited])
+    expect(instruction).toContain(
+      'This reply is text only: do not call show_products or any other tool that shows a card',
+    )
+    expect(instruction).not.toMatch(/show_products with fits_date/)
+  })
+
+  it('is told apart from an ordinary return and from a customer’s message', () => {
+    expect(returnsAfterPlanEdit('return', [edited])).toBe(true)
+    expect(returnsAfterPlanEdit('return', [{ type: 'application_approved' }, edited])).toBe(true)
+    expect(returnsAfterPlanEdit('return', [{ type: 'application_approved' }])).toBe(false)
+    expect(returnsAfterPlanEdit('message', [edited])).toBe(false)
   })
 
   it('still names anything else that happened while they were away', () => {

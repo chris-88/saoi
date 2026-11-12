@@ -104,6 +104,9 @@ describe('what changed since they were last here', () => {
     expect(prompt).toContain(
       'A change they made to their plan in the app: say what changed and which options now fit or no longer fit, as facts in their figures. Never call it better or worse, never pick.',
     )
+    expect(prompt).toContain(
+      'Say it in words only: no `show_products` and no other card, unless their own message asks to see products.',
+    )
   })
 })
 

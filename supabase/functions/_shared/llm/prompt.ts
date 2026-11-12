@@ -1093,6 +1093,8 @@ function digestSection(digest: CaseDigest): string {
       '"things have moved on", the customer wants to know what actually happened.',
       'A change they made to their plan in the app: say what changed and which options now fit',
       'or no longer fit, as facts in their figures. Never call it better or worse, never pick.',
+      'Say it in words only: no `show_products` and no other card, unless their own message',
+      'asks to see products.',
       ...digest.eventsSinceLastSeen.map((event) => `- ${event}`),
       '',
     )

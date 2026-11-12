@@ -5,7 +5,7 @@ import type { StreamEvent } from '../contracts/stream.ts'
 import type { ModelUsage } from '../domain/cost.ts'
 import type { ModelProvider } from './model.ts'
 import { composeSystemPrompt, type PromptInput } from './prompt.ts'
-import { TOOLS, validateToolCall, type ToolName } from './tools.ts'
+import { TOOLS, validateToolCall, type ToolName, type ToolValidation } from './tools.ts'
 
 /**
  * One Saoirse turn: stream text, run whatever tools the model asks for, stream the resulting
@@ -104,6 +104,13 @@ export type SaoirseTurnOptions = {
    * entirely rather than offered and failed — the model cannot misuse what it cannot see.
    */
   readonly enabledTools?: readonly ToolName[]
+  /**
+   * A reply in words only: the model is asked with `tool_choice: none`, and any tool call that
+   * arrives anyway is refused, never run. The tools stay in the request, so the cached prefix
+   * (tools, then the system prompt) is the same as every other turn's. The return turn after a
+   * plan edit (2026-11-12, after the live run of PR #74 called `show_products` unasked).
+   */
+  readonly textOnly?: boolean
   /** Called when a tool call fails validation, so the turn can record what was refused. */
   readonly onToolRejected?: (rejection: { name: string; error: string }) => void
   /** Every tool the model reached for, before it is validated. */
@@ -232,6 +239,7 @@ export async function* runSaoirseTurn(options: SaoirseTurnOptions): AsyncGenerat
       system,
       messages,
       tools,
+      ...(options.textOnly === true ? { tool_choice: { type: 'none' as const } } : {}),
     })
 
     // Read deltas straight off the stream, so the customer sees the answer forming rather
@@ -308,7 +316,14 @@ export async function* runSaoirseTurn(options: SaoirseTurnOptions): AsyncGenerat
 
     for (const toolUse of toolUses) {
       options.onToolCalled?.(toolUse.name)
-      const validation = validateToolCall(toolUse.name, toolUse.input)
+      const validation: ToolValidation =
+        options.textOnly === true
+          ? {
+              ok: false,
+              name: toolUse.name,
+              error: 'This reply is text only: no tool is offered on this turn. Answer in words.',
+            }
+          : validateToolCall(toolUse.name, toolUse.input)
 
       if (!validation.ok) {
         /*

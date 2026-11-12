@@ -458,6 +458,8 @@ export async function buildGeneration(
   const openedPlan =
     turn.trigger === 'return' &&
     loaded.eventsSinceLastSeen.some((event) => event.type === 'plan_claimed')
+  const afterPlanEdit =
+    !openedPlan && returnsAfterPlanEdit(turn.trigger, loaded.eventsSinceLastSeen)
   /*
    * Not on the first questions about it either (2026-11-10): asked to talk the options through,
    * the reply is the answer, not an offer to sign in. Once they have said a few things.
@@ -548,6 +550,8 @@ export async function buildGeneration(
     signInForPlan,
     /** The case holds the customer's figures for the market: `show_products` is offered. */
     hasFigures: claimedPlans.length > 0 || heldNow.length > 0,
+    /** The return turn after a plan edit: text only, no tool offered (`offeredTools`). */
+    afterPlanEdit,
     goals,
     goalContext,
     digest,
@@ -590,14 +594,27 @@ export const ARRIVAL_ANSWER_INSTRUCTION =
   'another question in this reply. It is a comparison, not advice: never pick a product, ' +
   'lender or option for them.'
 
-/** How a conversation opened from a saved plan began, for the model, before Saoirse's first line. */
+/**
+ * The return turn that follows a plan edit in the profile (2026-11-12, "6. The saving months"):
+ * the customer typed nothing, and the reply is text only. After the live run of PR #74, where
+ * it called `show_products` unasked and put a card under its reply, the turn is offered no tool
+ * at all; products are shown when their own next message asks for them.
+ */
+export function returnsAfterPlanEdit(
+  trigger: string,
+  events: readonly { readonly type: string }[],
+): boolean {
+  return trigger === 'return' && events.some((event) => event.type === PLAN_EDITED_EVENT)
+}
+
 /**
  * What a return turn is told to do (§36). Ordinarily: name each thing under "Changed since they
  * were last here", then the status card. Right after a plan edit in the profile (2026-11-12,
  * "6. The saving months") the app has already shown the edit's `reading` as Saoirse's line, so
  * the turn builds on it: no greeting, not the same words again, no status card; what the change
  * means for the options they compare, which now fit and which no longer do, as facts in their
- * figures, never "better" and never a pick.
+ * figures, never "better" and never a pick. Text only: no `show_products` and no other card,
+ * as the customer asked for none (the turn is offered no tool either).
  */
 export function returnInstruction(
   events: readonly { readonly type: string; readonly payload: Record<string, unknown> }[],
@@ -624,13 +641,15 @@ export function returnInstruction(
     'the plan lines in the digest, which are already the rebuilt plan: in a sentence or two, ' +
     'what the change means for the options they compare, in their order, which now fit and ' +
     'which no longer do, with their figures. Facts only: never call the change or an option ' +
-    'better or worse, and never pick one for them. If savings accounts now fit the date, ' +
-    'show_products with fits_date shows them. ' +
+    'better or worse, and never pick one for them. This reply is text only: do not call ' +
+    'show_products or any other tool that shows a card, as they have not asked to see ' +
+    'products; when their own next message asks for them, show them then. ' +
     (others ? 'Then name the other things under "Changed since they were last here". ' : '') +
     'End by asking what they would like to look at next.)'
   )
 }
 
+/** How a conversation opened from a saved plan began, for the model, before Saoirse's first line. */
 export const ARRIVAL_OPENED_NOTE =
   '(The customer opened, in this app, the comparison they saved in their own AI assistant. ' +
   'The plan card, with their figures, was on screen before your first line.)'
