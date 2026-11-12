@@ -67,3 +67,66 @@ describe('the next question: tax paid', () => {
     expect(keys(couple({ propertyKind: 'second_hand' }))).not.toContain('tax_paid')
   })
 })
+
+/** One buyer, a price and the kind of home given; the rest varies by test. */
+const single = (situation: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
+  buildPlan(
+    market,
+    buildPlanRequestSchema.parse({
+      situation: {
+        monthlySaving: 1_000,
+        savings: [{ label: 'Deposit saved', balance: 25_000, access: 'instant' }],
+        ...situation,
+      },
+      goals: [{ id: 'home', kind: 'house_deposit', label: 'Buying a home', targetDate: '2028-06' }],
+      homePrice: 350_000,
+      propertyKind: 'second_hand',
+      ...extra,
+    }),
+    AS_OF,
+    CREATED,
+  )
+
+const allQuestions = (result: ReturnType<typeof single>) =>
+  [result.nextQuestion, ...result.laterQuestions].filter((item) => item !== null)
+
+/** A spread of nothing, quoted: "by up to €0", "by 0 months". */
+const ZERO = /€0(?![\d,.])|\b0 months?\b|nothing in these figures/
+
+describe('what a question moves, said in their figures (2026-11-12)', () => {
+  it('says whether the limits reach the price when the price is given and the income is not', () => {
+    const income = allQuestions(single({ firstTimeBuyer: true })).find(
+      (item) => item.key === 'income',
+    )
+    expect(income?.why).toMatch(
+      /^It decides whether the Central Bank limits reach the €350,000: a €315,000 mortgage \(90%\) needs about €79,000 a year at 4 times income/,
+    )
+    expect(income?.why).not.toMatch(ZERO)
+  })
+
+  it('never quotes a spread of nothing, whichever question it is', () => {
+    const results = [
+      single({ firstTimeBuyer: true }),
+      single({ income: { annualGross: 80_000 } }),
+      single({ income: { annualGross: 80_000 }, firstTimeBuyer: true }),
+      single(
+        { income: { annualGross: 80_000 }, firstTimeBuyer: true },
+        { propertyKind: undefined },
+      ),
+      single({ income: { annualGross: 80_000 } }, { homePrice: undefined }),
+      single({
+        income: { annualGross: 80_000 },
+        firstTimeBuyer: true,
+        debts: [{ id: 'car', label: 'Car loan', kind: 'car_finance', balance: 9_000, ratePct: 9 }],
+      }),
+      couple(),
+      couple({ propertyKind: undefined, homePrice: undefined }),
+    ]
+    for (const result of results) {
+      for (const item of allQuestions(result)) {
+        expect(item.why, item.key).not.toMatch(ZERO)
+        expect(adviceWordsIn(`${item.question} ${item.why}`), item.key).toEqual([])
+      }
+    }
+  })
+})

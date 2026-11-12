@@ -3,6 +3,7 @@ import type {
   BuildPlanResponse,
   PlanQuestion,
 } from '../../contracts/market-tools.ts'
+import { MORTGAGE_MEASURES } from '../../market/first-home-rules.ts'
 import { euro } from './figures.ts'
 import { monthsUntil, round2 } from './simulate.ts'
 
@@ -57,6 +58,40 @@ const spreadOf = (values: readonly (number | null)[]): number => {
   return known.length < 2 ? 0 : Math.max(...known) - Math.min(...known)
 }
 
+type Spread = PlanQuestion['spread']
+
+const months = (n: number): string => `${String(n)} ${n === 1 ? 'month' : 'months'}`
+
+/**
+ * What a spread moves, in words, each part only when it moves (2026-11-12: a hook line never
+ * quotes a spread of nothing, "by up to €0"). `price: false` leaves the price out, for the
+ * questions whose answer cannot move it.
+ */
+function movedParts(s: Spread, options: { readonly price?: boolean } = {}): string[] {
+  return [
+    s.keysMonths > 0 ? `the keys by ${months(s.keysMonths)}` : '',
+    options.price !== false && Math.round(s.priceEur) > 0
+      ? `the price that can be bought by up to ${euro(Math.round(s.priceEur))}`
+      : '',
+    Math.round(s.totalEur) > 0
+      ? `what is held at the end by up to ${euro(Math.round(s.totalEur))}`
+      : '',
+    Math.round(s.costPer100kEur) > 0
+      ? `the cost per €100,000 borrowed by up to ${euro(Math.round(s.costPer100kEur))}`
+      : '',
+  ].filter((part) => part !== '')
+}
+
+/** "a", "a and b", "a, b and c". */
+const listed = (parts: readonly string[]): string =>
+  parts.length <= 1
+    ? (parts[0] ?? '')
+    : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1) ?? ''}`
+
+/** A sentence that ends with what moves, or stops at the lead when nothing does. */
+const movesOrStop = (lead: string, range: string, parts: readonly string[]): string =>
+  parts.length === 0 ? `${lead}.` : `${lead}: ${range} it moves ${listed(parts)}.`
+
 const keysSpread = (keys: readonly (string | null)[], asOf: string): number => {
   const months = keys
     .filter((key): key is string => key !== null)
@@ -109,8 +144,7 @@ export function rankQuestions(
       INCOMES.map((annualGross) =>
         run({ ...base, situation: { ...situation, income: { ...situation.income, annualGross } } }),
       ),
-      (s) =>
-        `Income decides how much can be borrowed: from ${euro(INCOMES[0])} to ${euro(INCOMES[2])} a year it moves the price that can be bought by up to ${euro(Math.round(s.priceEur))}.`,
+      (s) => incomeWhy(base, s),
     )
   }
   if (home && base.propertyKind === undefined) {
@@ -119,19 +153,11 @@ export function rankQuestions(
       'Is the home a new build, or second-hand?',
       (['new_build', 'second_hand'] as const).map((propertyKind) => run({ ...base, propertyKind })),
       (s) =>
-        `A new build brings Help to Buy and green rates: it moves ${
-          [
-            s.keysMonths > 0 ? `the keys by ${String(s.keysMonths)} months` : '',
-            s.priceEur > 0
-              ? `the price that can be bought by up to ${euro(Math.round(s.priceEur))}`
-              : '',
-            s.costPer100kEur > 0
-              ? `the cost per €100,000 borrowed by up to ${euro(Math.round(s.costPer100kEur))}`
-              : '',
-          ]
-            .filter((part) => part !== '')
-            .join(', ') || 'nothing in these figures'
-        }.`,
+        movesOrStop(
+          'A new build brings Help to Buy and green rates',
+          'at these figures',
+          movedParts(s),
+        ),
     )
   }
   if (home && base.homePrice === undefined && main.home !== null) {
@@ -143,7 +169,11 @@ export function rankQuestions(
         run({ ...base, homePrice: Math.round((price * factor) / 1_000) * 1_000 }),
       ),
       (s) =>
-        `The price sets the keys date and the loan: 15% either side of ${euro(price)} moves the keys by ${String(s.keysMonths)} months.`,
+        movesOrStop(
+          'The price sets the deposit, the loan and the keys date',
+          `15% either side of ${euro(price)}`,
+          movedParts(s, { price: false }),
+        ),
     )
   }
   /*
@@ -191,7 +221,11 @@ export function rankQuestions(
         }),
       ),
       (s) =>
-        `The repayment decides what clearing the loan saves: between 12 and 60 months left it moves what is held at the end by up to ${euro(Math.round(s.totalEur))}${home && s.priceEur > 0 ? ` and the price that can be bought by up to ${euro(Math.round(s.priceEur))}` : ''}.`,
+        movesOrStop(
+          'The repayment decides what clearing the loan saves',
+          'between 12 and 60 months left',
+          movedParts(s, { price: home }),
+        ),
     )
   }
   if (home) {
@@ -206,4 +240,28 @@ export function rankQuestions(
 
   const ranked = [...candidates].sort((a, b) => b.scoreEur - a.scoreEur)
   return { nextQuestion: ranked[0] ?? null, laterQuestions: ranked.slice(1) }
+}
+
+/**
+ * What the income moves (2026-11-12). With a price given, the price that can be bought cannot
+ * move, so the sentence says whether the limits reach that price: the mortgage it needs and the
+ * income that loan needs at the buyer's multiple. Without one, the parts that move, each only
+ * when it does.
+ */
+function incomeWhy(base: Base, s: Spread): string {
+  const range = `from ${euro(INCOMES[0])} to ${euro(INCOMES[2])} a year`
+  if (base.homePrice === undefined) {
+    return movesOrStop('Income decides how much can be borrowed', range, movedParts(s))
+  }
+  const measures =
+    base.situation.firstTimeBuyer === false
+      ? MORTGAGE_MEASURES.second_and_subsequent
+      : MORTGAGE_MEASURES.first_time_buyer
+  const loan = Math.round((base.homePrice * measures.maxLtvPct) / 100)
+  const needs = Math.ceil(loan / measures.loanToIncome / 1_000) * 1_000
+  const parts = movedParts(s, { price: false })
+  return (
+    `It decides whether the Central Bank limits reach the ${euro(base.homePrice)}: a ${euro(loan)} mortgage (${String(measures.maxLtvPct)}%) needs about ${euro(needs)} a year at ${String(measures.loanToIncome)} times income` +
+    (parts.length === 0 ? '.' : `; ${range} it moves ${listed(parts)}.`)
+  )
 }
