@@ -13,6 +13,7 @@ import type {
   SearchResult,
 } from '../../contracts/market-tools.ts'
 import { MORTGAGE_WARNINGS, RESULT_STATEMENT } from '../../market/disclosures.ts'
+import { LINKED_SAVERS } from '../../market/mortgage-incentives.ts'
 import { CURRENT_ACCOUNT_LABEL, withHeldRates } from './held-rates.ts'
 import { accountOf } from './allocate.ts'
 import { displayName, euro, oldestCheck } from './figures.ts'
@@ -448,8 +449,18 @@ function heldKind(account: HeldAccount): string {
       : 'savings'
 }
 
-const ownLabel = (account: HeldAccount): string =>
-  /^your\b/i.test(account.label) ? account.label : `Your ${account.label}`
+/** Words that start a label without naming anyone: lowercased after "Your". */
+const GENERIC_FIRST_WORD =
+  /^(current|savings?|deposit|fixed|regular|instant|notice|online|joint|credit|rainy|emergency|easy|demand|the)\b/i
+
+/** "Your BoI savings", "Your current account": the customer's label, read after "Your". */
+const ownLabel = (account: HeldAccount): string => {
+  const label = account.label.trim()
+  if (/^your\b/i.test(label)) return `Your${label.slice(4)}`
+  const own = label.replace(/^(my|our)\s+/i, '')
+  const read = GENERIC_FIRST_WORD.test(own) ? own.charAt(0).toLowerCase() + own.slice(1) : own
+  return `Your ${read}`
+}
 
 function coverageLine(
   matched: number,
@@ -658,6 +669,29 @@ function byAccess(
   }
 }
 
+/**
+ * When a deposit's bonus is paid, against the months to the keys: `after_drawdown` for a saver
+ * whose bonus needs the lender's mortgage drawn down (`LINKED_SAVERS`, or conditions that say
+ * so), `by_keys` for one recorded as paid before drawdown within the time, `not_stated` else.
+ */
+export function bonusTiming(
+  product: ProductView,
+  terms: DepositTerms,
+  horizonMonths: number,
+): 'by_keys' | 'after_drawdown' | 'not_stated' {
+  const saver = (LINKED_SAVERS[product.provider] ?? []).find((item) =>
+    product.id.endsWith(`:${item.productId}`),
+  )
+  if (saver !== undefined) {
+    if (saver.paid === 'after_drawdown') return 'after_drawdown'
+    return saver.minMonths <= horizonMonths ? 'by_keys' : 'not_stated'
+  }
+  if ((terms.bonus?.conditions ?? []).some((line) => /mortgage drawn down/i.test(line))) {
+    return 'after_drawdown'
+  }
+  return 'not_stated'
+}
+
 /** The six-month rule: more than six months to the keys shows the six-month terms. */
 export const FITS_DATE_TERM_MONTHS = 6
 
@@ -751,16 +785,26 @@ function fitsDate(
       exclude('Takes under half of the sum held')
       return []
     }
-    // A bonus is not interest; it is counted in the total by the date, after DIRT where DIRT
-    // applies, on the provider's conditions.
-    const bonus = round2((terms.bonus?.amountEur ?? 0) * (terms.dirtApplies ? 1 - DIRT_RATE : 1))
+    // A bonus is not interest. It counts in the total by the date only when it is paid by then
+    // (decision 2026-11-10: the MortgageSaver bonus is paid after drawdown, so it lowers the
+    // mortgage's cost, never the money by the keys); a bonus whose payment date is not stated
+    // is not assumed to arrive in time. After DIRT where DIRT applies.
+    const statedBonus = round2(
+      (terms.bonus?.amountEur ?? 0) * (terms.dirtApplies ? 1 - DIRT_RATE : 1),
+    )
+    const timing = statedBonus > 0 ? bonusTiming(product, terms, horizon.months) : null
+    const bonus = timing === 'by_keys' ? statedBonus : 0
     const total = round2(result.netInterest + bonus)
     const note =
-      bonus > 0
+      timing === 'by_keys'
         ? `includes a ${whole(bonus)} bonus${terms.dirtApplies ? ' after DIRT' : ''}, on its conditions`
-        : result.notPlaced.monthly > 0 && result.notPlaced.monthly >= monthly && monthly > 0
-          ? 'the sum held only, not the monthly saving'
-          : savingsNote(product, result, asOf)
+        : timing === 'after_drawdown'
+          ? 'bonus paid after drawdown, not counted'
+          : timing === 'not_stated'
+            ? `${whole(statedBonus)} bonus, not counted: when it is paid is not stated`
+            : result.notPlaced.monthly > 0 && result.notPlaced.monthly >= monthly && monthly > 0
+              ? 'the sum held only, not the monthly saving'
+              : savingsNote(product, result, asOf)
     return [
       {
         product,
@@ -820,7 +864,7 @@ function fitsDate(
             : 'A fixed term is shown at the longest term that ends by then.'),
         assumptions: [
           ...SAVINGS_ASSUMPTIONS.filter((line) => !line.startsWith('Bonuses')),
-          'A bonus is counted in the total by the date where the product states one; its conditions are the provider’s.',
+          'A bonus is counted in the total by the date only when it is paid by then; one paid after the mortgage is drawn down, or whose payment date is not stated, is noted and not counted.',
         ],
         coverage: coverageLine(
           fits.length,

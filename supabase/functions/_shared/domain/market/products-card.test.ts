@@ -4,6 +4,7 @@ import { adviceWordsIn, MORTGAGE_WARNINGS, RESULT_STATEMENT } from '../../market
 import { MARKET_FIXTURE } from './fixture.ts'
 import { normaliseMarket } from './normalise.ts'
 import {
+  bonusTiming,
   caseFigures,
   productsCard,
   productsCardText,
@@ -72,7 +73,7 @@ describe('productsCard: arranged by the question asked', () => {
     const [own, current, ...market] = card.rows
     expect(own).toMatchObject({ lead: 'Your BoI savings', value: '0.50%', held: true })
     expect(own?.figure).toMatch(/^€\d[\d,]* by Jul 2028$/)
-    expect(current).toMatchObject({ lead: 'Your Current account', held: true })
+    expect(current).toMatchObject({ lead: 'Your current account', held: true })
     expect(market.every((row) => !row.held)).toBe(true)
     // By rate, highest first.
     const rates = market.map((row) => Number(row.value.replace('%', '')))
@@ -106,6 +107,54 @@ describe('productsCard: arranged by the question asked', () => {
     expect(fixed.every((row) => row.kind === '6-month fixed')).toBe(true)
     expect(card.basis.objective).toMatch(/fixed terms are shown at six months/)
     expect(card.basis.assumptions.join(' ')).toMatch(/A bonus is counted in the total by the date/)
+  })
+
+  it('fits_date: the MortgageSaver bonus is paid after drawdown, so it is noted and not counted', () => {
+    const card = cardOf(productsCard(MARKET, FIGURES, { arrangement: 'fits_date' }, PRODUCTS_AS_OF))
+    const saver = card.rows.find((row) => row.lead === 'Bank of Ireland MortgageSaver account')
+    expect(saver).toBeDefined()
+    expect(saver?.note).toBe('bonus paid after drawdown, not counted')
+    // What it adds by July 2028 is its interest alone: the €2,000 bonus (€1,340 after DIRT) is not in it.
+    const figure = Number(
+      /^€([\d,]+) by Jul 2028$/.exec(saver?.figure ?? '')?.[1]?.replace(',', ''),
+    )
+    expect(figure).toBeGreaterThan(0)
+    expect(figure).toBeLessThan(1_340)
+    expect(productsCardText(card)).not.toMatch(/includes a €1,340 bonus/)
+  })
+
+  it('bonusTiming: after drawdown for a mortgage-linked saver, not stated otherwise', () => {
+    const deposits = MARKET.products.filter((product) => product.terms.kind === 'deposit')
+    const saver = deposits.find((product) => product.id === 'boi:savings.mortgagesaver')
+    expect(saver).toBeDefined()
+    if (saver === undefined || saver.terms.kind !== 'deposit') return
+    expect(bonusTiming(saver, saver.terms, 20)).toBe('after_drawdown')
+    const other = { ...saver, id: 'x:savings.other', provider: 'x' }
+    const plain = { ...saver.terms, bonus: { amountEur: 100, conditions: ['Held for 12 months.'] } }
+    expect(bonusTiming(other, plain, 20)).toBe('not_stated')
+    const linked = {
+      ...plain,
+      bonus: {
+        amountEur: 100,
+        conditions: ['A mortgage drawn down with the same provider within 30 months.'],
+      },
+    }
+    expect(bonusTiming(other, linked, 20)).toBe('after_drawdown')
+  })
+
+  it('reads a held label after "Your" in the customer’s own casing', () => {
+    const own = (label: string) =>
+      caseFigures({
+        plan: null,
+        holdings: [{ ...productsHoldings()[0]!, label }],
+        fact: () => undefined,
+      })
+    const lead = (label: string) =>
+      cardOf(productsCard(MARKET, own(label), { arrangement: 'held_vs_market' }, PRODUCTS_AS_OF))
+        .rows[0]?.lead
+    expect(lead('Current account')).toBe('Your current account')
+    expect(lead('BoI savings')).toBe('Your BoI savings')
+    expect(lead('My rainy-day fund')).toBe('Your rainy-day fund')
   })
 
   it('fits_date: within six months, the longest term that ends by the keys', () => {
