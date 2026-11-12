@@ -1,4 +1,8 @@
-import type { HomeCalculatorRequest, HomeCalculatorResponse } from '../../contracts/market-tools.ts'
+import type {
+  HomeCalculatorRequest,
+  HomeCalculatorResponse,
+  HomeGate,
+} from '../../contracts/market-tools.ts'
 import { MORTGAGE_WARNINGS, RESULT_STATEMENT } from '../../market/disclosures.ts'
 import { HELP_TO_BUY, MORTGAGE_MEASURES } from '../../market/first-home-rules.ts'
 import { BUYING_COSTS } from '../../market/mortgage-incentives.ts'
@@ -246,6 +250,8 @@ export function homeCalculator(
   if (request.monthlyRentEur === undefined)
     ask('monthlyRentEur', 'What do you pay in rent a month? (optional)', true)
 
+  const gate = homeGate(request)
+
   const next =
     'To see every eligible option, sorted by keys date, cost over the first 5 years or monthly repayment: the card’s "Show my options" button, or saoi_build_plan with a house_deposit goal, these figures, `homePrice`, `propertyKind` and `homePreferences`.'
 
@@ -281,19 +287,97 @@ export function homeCalculator(
     assumed,
     routes,
     questions,
+    gate,
     next,
-    presentation: [
-      ...lines,
-      ...routeLines(routes),
-      ...assumed,
-      ...(questions.length === 0
-        ? []
-        : [`Still to know: ${questions.map((item) => item.question).join(' ')}`]),
-      next,
-      ...MORTGAGE_WARNINGS,
-      RESULT_STATEMENT,
-    ],
+    presentation: !gate.ready
+      ? [
+          ...gate.missing
+            .filter((item) => item.askNow)
+            .map((item) => `${item.question} ${item.moves}`),
+          RESULT_STATEMENT,
+        ]
+      : [
+          ...lines,
+          ...routeLines(routes),
+          ...assumed,
+          ...(questions.length === 0
+            ? []
+            : [`Still to know: ${questions.map((item) => item.question).join(' ')}`]),
+          next,
+          ...MORTGAGE_WARNINGS,
+          RESULT_STATEMENT,
+        ],
     warnings: [...MORTGAGE_WARNINGS],
     statement: RESULT_STATEMENT,
+  }
+}
+
+type GateItem = HomeGate['missing'][number]
+
+/**
+ * The core-information gate (Chris, 2026-11-12, spec "The first thought"): the figures are shown
+ * once the funds saved, the monthly saving, the income (and the second income when buying
+ * together) and a price or a date are given. A date with nothing else is not enough; a price or
+ * a date with the other three is. Until then the reply is one or two plain questions, each with
+ * what it moves. Kind of home, first-time status, bank, rate type and rent never hold it back.
+ * Ordered most useful first: the income sets the limits, the price (or the date) the money
+ * needed at the keys, then what is saved and the pace.
+ */
+export function homeGate(request: HomeCalculatorRequest): HomeGate {
+  const together = request.buyingTogether === true
+  const missing: Omit<GateItem, 'askNow'>[] = []
+  const incomeMissing = together
+    ? request.annualGrossIncomeEur === undefined
+    : request.annualGrossIncomeEur === undefined && request.secondIncomeEur === undefined
+  if (incomeMissing)
+    missing.push({
+      key: 'annualGrossIncomeEur',
+      question: together
+        ? 'What is your own gross income a year, before tax?'
+        : 'What is your gross income a year, before tax?',
+      moves: together
+        ? 'With the second income, it sets what the Central Bank limits allow.'
+        : 'It sets what the Central Bank limits allow.',
+    })
+  if (together && request.secondIncomeEur === undefined)
+    missing.push({
+      key: 'secondIncomeEur',
+      question: 'What is the other buyer’s gross income a year, before tax?',
+      moves: 'Both incomes together set what the Central Bank limits allow.',
+    })
+  if (request.targetPriceEur === undefined && request.targetDate === undefined)
+    missing.push(
+      {
+        key: 'targetPriceEur',
+        question: 'What price is in mind for the home? A month for the keys works instead.',
+        moves: 'It sets the deposit and the money needed at the keys.',
+      },
+      {
+        key: 'targetDate',
+        question: 'When would you like the keys?',
+        moves: 'Without a price, it sets the price the money saved by then can reach.',
+      },
+    )
+  if (request.depositSavedEur === undefined)
+    missing.push({
+      key: 'depositSavedEur',
+      question: 'How much is saved towards the home so far?',
+      moves: 'It is the starting point for the money needed at the keys.',
+    })
+  if (request.monthlySavingEur === undefined)
+    missing.push({
+      key: 'monthlySavingEur',
+      question: 'How much can be saved each month?',
+      moves: 'It sets the month the money for the keys is there.',
+    })
+  let asked = 0
+  return {
+    ready: missing.length === 0,
+    missing: missing.map((item) => {
+      // The date is the price's alternative, offered in the price question, never asked alone.
+      const askNow = item.key !== 'targetDate' && asked < 2
+      if (askNow) asked += 1
+      return { ...item, askNow }
+    }),
   }
 }

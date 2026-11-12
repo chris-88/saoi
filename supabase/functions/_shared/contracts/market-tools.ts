@@ -1633,6 +1633,12 @@ export const homeCalculatorRequestSchema = z
     secondIncomeEur: eur
       .optional()
       .describe('A second applicant’s gross income a year, for a joint mortgage.'),
+    buyingTogether: z
+      .boolean()
+      .optional()
+      .describe(
+        'True when the customer is buying with someone else: the second income (`secondIncomeEur`) is then core information for the gate. Absent or false: a second income is counted when given and never asked for in `gate`.',
+      ),
     targetPriceEur: eur.optional().describe('The price in mind for the home.'),
     monthlyDebtRepaymentsEur: eur
       .optional()
@@ -1673,6 +1679,43 @@ export const HOME_INPUT_KEYS = [
   'rateType',
   'monthlyRentEur',
 ] as const
+
+/** The core information the home calculator's figures wait for (the gate, Chris 2026-11-12). */
+export const HOME_GATE_KEYS = [
+  'annualGrossIncomeEur',
+  'secondIncomeEur',
+  'targetPriceEur',
+  'targetDate',
+  'depositSavedEur',
+  'monthlySavingEur',
+] as const
+
+export const homeGateSchema = z
+  .object({
+    ready: z
+      .boolean()
+      .describe(
+        'True when the funds saved, the monthly saving, the income (both incomes when `buyingTogether`) and a price or a date are given. False: `presentation` holds only the `askNow` questions, with no figures.',
+      ),
+    missing: z
+      .array(
+        z.object({
+          key: z.enum(HOME_GATE_KEYS),
+          question: z.string().describe('The plain question for this input.'),
+          moves: z
+            .string()
+            .describe('One factual sentence: what the answer changes in the figures.'),
+          askNow: z.boolean().describe('True for at most two items: the questions for this reply.'),
+        }),
+      )
+      .describe(
+        'The core inputs not given yet, most useful first; empty when `ready`. With neither a price nor a date, `targetPriceEur` is asked and `targetDate` follows it, never `askNow`: either answer completes the pair. `secondIncomeEur` appears only when `buyingTogether`.',
+      ),
+  })
+  .describe(
+    'The core information the figures wait for. Kind of home, first-time status, bank, rate type and rent never hold the figures back: they are assumed (`assumed`) or asked as chips (`questions`).',
+  )
+export type HomeGate = z.infer<typeof homeGateSchema>
 
 /**
  * The market beside the home calculator's figures (decision 2026-11-10, comparison not advice):
@@ -1826,7 +1869,10 @@ export const homeCalculatorResponseSchema = z.object({
           ),
       }),
     )
-    .describe('The inputs not given yet, as plain questions, most useful first.'),
+    .describe(
+      'The inputs not given yet, as plain questions, most useful first: the card’s chips. The core ones are also in `gate`.',
+    ),
+  gate: homeGateSchema,
   next: z
     .string()
     .describe(
@@ -1835,7 +1881,7 @@ export const homeCalculatorResponseSchema = z.object({
   presentation: z
     .array(z.string())
     .describe(
-      'Present to the customer, in this order: the headline figures, then three route lines and "More routes: N", then what is assumed and still to know. No route is picked.',
+      'Present to the customer. When `gate.ready`, in this order: the headline figures, then three route lines and "More routes: N", then what is assumed and still to know. When not, only the `askNow` questions, each with what it moves, and the statement: no figures. No route is picked.',
     ),
   warnings: z.array(z.string()).describe('The statutory mortgage warnings.'),
   statement: z.string().describe('Saoi is not regulated and does not give advice.'),

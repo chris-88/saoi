@@ -321,7 +321,11 @@ const homeCalculatorRoute = createRoute({
     'Buying a home in Ireland. Takes whatever of the customer’s figures and circumstances have ' +
     'been given, however partial, and returns what the Central Bank limits allow, the deposit ' +
     'and cash needed at the keys, the month that is saved at this pace, and the inputs still ' +
-    'missing as plain questions. On a new build with tax paid not given, the headline leaves ' +
+    'missing as plain questions. `gate` says whether the core information is in (the funds ' +
+    'saved, the monthly saving, the income, both incomes when `buyingTogether`, and a price or ' +
+    'a date); until it is, `presentation` holds only one or two plain questions, each with what ' +
+    'it moves, and no figures, while `figures`, `rules` and `inputs` still come back for the ' +
+    'card. On a new build with tax paid not given, the headline leaves ' +
     'Help to Buy out (`helpToBuyConditional`). `routes` lists every route to a home, each ' +
     'potential, needing one detail, or not applicable, with dated sources; none is marked best. ' +
     '`rules` lets a calculator card recompute the figures as sliders move. No products: the ' +

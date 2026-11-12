@@ -202,6 +202,28 @@ describe('public comparison routes', () => {
     expect(JSON.stringify(body)).not.toMatch(/"recommendation"/)
   })
 
+  it('answer the home calculator with the gate: questions only until the core is in', async () => {
+    const { app } = appWith()
+    const waiting = homeCalculatorResponseSchema.parse(
+      await (await post(app, '/api/calc/home', { targetDate: '2028-06' })).json(),
+    )
+    expect(waiting.gate.ready).toBe(false)
+    expect(waiting.gate.missing.filter((item) => item.askNow)).toHaveLength(2)
+    expect(waiting.presentation.join(' ')).not.toMatch(/€/)
+    const ready = homeCalculatorResponseSchema.parse(
+      await (
+        await post(app, '/api/calc/home', {
+          depositSavedEur: 20_000,
+          monthlySavingEur: 1_000,
+          annualGrossIncomeEur: 90_000,
+          targetDate: '2028-06',
+        })
+      ).json(),
+    )
+    expect(ready.gate).toEqual({ ready: true, missing: [] })
+    expect(ready.presentation.join(' ')).toMatch(/€/)
+  })
+
   it('record one anonymous, banded row per home-calculator run, with no figures', async () => {
     const recorded: CalculatorRun[] = []
     const runs: CalculatorRunStore = {
