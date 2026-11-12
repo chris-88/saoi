@@ -74,7 +74,7 @@ describe('the arrival on a home plan', () => {
     expect(savings?.sub[1]).toMatch(/^by [A-Z][a-z]{2} \d{4}$/)
     expect(savings?.quiet[0]).toMatch(/^\d+ accounts?$/)
     expect(savings?.detail[0]).toMatch(
-      /^Interest after DIRT on the deposit money to [A-Z][a-z]+ \d{4}, the month the keys are reached$/,
+      /^Interest after DIRT on the deposit money to [A-Z][a-z]+ \d{4}, the keys month$/,
     )
     expect(savings?.detail[1]).toMatch(/^Top rate among the \d+ accounts? that take this saving/)
     // Mortgage: the lowest monthly repayment, the loan and the lowest rate under it.
@@ -83,12 +83,15 @@ describe('the arrival on a home plan', () => {
     expect(mortgage?.sub[0]).toBe('€360,000 loan')
     expect(mortgage?.sub[1]).toMatch(/^from \d+\.\d{2}%$/)
     expect(mortgage?.quiet[0]).toMatch(/^\d+ options?$/)
-    expect(mortgage?.detail).toEqual([
-      '30-year term',
-      expect.stringMatching(
-        /^Lowest rate among \d+ first-time-buyer options? at 90% loan-to-value$/,
-      ) as unknown as string,
-      'Lenders decide; the three statutory warnings apply',
+    expect(mortgage?.detail[0]).toMatch(
+      /^From €[\d,]+ to €[\d,]+ a month over 30 years, at each option’s initial rate$/,
+    )
+    expect(mortgage?.detail[1]).toMatch(
+      /^The lowest monthly and the lowest rate among \d+ first-time-buyer options? at 90% loan-to-value, one per lender, rate type and fixed period; no lender is picked$/,
+    )
+    expect(mortgage?.detail.slice(2)).toEqual([
+      'Lenders decide what they lend and at what rate.',
+      'The three statutory mortgage warnings apply.',
     ])
     expect(afford).toEqual({
       label: 'Could afford',
@@ -98,7 +101,7 @@ describe('the arrival on a home plan', () => {
       quiet: [],
       detail: [
         'The most the Central Bank limits allow: 4 times income at 90% loan, over 30 years',
-        'Needs a €48,800 deposit',
+        'That price needs a €48,800 deposit.',
       ],
     })
     const tiles = JSON.stringify(arrival?.tiles)

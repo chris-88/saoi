@@ -205,7 +205,7 @@ function savingsTile(savings: Summary['savings']): Tile {
   const accounts = count(savings.accounts, 'account', 'accounts')
   const why =
     savings.runsTo === 'keys_month'
-      ? `to ${monthName(savings.by)}, the month the keys are reached`
+      ? `to ${monthName(savings.by)}, the keys month`
       : savings.runsTo === 'date_given'
         ? `to ${monthName(savings.by)}, the date given for the keys`
         : `over the next 12 months, as no date is known`
@@ -247,9 +247,10 @@ function mortgageTile(
     sub: [`${eur(mortgage.loanEur)} loan`, `from ${pct2(mortgage.lowestRatePct)}`],
     quiet: [count(mortgage.options, 'option', 'options')],
     detail: [
-      `${String(mortgage.termYears)}-year term`,
-      `Lowest rate among ${count(mortgage.options, firstTimeBuyer ? 'first-time-buyer option' : 'option', firstTimeBuyer ? 'first-time-buyer options' : 'options')}${ltv === null ? '' : ` at ${String(ltv)}% loan-to-value`}`,
-      'Lenders decide; the three statutory warnings apply',
+      `From ${eur(mortgage.lowestMonthlyEur)} to ${eur(mortgage.highestMonthlyEur)} a month over ${String(mortgage.termYears)} years, at each option’s initial rate`,
+      `The lowest monthly and the lowest rate among ${count(mortgage.options, firstTimeBuyer ? 'first-time-buyer option' : 'option', firstTimeBuyer ? 'first-time-buyer options' : 'options')}${ltv === null ? '' : ` at ${String(ltv)}% loan-to-value`}, one per lender, rate type and fixed period; no lender is picked`,
+      'Lenders decide what they lend and at what rate.',
+      'The three statutory mortgage warnings apply.',
     ],
   }
 }
@@ -279,7 +280,7 @@ function affordTile(
     quiet: [],
     detail: [
       `The most the Central Bank limits allow: ${String(limits.loanToIncome)} times income at ${String(limits.maxLtvPct)}% loan, over ${String(figures.termYears)} years`,
-      `Needs a ${eur(deposit)} deposit`,
+      `That price needs a ${eur(deposit)} deposit.`,
     ],
   }
 }
