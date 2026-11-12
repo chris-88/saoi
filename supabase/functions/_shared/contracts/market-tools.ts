@@ -614,9 +614,7 @@ export const situationSchema = z
     debts: z.array(debtSchema).max(20).default([]),
     firstTimeBuyer: z.boolean().optional(),
   })
-  .describe(
-    'The customer’s circumstances, sent with each call. Every figure is what they said.',
-  )
+  .describe('The customer’s circumstances, sent with each call. Every figure is what they said.')
 export type Situation = z.infer<typeof situationSchema>
 
 // ---------------------------------------------------------------------------------------------
