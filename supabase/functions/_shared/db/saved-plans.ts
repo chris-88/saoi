@@ -223,10 +223,11 @@ export function arrivedWith(
 /**
  * Saoirse's first line when the plan is opened, verbatim: the hook question and what it moves,
  * or the short line that invites them to carry on. The preview returns it and the claim writes
- * it as the conversation's first message, with the card.
+ * it as the conversation's first message, with the card. A plan rebuilt by an edit keeps the
+ * line it opened with (`openedWith`), so the transcript still reads as the arrival.
  */
 export function planOpening(plan: MarketPlan): string {
-  return arrivalOpening(plan.arrival)
+  return plan.openedWith ?? arrivalOpening(plan.arrival)
 }
 
 const euroWhole = (value: number): string =>
