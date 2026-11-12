@@ -270,8 +270,9 @@ line in the refresh output. Shapes in `_shared/market/schema.ts`: `rates` is a u
   differences are warnings.
 - **Read** on a turn: only Bank of Ireland's own rows (`loadMarket`), laid over the catalogue by
   `withMarketData`: `rateOf`, the savings engine and the deposit-stack combination take every
-  figure from them. Other providers and every CCPC row stay out of turns. The console's Market
-  data screen shows all of it.
+  figure from them. Other providers and every CCPC row stay out of the Demo Bank catalogue,
+  the prompt and every other tool; only `show_products` reads the whole market (the comparison
+  API's store, passed to the turn as `market`). The console's Market data screen shows all of it.
 - **Compared** by the public comparison API (below), which reads every row.
 
 ### The comparison engine and its public API
@@ -651,10 +652,22 @@ Every tool input is Zod-validated before any effect. Invalid input returns a too
 - `record_holding`: an account or a debt the customer stated with its balance, recorded in
   `holdings` (source `saoirse`); `holdingId` from the digest changes one held. A fixed-until date
   keeps its reminder. The result carries the progress line, stated as a fact. No card.
+- `show_products`: the product card that follows the question asked (first-home experience,
+  "4. The conversation"). The model names the arrangement the question implies
+  (`held_vs_market`, `by_access`, `fits_date`, `mortgage_by_sort`; for a mortgage the sort and
+  only the filters the customer asked for); the server reads their figures from the case (the
+  newest claimed plan, holdings, facts: `caseFigures`), runs the engine over the whole market
+  (`domain/market/products-card.ts`: `search`, `simulateDeposit`, `homePathways`,
+  `withHeldRates`) and builds the `market_products` card: up to 8 rows plus `more`, the
+  arrangement named with how to change it, and the basis statement (duty of care 2.4). Every
+  string is held to `adviceWordsIn`. No figures: the result is the questions to ask, no card.
+  Writes `products_shown`. The digest lists cards shown (arrangement and when, never the rows,
+  read from `messages.cards` as `productsShown`), so "by access instead" calls it again.
 
-Twenty-one tools. **Which ones a turn is offered is decided by the conversation's stage** - the
-form tools are gated further on a form existing. Withholding a tool is enforcement; telling the
-model not to use one is advice.
+Twenty-two tools. **Which ones a turn is offered is decided by the conversation's stage** - the
+form tools are gated further on a form existing, and `show_products` is offered in any stage
+once the case holds a claimed plan or holdings, and never without. Withholding a tool is
+enforcement; telling the model not to use one is advice.
 
 Stream events are a Zod discriminated union: `text_delta | retract | card | status | done | error`. A round that spoke and then had a tool refused is withdrawn: `retract` takes its characters back off the screen and out of the record, and the refused result tells the model to write again. A handler marks a refusal with `refused: true`; partial rejections from the two recording tools are not refusals.
 
