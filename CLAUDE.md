@@ -83,7 +83,9 @@ saoi-api, services/api (Node, Hono; service role; holds ANTHROPIC_API_KEY, VAPID
                 history and change-feed reads
   session       anonymous start, case listing and switching, participant claiming
   plans         POST /api/plans (public: the MCP saves a plan, gets a one-time link);
-                POST /api/plans/claim (the app opens it into a conversation)
+                POST /api/plans/claim (the app opens it into a conversation);
+                GET and PATCH /api/cases/{id}/plan (the profile: read the claimed
+                plan, change a figure, the plan is rebuilt and the chat told)
   holdings      /api/cases/{id}/holdings: accounts and debts by hand, progress
                 against the claimed plan
   partner       join via invite, scoped DTO reads, partner task submission
@@ -498,6 +500,24 @@ amounts, projections and unknowns, the payoff order, the ranking basis, assumpti
   an ordinary turn told it is the reply to that question (no welcome, no card again, no second
   question); the digest carries "The plan they brought" on every turn and quotes the opening.
   Plans claimed before then still open on the old `return` turn.
+- **Editing** (2026-11-12, "6. The saving months"): `GET /api/cases/{id}/plan` gives the profile
+  the newest claimed plan's editable figures (date, price, monthly saving, kind of home,
+  first-time buyer, buying together), where it stands and its first three options;
+  `PATCH` changes them (`_shared/contracts/case-plan.ts`). `applyPlanEdit`
+  (`domain/market/plan-edit.ts`) rebuilds the plan with `buildPlan` from its situation and goals
+  with the edit applied, on the inputs it was built on (`MarketPlan.inputs`, kept from
+  2026-11-12; older plans read the arrival's chips and the comparison's sort, and the price shown
+  is held), keeping `createdAt` and the opening line (`openedWith`) and recording `edits`. The
+  rebuilt plan replaces the claimed plan's document; `plan_edited` carries the changes, the
+  effects (keys month, cash needed, what now fits and no longer fits: fixed terms by the goal's
+  date, lender options by the comparison), `reading` and the previous document. `reading` is one
+  or two sentences of fact ("Moving the keys to March 2028 means €4,751 less saved by then at
+  this pace; the 18-month deposits no longer fit, and deposits of up to one year still do."),
+  never "better" and never a pick. Date reminders (`other`, not a holding's) in the month the
+  goal date or keys month was move to the same day of the new month. `plan_edited` is
+  narratable, so the app's return turn opens on it (`returnInstruction`: no greeting, not the
+  reading again word for word); the digest lists the edits; a reload shows the plan card from the
+  stored plan.
 - `npm run plan:sample` saves the worked example against the live API and prints a link.
 
 ### Plan alerts and reminders
