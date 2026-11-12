@@ -309,6 +309,9 @@ export const planArrivalTileSchema = z.object({
   sub: z.array(text(40)).max(2),
   quiet: z.array(text(80)).max(1),
   detail: z.array(text(300)).max(4),
+  // The old tile shape's lines, kept for app builds cached before 2026-11-12: `sub` then `quiet`.
+  // Remove after 2026-11-26.
+  lines: z.array(text(80)).max(3).default([]),
 })
 export type PlanArrivalTile = z.infer<typeof planArrivalTileSchema>
 
@@ -592,9 +595,17 @@ export function upgradeStoredArrival(arrival: unknown): unknown {
   return {
     ...arrival,
     tiles: tiles.map((tile) => {
-      if (!isRecord(tile) || tile['sub'] !== undefined || !Array.isArray(tile['lines'])) {
-        return tile
+      if (!isRecord(tile)) return tile
+      if (tile['sub'] !== undefined) {
+        // A new-shape tile stored before `lines` existed: fill them from `sub` then `quiet`.
+        if (tile['lines'] !== undefined) return tile
+        const strings = (value: unknown): string[] =>
+          Array.isArray(value)
+            ? value.filter((line): line is string => typeof line === 'string')
+            : []
+        return { ...tile, lines: [...strings(tile['sub']), ...strings(tile['quiet'])] }
       }
+      if (!Array.isArray(tile['lines'])) return tile
       const { lines, value, ...rest } = tile
       const all = (lines as unknown[]).filter((line): line is string => typeof line === 'string')
       const short = all.filter((line) => line.length <= 16)
@@ -607,6 +618,7 @@ export function upgradeStoredArrival(arrival: unknown): unknown {
         sub: short.slice(0, 2),
         quiet: [],
         detail: [...short.slice(2), ...long].slice(0, 4),
+        lines: all.slice(0, 3),
       }
     }),
   }

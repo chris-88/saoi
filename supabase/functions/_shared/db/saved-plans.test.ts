@@ -355,6 +355,7 @@ describe('the arrival message (2026-11-12)', () => {
         value: '3.11%',
         sub: [],
         quiet: ['17 accounts'],
+        lines: ['17 accounts'],
         detail: [],
       },
     ],

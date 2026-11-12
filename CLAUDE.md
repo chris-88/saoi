@@ -484,7 +484,9 @@ amounts, projections and unknowns, the payoff order, the ranking basis, assumpti
   tile is structured (Chris, 2026-11-12): `qualifier` above the headline `value`, darker `sub`
   lines, one `quiet` count and the tap-open `detail`; the savings run to the keys month, the
   mortgage leads with the monthly repayment, and `upgradeStoredArrival` reads tiles stored as
-  `{ label, value, lines }`. The
+  `{ label, value, lines }`. Tiles also carry `lines` (`sub` then `quiet`) for app builds cached before
+  2026-11-12, to be removed after 2026-11-26: response contract changes are additive for at least two
+  weeks because cached app builds keep parsing old shapes, and removals are dated. The
   preview returns it with `opening`, Saoirse's first line verbatim (the hook, or a fixed line).
 - **Claiming** (`#/plan/<token>` in saoi-web, after the welcome and the data notice) puts it in the browser's current conversation when
   that is empty, otherwise a new one (`source: 'plan'`, under the audience cap, refused before

@@ -98,6 +98,7 @@ describe('the arrival on a home plan', () => {
       qualifier: 'up to',
       value: '€488,000',
       sub: ['4× income', '90% loan'],
+      lines: ['4× income', '90% loan'],
       quiet: [],
       detail: [
         'The most the Central Bank limits allow: 4 times income at 90% loan, over 30 years',
@@ -112,6 +113,8 @@ describe('the arrival on a home plan', () => {
       for (const line of [...tile.sub, ...tile.quiet])
         expect(line.length, line).toBeLessThanOrEqual(16)
       expect(adviceWordsIn(JSON.stringify(tile))).toEqual([])
+      // The old tile shape, for app builds cached before 2026-11-12.
+      expect(tile.lines).toEqual([...tile.sub, ...tile.quiet])
     }
   })
 
@@ -225,7 +228,9 @@ describe('arrivals stored before the structured tiles', () => {
       sub: ['17 accounts'],
       quiet: [],
       detail: ['€879 interest by Jun 2028'],
+      lines: ['€879 interest by Jun 2028', '17 accounts'],
     })
+    expect(tiles?.[0]?.lines).toEqual(['€879 interest by Jun 2028', '17 accounts'])
     expect(tiles?.[1]).toMatchObject({ qualifier: null, value: '€360,000' })
     expect(tiles?.[2]).toMatchObject({ qualifier: 'up to', value: '€488,000' })
   })
@@ -254,5 +259,17 @@ describe('arrivals stored before the structured tiles', () => {
     expect(upgradeStoredPlan({ arrival: current })).toEqual({ arrival: current })
     const other = { type: 'status' }
     expect(upgradeStoredCard(other)).toBe(other)
+  })
+
+  it('fills lines on a stored new-shape tile that has none, sub then quiet', () => {
+    const { lines: _lines, ...bare } = home().plan.arrival?.tiles[0] ?? {}
+    const readBack = marketPlanSchema.parse(
+      upgradeStoredPlan({
+        ...home().plan,
+        arrival: { ...home().plan.arrival, tiles: [bare] },
+      }),
+    ).arrival?.tiles[0]
+    expect(readBack?.lines).toEqual([...(readBack?.sub ?? []), ...(readBack?.quiet ?? [])])
+    expect(readBack?.lines.length).toBeGreaterThan(0)
   })
 })
