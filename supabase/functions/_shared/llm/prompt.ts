@@ -550,6 +550,11 @@ export type CaseDigest = {
     readonly progress: string | null
   }
   /**
+   * The products cards (`show_products`) already on screen, newest last: "Your account against
+   * the market (held_vs_market), your last reply". The rows are on the card and are not repeated.
+   */
+  readonly productsShown?: readonly string[]
+  /**
    * Whether what they asked for is what suits them, worked out from what they have said about
    * the amount and how soon they mean to repay it. Already decided; the figures are not yours.
    */
@@ -1057,6 +1062,26 @@ function digestSection(digest: CaseDigest): string {
         ? ['- None entered yet.']
         : holdings.lines.map((line) => `- ${line}`)),
       ...(holdings.progress === null ? [] : [`Progress against the plan: ${holdings.progress}`]),
+      '',
+    )
+  }
+
+  if (digest.holdings !== undefined || (digest.broughtPlans ?? []).length > 0) {
+    lines.push(
+      '## Showing them products',
+      'When they ask to see products, rates or what something would cost, call `show_products`',
+      'with the arrangement their question implies: their own account against the market',
+      '(held_vs_market), instant access against fixed term (by_access), what fits their keys',
+      'month (fits_date), or the mortgage options in the order they asked for (mortgage_by_sort).',
+      'One line with the card and nothing asked beside it, unless the tool returns questions: then',
+      'ask the first one. Never "best", never "recommended", never what they should take.',
+      ...(digest.productsShown === undefined || digest.productsShown.length === 0
+        ? []
+        : [
+            'Already shown (the rows are on the card, not here; for another arrangement or order,',
+            'call `show_products` again):',
+            ...digest.productsShown.map((line) => `- ${line}`),
+          ]),
       '',
     )
   }

@@ -85,6 +85,8 @@ export type LoadedMessage = {
   readonly content: string
   /** Types of the cards rendered with this turn, oldest first. */
   readonly cards: readonly string[]
+  /** The products cards (`market_products`) shown with this turn: arrangement and title only. */
+  readonly productsShown?: readonly { readonly kind: string; readonly title: string }[]
   readonly createdAt: string
   /** Where the turn's time went, on Saoirse's turns that were measured. */
   readonly timing: TurnTiming | null
