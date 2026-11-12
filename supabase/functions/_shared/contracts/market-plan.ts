@@ -336,6 +336,84 @@ export const planArrivalViewSchema = z.object({
 })
 export type PlanArrivalView = z.infer<typeof planArrivalViewSchema>
 
+/** Repeats `ACCESS_KINDS` (`contracts/market-tools.ts`); `contracts.test.ts` holds them equal. */
+export const PLAN_ACCESS_KINDS = ['instant', 'notice', 'fixed_term'] as const
+/** Repeats `PROPERTY_KINDS`; held equal by the same test. */
+export const PLAN_PROPERTY_KINDS = ['new_build', 'self_build', 'second_hand'] as const
+/** Repeats `HOME_SORTS`; held equal by the same test. */
+export const PLAN_HOME_SORTS = ['five_year_cost', 'keys_date', 'monthly_repayment'] as const
+
+/**
+ * What the plan was built on beyond its situation and goals (2026-11-12, "6. The saving
+ * months"): the inputs of the `saoi_build_plan` call, so an edit in the app rebuilds the plan
+ * on the same filters, sort and choices with only the edited figures changed. The situation's
+ * own extras the plan's `situation` does not keep (first-time buyer, where each saving is, each
+ * debt's choice) travel here too. Plans saved before then have none; an edit reads what it can
+ * from the arrival's assumptions and the comparison.
+ */
+export const planInputsSchema = z.object({
+  homePrice: eur.optional(),
+  propertyKind: z.enum(PLAN_PROPERTY_KINDS).optional(),
+  firstTimeBuyer: z.boolean().optional(),
+  buyingTogether: z.boolean().optional(),
+  taxPaidLastFourYearsEur: eur.optional(),
+  county: text(60).optional(),
+  monthlyRentEur: eur.optional(),
+  homePreferences: z
+    .object({
+      currentBank: text(60).optional(),
+      stayWithBank: z.boolean().optional(),
+      rateType: z.enum(['fixed', 'variable', 'either']).optional(),
+      green: z.boolean().optional(),
+      openToCurrentAccountSwitch: z.boolean().optional(),
+      sortBy: z.enum(PLAN_HOME_SORTS).optional(),
+    })
+    .optional(),
+  emergencyBufferEur: eur.optional(),
+  emergencyBufferMonths: z.number().min(0).max(12).optional(),
+  keepAccessible: z.boolean().optional(),
+  goalDateCertain: z.boolean().optional(),
+  minLockGainEur: eur.optional(),
+  minLockGainPctPerYear: pct.optional(),
+  maxAccounts: z.number().int().min(1).max(8).optional(),
+  /** Per `situation.savings`, by position: where the money is, as the call said. */
+  savings: z
+    .array(
+      z.object({
+        access: z.enum([...PLAN_ACCESS_KINDS, 'current_account']).optional(),
+        fixedTermEndsOn: monthOrDay.optional(),
+      }),
+    )
+    .max(20)
+    .optional(),
+  /** Each debt's choice in the call: compare, keep or clear. */
+  debtPlans: z
+    .array(z.object({ debtId: id, plan: z.enum(['clear', 'keep', 'compare']) }))
+    .max(20)
+    .optional(),
+})
+export type PlanInputs = z.infer<typeof planInputsSchema>
+
+/** The figures the customer can change in the app's profile (`PATCH /api/cases/{id}/plan`). */
+export const PLAN_EDIT_FIELDS = [
+  'targetDate',
+  'homePrice',
+  'monthlySaving',
+  'propertyKind',
+  'firstTimeBuyer',
+  'buyingTogether',
+] as const
+export type PlanEditField = (typeof PLAN_EDIT_FIELDS)[number]
+
+/** One change made in the app, as it was made. */
+export const planEditSchema = z.object({
+  at: isoDateTime,
+  field: z.enum(PLAN_EDIT_FIELDS),
+  from: z.union([z.string().max(40), z.number(), z.boolean(), z.null()]),
+  to: z.union([z.string().max(40), z.number(), z.boolean(), z.null()]),
+})
+export type PlanEdit = z.infer<typeof planEditSchema>
+
 export const RANKING_OBJECTIVES = [
   'highest_net_return',
   'lowest_total_cost',
@@ -432,6 +510,19 @@ export const marketPlanSchema = z
      * arrival (2026-11-12). Optional: other plans, and plans saved before then, have none.
      */
     arrival: planArrivalViewSchema.optional(),
+    /** The build inputs beyond the situation and goals (2026-11-12). Optional: older plans. */
+    inputs: planInputsSchema.optional(),
+    /**
+     * Changes made in the app, oldest first (the last 20): the plan is rebuilt on each, and
+     * keeps `createdAt` so progress still runs from when it was made.
+     */
+    edits: z.array(planEditSchema).max(20).optional(),
+    /**
+     * The line the conversation opened with when the plan was claimed, kept when an edit
+     * rebuilds the plan (its hook question can change), so the transcript still reads as the
+     * arrival. Absent: the arrival's own hook (`arrivalOpening`).
+     */
+    openedWith: text(800).optional(),
     createdAt: isoDateTime,
     /** When the oldest market figure in the plan was last checked. */
     dataCheckedAt: isoDateTime,

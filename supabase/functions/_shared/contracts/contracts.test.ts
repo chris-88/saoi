@@ -1,4 +1,7 @@
 import {
+  PLAN_ACCESS_KINDS,
+  PLAN_HOME_SORTS,
+  PLAN_PROPERTY_KINDS,
   PLAN_PRODUCT_CATEGORIES,
   PLAN_PRODUCT_SOURCES,
   PLAN_ROUTE_IDS,
@@ -8,7 +11,14 @@ import {
 } from './market-plan.ts'
 import { exampleMarketPlan } from './market-plan.example.ts'
 import { claimPlanBodySchema } from './session.ts'
-import { HOME_ROUTE_IDS, HOME_ROUTE_STATUSES } from './market-tools.ts'
+import {
+  ACCESS_KINDS,
+  DEBT_PLAN_CHOICES,
+  HOME_ROUTE_IDS,
+  HOME_ROUTE_STATUSES,
+  HOME_SORTS,
+  PROPERTY_KINDS,
+} from './market-tools.ts'
 import { MARKET_CATEGORIES, MARKET_SOURCES } from '../market/schema.ts'
 import { describe, expect, it } from 'vitest'
 import { awaitsCustomer, CARD_TYPES, cardSchema } from './cards.ts'
@@ -194,6 +204,13 @@ describe('the market plan (market-plan.ts)', () => {
   it('keeps its route lists equal to the home calculator’s it repeats', () => {
     expect([...PLAN_ROUTE_IDS]).toEqual([...HOME_ROUTE_IDS])
     expect([...PLAN_ROUTE_STATUSES]).toEqual([...HOME_ROUTE_STATUSES])
+  })
+
+  it('keeps the build inputs’ lists equal to the build-plan request’s it repeats', () => {
+    expect([...PLAN_ACCESS_KINDS]).toEqual([...ACCESS_KINDS])
+    expect([...PLAN_PROPERTY_KINDS]).toEqual([...PROPERTY_KINDS])
+    expect([...PLAN_HOME_SORTS]).toEqual([...HOME_SORTS])
+    expect([...DEBT_PLAN_CHOICES].sort()).toEqual(['clear', 'compare', 'keep'])
   })
 
   it('strips fields it does not know rather than refusing the plan', () => {
