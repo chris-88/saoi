@@ -595,7 +595,12 @@ export async function buildGeneration(
     })
   } else if (turn.trigger === 'return') {
     // §36 — the customer did not ask anything; they came back. Lead with what changed.
-    history.push({ role: 'user', content: returnInstruction(loaded.eventsSinceLastSeen) })
+    history.push({
+      role: 'user',
+      content: returnInstruction(loaded.eventsSinceLastSeen, {
+        market: claimedPlans.length > 0 || heldNow.length > 0,
+      }),
+    })
   }
 
   if (history.length === 0) {
@@ -844,9 +849,23 @@ export function returnsAfterPlanEdit(
  */
 export function returnInstruction(
   events: readonly { readonly type: string; readonly payload: Record<string, unknown> }[],
+  options: {
+    /**
+     * A market conversation (2026-11-13): no `show_status` (it is not offered) and no question
+     * put back to them; what changed, and nothing after it.
+     */
+    readonly market?: boolean
+  } = {},
 ): string {
   const edits = events.filter((event) => event.type === PLAN_EDITED_EVENT)
   const latest = edits.at(-1)
+  if (latest === undefined && options.market === true) {
+    return (
+      '(The customer has just come back after being away. Open by naming each thing under ' +
+      '"Changed since they were last here", in your own words and as facts. Ask nothing ' +
+      'after it.)'
+    )
+  }
   if (latest === undefined) {
     return (
       '(The customer has just come back after being away. Open by naming each thing under ' +
