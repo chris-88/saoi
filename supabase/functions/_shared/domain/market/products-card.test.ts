@@ -72,7 +72,9 @@ describe('productsCard: arranged by the question asked', () => {
     )
     expect(card.arrangement.kind).toBe('held_vs_market')
     expect(card.arrangement.title).toBe('Your account against the market')
-    expect(card.arrangement.line).toMatch(/Ask for them by access, or by the date, instead\./)
+    expect(card.arrangement.line).toBe(
+      'By rate, your own account first; ask for them by access, or by the date, instead.',
+    )
     expect(card.rows.length).toBeLessThanOrEqual(8)
     const [own, current, ...market] = card.rows
     expect(own).toMatchObject({ lead: 'Your BoI savings', value: '0.50%', held: true })
@@ -201,7 +203,7 @@ describe('productsCard: arranged by the question asked', () => {
     )
     expect(card.arrangement.title).toBe('Mortgage options at 90% loan-to-value')
     expect(card.arrangement.line).toMatch(
-      /^Arranged by cost over the first 5 years, lowest first, the order you chose\./,
+      /^Arranged by cost over the first 5 years, lowest first, the order you chose; ask for them by /,
     )
     expect(card.rows.length).toBeGreaterThan(0)
     for (const row of card.rows) {
@@ -527,5 +529,119 @@ describe('productsCard: a fixed term fits the keys its own interest gives (2026-
       fit: { months: 12, endsOn: '2027-11', keysOn: '2028-07' },
       pushedOut: [{ months: 18, endsOn: '2028-05', keysOn: '2028-05' }],
     })
+  })
+})
+
+describe('productsCard: each row’s key facts and detail (2026-11-13)', () => {
+  const SAYS_TO = /\b(check|ask|confirm|contact)\b/i
+  const rowOf = (card: MarketProductsCard, id: string) => {
+    const row = card.rows.find((item) => item.id === id)
+    if (row === undefined) throw new Error(`no row ${id}`)
+    return row
+  }
+
+  it('bunq: the rate’s end and the guarantee to know, the money sentence and the source behind it', () => {
+    const card = cardOf(productsCard(MARKET, FIGURES, { arrangement: 'by_access' }, PRODUCTS_AS_OF))
+    const bunq = rowOf(card, 'bunq:savings.bunq_savings')
+    expect(bunq.providerId).toBe('bunq')
+    expect(bunq.brand).toEqual({ bg: '#008145', fg: '#fff' })
+    expect(bunq.mustKnow).toEqual([
+      'Rate ends 1 Jan, then 1.61% to €10,000 and 1.51% above',
+      'Deposit guarantee: Netherlands, not Ireland',
+    ])
+    expect(bunq.detail?.[0]).toMatch(
+      /^€[\d,]+ counts 3\.11% to 1 January, then 1\.61% to €10,000 and 1\.51% above\.$/,
+    )
+    expect(bunq.detail).toContain('From bunq’s own page, checked 9 November 2026.')
+  })
+
+  it('Bank of Ireland’s 18 months: locked until it ends, and no monthly saving', () => {
+    const card = cardOf(productsCard(MARKET, FIGURES, { arrangement: 'by_access' }, PRODUCTS_AS_OF))
+    const boi = rowOf(card, 'boi:savings.advantage_fixed')
+    expect(boi.kind).toBe('18-month fixed')
+    expect(boi.value).toBe('2.48%')
+    expect(boi.mustKnow).toEqual([
+      'Money locked until May 2028',
+      'Monthly saving not accepted; lump sum only',
+    ])
+    expect(boi.detail?.[0]).toMatch(
+      /The 18-month term ends May 2028; with its interest the keys come in July 2028\.$/,
+    )
+    expect(boi.detail).toContain('Lump sum from €5,000.')
+  })
+
+  it('a rate from CCPC alone, and who can open MoCo’s account, are facts to know', () => {
+    const card = cardOf(productsCard(MARKET, FIGURES, { arrangement: 'by_access' }, PRODUCTS_AS_OF))
+    expect(rowOf(card, 'aib:deposit.c843').mustKnow).toContain(
+      'Rate from CCPC only; how long it holds is not stated',
+    )
+    expect(rowOf(card, 'moco:savings.moco_easysaver').mustKnow).toEqual([
+      'Rate for new accounts; how long it holds is not stated',
+      'Deposit guarantee: Austria, not Ireland',
+      'Who can open it: aged 18 or over, resident in Ireland, not a US citizen, individuals only, no joint accounts',
+    ])
+  })
+
+  it('their own account: the provider matched by name, its money sentence as the detail', () => {
+    const card = cardOf(
+      productsCard(MARKET, FIGURES, { arrangement: 'held_vs_market' }, PRODUCTS_AS_OF),
+    )
+    const [own, current] = card.rows
+    expect(own).toMatchObject({ providerId: 'boi', brand: { bg: '#0000ff', fg: '#fff' } })
+    expect(own?.mustKnow).toEqual([])
+    expect(own?.detail?.[0]).toMatch(/^€\d+ counts 0\.50%, the rate given for it, on €20,000/)
+    expect(current?.providerId).toBe('aib')
+  })
+
+  it('a mortgage: the fixed period and what follows, the cashback, the option in a sentence', () => {
+    const card = cardOf(
+      productsCard(MARKET, FIGURES, { arrangement: 'mortgage_by_sort' }, PRODUCTS_AS_OF),
+    )
+    for (const row of card.rows) {
+      expect(row.providerId).toMatch(/^[a-z_]+$/)
+      expect(row.mustKnow?.[0]).toMatch(/^(Fixed for \d+ years|A variable rate)/)
+      expect(row.detail?.[0]).toContain(' a month')
+    }
+    const avant = card.rows.find((row) => row.providerId === 'avant_money')
+    expect(avant?.mustKnow).toEqual([
+      'Fixed for 4 years, then 3.95% variable',
+      '€7,200 cashback counted in the cost',
+      'Incentives from CCPC only',
+    ])
+  })
+
+  it('every row of every arrangement keeps the limits, and says nothing that advises or instructs', () => {
+    for (const arrangement of [
+      'held_vs_market',
+      'by_access',
+      'fits_date',
+      'mortgage_by_sort',
+    ] as const) {
+      const card = cardOf(productsCard(MARKET, FIGURES, { arrangement }, PRODUCTS_AS_OF))
+      // The arrangement line is one short sentence: the arrangement and how to change it.
+      expect(card.arrangement.line.split(/\.\s/)).toHaveLength(1)
+      expect(card.arrangement.line.length).toBeLessThanOrEqual(170)
+      for (const row of card.rows) {
+        expect(row.mustKnow?.length ?? 0, row.id).toBeLessThanOrEqual(3)
+        expect(row.detail?.length ?? 0, row.id).toBeLessThanOrEqual(6)
+        expect(row.detail?.length ?? 0, row.id).toBeGreaterThan(0)
+        for (const text of [...(row.mustKnow ?? []), ...(row.detail ?? [])]) {
+          expect(adviceWordsIn(text), text).toEqual([])
+          expect(text, text).not.toMatch(SAYS_TO)
+          expect(text, text).not.toMatch(/\b(best|should|recommended)\b/i)
+        }
+      }
+    }
+  })
+
+  it('a card stored before the key facts still parses, its rows without them', () => {
+    const card = cardOf(productsCard(MARKET, FIGURES, { arrangement: 'by_access' }, PRODUCTS_AS_OF))
+    const old = {
+      ...card,
+      rows: card.rows.map(({ providerId: _p, brand: _b, detail: _d, mustKnow: _m, ...row }) => row),
+    }
+    const parsed = marketProductsCardSchema.parse(old)
+    expect(parsed.rows[0]?.detail).toBeUndefined()
+    expect(parsed.rows[0]?.note).toBe(card.rows[0]?.note)
   })
 })

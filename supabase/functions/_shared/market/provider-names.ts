@@ -35,6 +35,32 @@ export function providerNameOf(id: string): string {
   return PROVIDER_NAMES[id] ?? id
 }
 
+/** Short names people use for a provider, lower case, beside the readable names. */
+const PROVIDER_ALIASES: Readonly<Record<string, string>> = {
+  'bank of ireland': 'boi',
+  bank_of_ireland: 'boi',
+  'permanent tsb': 'ptsb',
+  'an post': 'an_post_money',
+  'state savings': 'state_savings',
+}
+
+/**
+ * The provider id for a name as a customer or a plan gives it ("AIB", "Bank of Ireland", "BoI",
+ * "bunq"): the id itself, a readable name, or a short name, ignoring case; null when none matches.
+ */
+export function providerIdOf(name: string | null): string | null {
+  if (name === null) return null
+  const key = name.trim().toLowerCase()
+  if (key.length === 0) return null
+  if (Object.hasOwn(PROVIDER_NAMES, key)) return key
+  const named = Object.entries(PROVIDER_NAMES).find(
+    ([, readable]) => readable.toLowerCase() === key,
+  )
+  return (
+    named?.[0] ?? (Object.hasOwn(PROVIDER_ALIASES, key) ? (PROVIDER_ALIASES[key] ?? null) : null)
+  )
+}
+
 /**
  * The public website domain of every provider id, for the admin's logos (no scheme, no `www`).
  * Null where there is no single site: the credit unions are many separate societies. A bank
