@@ -225,32 +225,33 @@ The knowledge base the prompt is built from (`kb-prompt.ts`) and the mortgage ra
 
 ### Market data
 
-What providers publish about their products, from two sources, side by side with their own
-history (`market_products.source`):
+**CCPC is the source of every rate in the application** (Chris, 2026-11-13). Provider sites are
+not read for rates. What the comparison, the turn, the Demo Bank catalogue and the snapshot read
+is the Competition and Consumer Protection Commission's comparison tables, broad: every provider
+CCPC lists, in savings, deposits, mortgages, loans, credit cards and current accounts
+(`scripts/market/ccpc.ts`, read from the JSON API behind ccpc.ie at compare.ccpc.ie). Rows carry
+CCPC's attribution, CCPC's product id, CCPC's prose and every field it states verbatim
+(`conditions.prose`, `conditions.details`), and name what CCPC leaves out in `unknown`. Every
+result carries CCPC's attribution as its source. CCPC's terms ask for written approval before
+commercial use of comparison data; the prototype uses it attributed, approval to be sought once
+there is revenue (decision 2026-11-09). CCPC regular savers that say their rate is fixed for N
+months (an introductory offer, or a "(Fixed)" name with a minimum savings period: EBS Family
+Savings) are stored with `fixedMonths` and the reversion unknown, so figures stop there.
 
-- `bank`: the provider's own website, deep: the rates, limits and bonus conditions the savings
-  engine reasons on. Bank of Ireland's six savings and deposit products
-  (`_shared/market/boi-sources.ts`, parsers in `scripts/market/boi.ts`), and bunq's savings
-  account (`scripts/market/bunq.ts`), whose 3.11% is a bonus until the next 1 January or 1 July
-  and then only above a threshold: stored as `rates.thresholdBonus`, modelled month by month.
-  MoCo's EasySaver (`scripts/market/moco.ts`, the savings page plus its FAQ via `alsoRead`):
-  2.1% variable for new accounts, and who can open it (`conditions.eligibility`: over 18,
-  resident in Ireland, not a US citizen, individuals, no joint accounts), daily interest
-  (`conditions.interestPaid`), `conditions.rateForNewAccounts`, DIRT deducted by MoCo
-  (`conditions.dirtAtSource`, so no "a bank abroad may not take DIRT" check). The view carries
-  `eligibility` and states it in `checks` instead of "check eligibility". EBS, AIB and PTSB
-  refuse automated requests at their edge (Akamai 403, even on robots.txt) and State Savings
-  serves a bot challenge (Radware), all on 2026-11-09: not read, and the client is not
-  disguised to get past them. CCPC regular savers that say their rate is fixed for N months
-  (an introductory offer, or a "(Fixed)" name with a minimum savings period: EBS Family
-  Savings) are stored with `fixedMonths` and the reversion unknown, so figures stop there.
-- `ccpc`: the Competition and Consumer Protection Commission's comparison tables, broad: every
-  provider CCPC lists, in savings, deposits, mortgages, loans, credit cards and current accounts
-  (`scripts/market/ccpc.ts`, read from the JSON API behind ccpc.ie at compare.ccpc.ie). Rows
-  carry CCPC's attribution, CCPC's product id, CCPC's prose and every field it states verbatim
-  (`conditions.prose`, `conditions.details`), and name what CCPC leaves out in `unknown`. CCPC's
-  terms ask for written approval before commercial use of comparison data; the prototype uses it
-  attributed, approval to be sought once there is revenue (decision 2026-11-09).
+Before that decision Bank of Ireland's six savings products, bunq's savings account and MoCo's
+EasySaver were also read from their own pages (`source: 'bank'`). Those readers
+(`scripts/market/boi.ts`, `bunq.ts`, `moco.ts`), their snapshots and the Bank of Ireland
+cross-check were removed; their rows stay in `market_products` with their history and nothing
+reads them for a figure. What they modelled that CCPC's fields do not state (bunq's threshold
+bonus, MoCo's rate for new accounts and eligibility, SuperSaver's reversion to 2%,
+MortgageSaver's bonus conditions and lump-sum rate) now comes only from the CCPC row's own
+words (`_shared/market/ccpc-prose.ts`): a fixed period ("a fixed regular savings rate for 12
+months"), a rate for new customers, a bonus amount with its words, and words that make a rate
+conditional (a bonus, introductory or promotional rate). Nothing else is assumed: SuperSaver's
+12 months end with the rate after unknown, MortgageSaver's bonus is its €2,000 in CCPC's words
+and no lump sum is placed in it, and bunq's 3.11% is a rate for new accounts whose hold is not
+stated. A product CCPC lists in both its tables under one name (bunq Free, MoCo EasySaver) is
+read with the prose of both, and is one account (`accountOf`).
 
 `provider` is always the bank (`boi`, `aib`, `ptsb`); CCPC's names map in
 `scripts/market/ccpc-providers.ts`, and an unknown name gets a generated id and a `NEW PROVIDER`
@@ -259,23 +260,27 @@ line in the refresh output. Shapes in `_shared/market/schema.ts`: `rates` is a u
 
 - **Stored** as versioned rows: a changed record supersedes the current row and inserts a new
   one, an unchanged one moves `checked_at`. `market_record_refresh(provider, source, ...)` writes
-  one provider from one source in one transaction. `_shared/market/<provider>.snapshot.ts`
-  (generated, Bank of Ireland, bunq and MoCo) are the bank-direct fallback when the table is empty;
-  a turn's fallback takes Bank of Ireland's only. CCPC has no snapshot.
-- **Refreshed** by `npm run market:refresh` (dry run and diff), `-- --snapshot`, `-- --db` (needs
-  `SUPABASE_URL=http://127.0.0.1:8002` and the service role key from
-  `pass show infra/saoi/SERVICE_ROLE_KEY`), `-- --provider boi`, `-- --source ccpc`. Weekly by the
-  `market-refresh` timer in `~/dotfiles`. robots.txt first on every host (a 4xx is "no
-  restrictions" under RFC 9309). All or nothing per provider and source; a failed CCPC request
-  writes nothing from CCPC; exit 1 if anything failed. It ends with CCPC row counts and a
-  cross-check of Bank of Ireland's own pages against CCPC (`scripts/market/crosscheck.ts`);
-  differences are warnings.
-- **Read** on a turn: only Bank of Ireland's own rows (`loadMarket`), laid over the catalogue by
-  `withMarketData`: `rateOf`, the savings engine and the deposit-stack combination take every
-  figure from them. Other providers and every CCPC row stay out of the Demo Bank catalogue and
-  every Demo Bank tool; `show_products`, `lookup_products` and a market conversation's
-  catalogue section read the whole market (the comparison API's store, passed to the turn as
-  `market`). The console's Market data screen shows all of it.
+  one provider from one source in one transaction. `_shared/market/ccpc.snapshot.ts` (generated
+  by `-- --snapshot`, every provider, about 770 rows and 2.6 MB) is the fallback when the table
+  holds no CCPC rows.
+- **Refreshed** by `npm run market:refresh` (CCPC only: dry run and diff against the snapshot),
+  `-- --snapshot` (rewrites the CCPC snapshot, only when every provider was read; not with
+  `--provider`), `-- --db` (needs `SUPABASE_URL=http://127.0.0.1:8002` and the service role key
+  from `pass show infra/saoi/SERVICE_ROLE_KEY`), `-- --provider boi` (one provider's CCPC rows).
+  `--source` other than `ccpc` is refused. Weekly by the `market-refresh` timer in `~/dotfiles`.
+  robots.txt first on every host (a 4xx is "no restrictions" under RFC 9309). All or nothing per
+  provider; a failed CCPC request writes nothing; exit 1 if anything failed. It ends with CCPC
+  row counts and the mortgage data check.
+- **Read** on a turn: every current CCPC row (`loadMarket`, paged), and the Demo Bank catalogue
+  takes Bank of Ireland's from them by name (`_shared/market/catalogue-ccpc-pairs.ts`;
+  `withMarketData`, Advantage's three terms folded into the catalogue's one ladder, CCPC's two
+  balance bands as the cap and the rate above it): `rateOf`, the savings engine and the
+  deposit-stack combination take every figure from them. The deposit stack needs
+  MortgageSaver's bonus conditions in full, which CCPC does not state, so it is not offered; the
+  arrangement places no lump sum where CCPC does not state one is taken. Other providers stay
+  out of the Demo Bank catalogue and every Demo Bank tool; `show_products`, `lookup_products` and
+  a market conversation's catalogue section read the whole market (the comparison API's store,
+  passed to the turn as `market`). The console's Market data screen shows all of it.
 - **Compared** by the public comparison API (below), which reads every row.
 
 ### The comparison engine and its public API
@@ -297,9 +302,9 @@ The engine behind the Saoi MCP tools, in `_shared/domain/market/` (pure; contrac
 | `POST /api/calc/home`                      | `saoi_home_calculator`    | the home calculator: limits, deposit, date, routes |
 | `POST /api/calc/money-check`               | `saoi_money_check`        | the entry: review, plan or questions, link         |
 
-- **Normalised** (`normalise.ts`): one view per product. CCPC's one-row-per-term fixed deposits
-  fold into ladders; bank-direct rows (Bank of Ireland, bunq, MoCo) replace their CCPC twins by the pairing in
-  `_shared/market/bank-ccpc-pairs.ts`; only providers that operate in Ireland are compared
+- **Normalised** (`normalise.ts`): one view per product, from CCPC's rows only (a `bank` row is
+  never compared). CCPC's one-row-per-term fixed deposits fold into ladders; what a row's own
+  words state is read into it (`ccpc-prose.ts`); only providers that operate in Ireland are compared
   (Raisin's platform banks are dropped here, their rows kept; Chris, 2026-11-09); every view
   carries source, checked, last changed (from history), attribution, unknowns and eligibility
   checks, and a deposit its guarantee: `_shared/market/deposit-guarantees.ts` records the scheme
@@ -410,8 +415,9 @@ The engine behind the Saoi MCP tools, in `_shared/domain/market/` (pure; contrac
 - **Money found** (`money-found.ts`): review and plan results lead with `moneyFound`, one euro a
   year in parts (idle cash against the best confirmed instant-access rate after DIRT, debt
   interest not paid less what the money would earn, a mortgage switch at a band reaching 90% LTV,
-  no green rate), each with its source and checked date. A rate resting on CCPC's one figure, a
-  current rate not given, bonuses and cashback are shown in `notCounted`, never in the total.
+  no green rate), each with CCPC as its source and the checked date. A rate CCPC's own words make
+  conditional, a current rate not given, bonuses and cashback are shown in `notCounted`, never in
+  the total.
 - **First home** (`first-home.ts`): the rules live in `_shared/market/first-home-rules.ts` with
   their Revenue and Central Bank pages and dates (Help to Buy cap €35,000 for applications from
   7 October 2026, to 31 December 2029; LTI 4 and 3.5, LTV 90%, 15% allowances). The review adds a
@@ -449,10 +455,14 @@ The engine behind the Saoi MCP tools, in `_shared/domain/market/` (pure; contrac
 - **Rules** that hold everywhere: DIRT at 33% except DIRT-free products; interest credited
   yearly; an unknown is never zero and never assumed to hold, so a fixed term or an introductory
   rate with no stated reversion ends the figures there and says so; bonuses are never interest;
-  ranking objective stated in every result; no "you should" in any text returned. A savings or
-  deposit rate resting on CCPC's one figure (no provider page read, no stated reversion) is
-  `rateConfirmed: false` and flagged when it ranks in the top three, and in plans and
-  projections, until a bank-direct row confirms it.
+  ranking objective stated in every result; no "you should" in any text returned. CCPC's figure
+  is the record: a savings or deposit rate is `rateConfirmed: true` unless the record itself says
+  it may not hold, that is an introductory or fixed period with nothing stated after it, or CCPC's
+  own words calling it a bonus, introductory or promotional rate (bunq Free). Those are
+  `rateConfirmed: false`, flagged as "a conditional rate" when they rank in the top three and in
+  plans and projections, not counted in money found, and a card's row says how long it holds is
+  not stated. A conditional rate with no stated end is counted at face value in the figures, as
+  every variable rate is, and flagged.
 - **Limits**: per address (`CF-Connecting-IP`, then `X-Forwarded-For`) 120 a minute, bodies 32
   KiB. The market is read whole (paged) and held ten minutes (`store/market.ts`).
 
