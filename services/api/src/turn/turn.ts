@@ -5,6 +5,7 @@ import { costIn, tokensIn } from '@shared/domain/cost.ts'
 import { soundsLikeReturning } from '@shared/domain/continuity.ts'
 import { outOfAllowance } from '@shared/llm/gate.ts'
 import {
+  isSignedInAction,
   SIGN_IN_PROMPT_EVENT,
   signInPromptCard,
   worthSigningInFor,
@@ -14,14 +15,14 @@ import type { Logger } from '../log.ts'
 import { buildGeneration, loadTurnContext } from './context.ts'
 import { admit, type GateAllowed } from './gate.ts'
 import { createMeter, generate, type ModelFactory } from './generate.ts'
-import { caseHasEvent, holdsMarketFigures } from './lookups.ts'
+import { caseHasEvent, holdsMarketFigures, signInAlreadyAnswered } from './lookups.ts'
 import { persistBlocked, persistReply, recordCustomerTurn } from './persist.ts'
 import { markAlertsSeen } from '@shared/db/alerts.ts'
 import { just } from './stream.ts'
 import type { Market } from '@shared/domain/market/types.ts'
 import { supabaseMarketStore } from '../store/market.ts'
 import { marketSummary } from '@shared/domain/market/lookup.ts'
-import { marketCatalogueSection } from '@shared/llm/market-prompt.ts'
+import { MARKET_SIGNED_IN_LINE, marketCatalogueSection } from '@shared/llm/market-prompt.ts'
 import { createToolExecutor } from './tools.ts'
 
 /**
@@ -87,6 +88,20 @@ export function createTurnRunner(deps: TurnDeps): TurnRunner {
     const startedAt = Date.now()
     const admin = deps.db
     const { caseId, participantId, body: turn } = input
+
+    /*
+     * One sign-in, one "Signed in." and one reply (2026-11-13). The app greets every landing
+     * after a sign-in, so the same account signing in again (another device, another tab) sent
+     * the action again and got a second greeting. Once the case's sign-in has been answered, a
+     * later one writes nothing and says nothing: the stream ends on the earlier message.
+     */
+    const signingIn = isSignedInAction(turn.trigger, turn.message)
+    if (signingIn) {
+      const answered = await signInAlreadyAnswered(admin, caseId)
+      if (answered !== null) {
+        return just({ type: 'done', messageId: answered, gateCategory: 'banking' })
+      }
+    }
 
     const { loaded, kb, rateTable, savingsOptions, nameFor, tone } = await loadTurnContext(
       admin,
@@ -177,6 +192,13 @@ export function createTurnRunner(deps: TurnDeps): TurnRunner {
         )
       : null
 
+    /*
+     * A sign-in in a market conversation is answered with one line and no question, by the
+     * server (2026-11-13: the model's return turns re-greeted and put "a plan or the accounts?"
+     * again). A Demo Bank case's sign-in is the model's turn, as it was.
+     */
+    const fixedReply = signingIn && generation.hasFigures ? MARKET_SIGNED_IN_LINE : null
+
     const shown: unknown[] = []
     const spoken: string[] = []
 
@@ -202,20 +224,23 @@ export function createTurnRunner(deps: TurnDeps): TurnRunner {
           rejections,
         })
 
-        const events = generate({
-          handle,
-          generation,
-          gate: allowedGate,
-          loaded,
-          kb,
-          rateTable,
-          executeTool,
-          maxTokens: limits.maxOutputTokens,
-          meter,
-          rejections,
-          called,
-          marketCatalogue,
-        })
+        const events: AsyncGenerator<StreamEvent> =
+          fixedReply !== null
+            ? just({ type: 'text_delta', text: fixedReply })
+            : generate({
+                handle,
+                generation,
+                gate: allowedGate,
+                loaded,
+                kb,
+                rateTable,
+                executeTool,
+                maxTokens: limits.maxOutputTokens,
+                meter,
+                rejections,
+                called,
+                marketCatalogue,
+              })
 
         // The plan they brought is the reason for this turn: it is on screen before anything.
         if (pendingPlan !== undefined) {

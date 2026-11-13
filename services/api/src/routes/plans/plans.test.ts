@@ -700,5 +700,34 @@ describe('an edit’s writes (2026-11-12, "6. The saving months")', () => {
       actor: 'customer',
       payload: event,
     })
+    // No field named, no fact written.
+    expect(chains.some((chain) => chain.table === 'facts')).toBe(false)
+  })
+
+  it('records the edited figure as the case’s fact, and only that one (2026-11-13)', async () => {
+    const { db, chains } = recordingDb('2026-11-12T09:00:00.000001+00:00')
+    const plan = marketPlanSchema.parse(homePlan([]))
+    await supabasePlanStore(db).saveEdit({
+      planId: 'plan-1',
+      caseId: CASE_ID,
+      plan,
+      event: { planId: 'plan-1' },
+      fields: ['homePrice', 'propertyKind'],
+      participantId: 'participant-1',
+    })
+
+    const inserted = chains
+      .filter((chain) => chain.table === 'facts')
+      .flatMap((chain) => chain.steps.filter((step) => step.op === 'insert'))
+      .flatMap((step) => step.args[0] as Record<string, unknown>[])
+    expect(inserted).toEqual([
+      expect.objectContaining({
+        case_id: CASE_ID,
+        key: 'housing.purchasePrice',
+        value: 350_000,
+        source: 'customer_stated',
+        subject_kind: 'household',
+      }),
+    ])
   })
 })

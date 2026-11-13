@@ -11,7 +11,9 @@ import {
   arrivalMessage,
   arrivedWith,
   dayOf,
+  factsFromEdit,
   factsFromPlan,
+  heldFiguresLines,
   monthOf,
   planOpening,
   savedPlanCard,
@@ -91,13 +93,14 @@ describe('the plan card', () => {
 })
 
 describe('what the model is told', () => {
-  it('lists the steps in the plan’s order and offers a choice, never a pick, as next', () => {
+  it('lists the steps in the plan’s order and leaves next to them, never a pick', () => {
     const lines = savedPlanDigestLines({ id: PLAN_ID, plan: plan() })
     expect(lines[0]).toBe('Title: House deposit by November 2028')
     expect(lines).toContain(
       'Step 1: Monthly saving, SuperSaver Account with Bank of Ireland, €500 a month. Check first: Paid by direct debit from a Bank of Ireland current account',
     )
-    expect(lines.at(-1)).toMatch(/^Next: offer them a choice, never a pick: /)
+    expect(lines.at(-1)).toMatch(/^Next: whatever they ask about it, .*never a pick; /)
+    expect(lines.at(-1)).toContain('are not asked which')
     expect(lines.at(-1)).not.toMatch(/SuperSaver/)
   })
 
@@ -190,6 +193,33 @@ describe('the facts a plan states', () => {
     expect(facts.map((fact) => fact.key)).not.toContain('income.annualBasic')
   })
 
+  it('records a home plan’s price, income, first-time buyer and buying alone (2026-11-13)', () => {
+    const facts = Object.fromEntries(
+      factsFromPlan(calculatorPlan()).map((fact) => [fact.key, fact]),
+    )
+    expect(facts['housing.purchasePrice']).toEqual({
+      key: 'housing.purchasePrice',
+      subject: 'household',
+      value: 450_000,
+    })
+    expect(facts['income.annualGrossStated']).toEqual({
+      key: 'income.annualGrossStated',
+      subject: 'primary',
+      value: 150_000,
+    })
+    expect(facts['housing.firstTimeBuyer']?.value).toBe(true)
+    expect(facts['goals.monthlySaving']?.value).toBe(1_000)
+    expect(facts['assets.savingsBalance']?.value).toBe(32_000)
+    // Not stated by the plan, so not recorded; the digest says what the plan was worked out on.
+    expect(facts['household.buyingWith']).toBeUndefined()
+    expect(Object.keys(facts)).not.toContain('income.annualBasic')
+
+    const together = factsFromPlan(calculatorPlan({ buyingTogether: true }))
+    expect(together.find((fact) => fact.key === 'household.buyingWith')?.value).toBe('partner')
+    const alone = factsFromPlan(calculatorPlan({ buyingTogether: false }))
+    expect(alone.find((fact) => fact.key === 'household.buyingWith')?.value).toBe('alone')
+  })
+
   it('leaves loan repayments out unless every loan states one', () => {
     const base = plan()
     const facts = factsFromPlan({
@@ -222,6 +252,61 @@ describe('the facts a plan states', () => {
     const keys = facts.map((fact) => fact.key)
     expect(keys).not.toContain('goals.savingsTarget')
     expect(facts.find((fact) => fact.key === 'liabilities.creditCardBalance')?.value).toBe(2_000)
+  })
+})
+
+/**
+ * Chris's claimed plan on 2026-11-13 (from the host's home calculator card): €32,000 held,
+ * €1,000 a month, a €450,000 price, €150,000 income, first-time buyer, buying alone. Asked
+ * "yes a plan", Saoirse asked for the price and the income.
+ */
+function calculatorPlan(inputs: Partial<NonNullable<MarketPlan['inputs']>> = {}): MarketPlan {
+  const base = plan()
+  return marketPlanSchema.parse({
+    ...base,
+    situation: {
+      summary: 'From the Saoi home calculator card.',
+      income: { annualGross: 150_000 },
+      monthlySaving: 1_000,
+      savings: [{ label: 'Deposit saved', balance: 32_000 }],
+      debts: [],
+    },
+    debts: [],
+    inputs: { homePrice: 450_000, propertyKind: 'second_hand', firstTimeBuyer: true, ...inputs },
+  })
+}
+
+describe('the figures a plan holds, in the digest', () => {
+  it('names the price, the income, first-time, buying alone and the monthly saving', () => {
+    const [line] = heldFiguresLines(calculatorPlan())
+    expect(line).toContain('never ask for any of these again')
+    expect(line).toContain('home price €450,000')
+    expect(line).toContain('income €150,000 a year before tax')
+    expect(line).toContain('first-time buyer')
+    expect(line).toContain('buying alone')
+    expect(line).toContain('saving €1,000 a month')
+    expect(line).toContain('€32,000 held when it was made')
+    expect(line).toContain('under Your plan')
+    expect(line).toContain('record_holding')
+    const lines = savedPlanDigestLines({ id: PLAN_ID, plan: calculatorPlan() })
+    expect(lines).toContain(line)
+  })
+
+  it('records only the edited figures’ facts after an edit in the profile', () => {
+    const edited = factsFromEdit(calculatorPlan({ buyingTogether: true }), [
+      'buyingTogether',
+      'propertyKind',
+    ])
+    expect(edited).toEqual([
+      { key: 'household.buyingWith', subject: 'household', value: 'partner' },
+    ])
+    expect(factsFromEdit(calculatorPlan(), [])).toEqual([])
+  })
+
+  it('says buying together when the plan does', () => {
+    expect(heldFiguresLines(calculatorPlan({ buyingTogether: true }))[0]).toContain(
+      'buying together',
+    )
   })
 })
 

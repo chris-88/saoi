@@ -16,6 +16,37 @@ import type { LoadedCase } from '../db/loaded-case.ts'
 export const SIGN_IN_PROMPT_EVENT = 'sign_in_offered'
 
 /**
+ * What the app sends, as an `action` turn, once somebody has signed in (`SaoirseChat` in
+ * saoi-web, both the in-place code path and the reload after Google or a link). Stored as the
+ * system message "Signed in." and answered by a turn.
+ */
+export const SIGNED_IN_ACTION = 'Signed in.'
+
+export function isSignedInAction(trigger: string, message: string | undefined): boolean {
+  return trigger === 'action' && message?.trim() === SIGNED_IN_ACTION
+}
+
+/**
+ * The sign-in already answered on this case, if it has been: the id of the newest "Signed in."
+ * system message written at or after the case was signed in (`customer_signed_in`, written once,
+ * when the case becomes authenticated), or of any one when no sign-in was recorded. Null when
+ * this one is the first. Pure.
+ *
+ * 2026-11-13: one claimed-plan case had four "Signed in." messages and four greetings in a day.
+ * Each followed a separate Google login with the same account (two on the phone, two on a Mac
+ * fifteen seconds apart), each landing in the same conversation, and the app greets every
+ * landing. One sign-in, one message: a later landing on a case already answered writes nothing.
+ */
+export function signInAnswered(
+  signedInAt: string | null,
+  latest: { readonly id: string; readonly createdAt: string } | null,
+): string | null {
+  if (latest === null) return null
+  if (signedInAt === null) return latest.id
+  return Date.parse(latest.createdAt) >= Date.parse(signedInAt) ? latest.id : null
+}
+
+/**
  * Whether there is now something a sign-in would protect.
  *
  * Deliberately narrow. An application or a kept plan is work the customer would be annoyed to

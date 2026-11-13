@@ -10,6 +10,7 @@ import {
 } from '../contracts/market-plan.ts'
 import { factCatalogue, type FactKey } from '../domain/facts.ts'
 import { arrivalOpening } from '../domain/market/arrival.ts'
+import { editableOf } from '../domain/market/plan-edit.ts'
 import type { Db } from './case-repository.ts'
 
 /**
@@ -328,6 +329,7 @@ export function savedPlanDigestLines(
     `Made: ${dayOf(plan.createdAt)}, in their own AI assistant, with Saoi's market data (checked ${dayOf(plan.dataCheckedAt)}).`,
     ...editLines(plan),
     `Their situation, as they described it: ${plan.situation.summary}`,
+    ...heldFiguresLines(plan),
     `Goals: ${plan.goals
       .map((goal) => {
         const target = goalTarget(goal)
@@ -361,8 +363,55 @@ export function savedPlanDigestLines(
           `Already shown when they opened it in the app: this card, then your first line, word for word: "${planOpening(plan)}" Do not show the card again, welcome them or repeat that line.`,
         ]
       : []),
-    // A comparison, not a plan to follow: the next step is theirs to choose (2026-11-10).
-    `Next: offer them a choice, never a pick: talk through the options, change a figure or a filter, or how the figures were worked out.${first === undefined && firstDebt !== undefined ? ` The debt step in it: ${firstDebt}` : ''} Saoi cannot open any product for them; they apply with a provider directly.`,
+    /*
+     * A comparison, not a plan to follow: the next step is theirs to choose (2026-11-10), and
+     * theirs to say. Not a menu put to them at the end of each reply (2026-11-13).
+     */
+    `Next: whatever they ask about it, answered from it and the tools, never a pick; they can talk through the options, change a figure or a filter, or ask how the figures were worked out, and are not asked which.${first === undefined && firstDebt !== undefined ? ` The debt step in it: ${firstDebt}` : ''} Saoi cannot open any product for them; they apply with a provider directly.`,
+  ]
+}
+
+/**
+ * The figures the plan holds, in one line, so they are never asked for again (2026-11-13: asked
+ * "yes a plan", Saoirse asked the price, the income and who was buying, all in the claimed
+ * plan). The plan as it stands, edits included (`editableOf`); a home plan with buying together
+ * not stated was worked out for one buyer, and says so. Where each changes goes with it.
+ */
+export function heldFiguresLines(plan: MarketPlan): string[] {
+  const { situation } = plan
+  const home = editableOf(plan)
+  const isHome = home.homePrice !== null || home.propertyKind !== null
+  const held = situation.savings.reduce((sum, account) => sum + account.balance, 0)
+  const income = situation.income
+  const figures = [
+    ...(home.homePrice === null ? [] : [`home price ${euro(home.homePrice)}`]),
+    ...(income?.annualGross === undefined
+      ? []
+      : [`income ${euro(income.annualGross)} a year before tax`]),
+    ...(income?.netMonthly === undefined
+      ? []
+      : [`take-home pay ${euro(income.netMonthly)} a month`]),
+    ...(home.firstTimeBuyer === null
+      ? []
+      : [home.firstTimeBuyer ? 'first-time buyer' : 'has bought before']),
+    ...(home.buyingTogether === true
+      ? ['buying together']
+      : home.buyingTogether === false
+        ? ['buying alone']
+        : isHome
+          ? ['buying alone (the plan was worked out for one buyer)']
+          : []),
+    ...(situation.monthlySaving === undefined
+      ? []
+      : [`saving ${euro(situation.monthlySaving)} a month`]),
+    ...(situation.savings.length === 0 ? [] : [`${euro(held)} held when it was made`]),
+  ]
+  if (figures.length === 0) return []
+  return [
+    `Their figures, held with the plan (never ask for any of these again): ${figures.join('; ')}. ` +
+      'A figure of the plan changes in the app, under Your plan (the date, the price, the ' +
+      'monthly saving, the kind of home, first-time buyer, buying together); what they hold, ' +
+      'with record_holding.',
   ]
 }
 
@@ -426,24 +475,37 @@ const SAVING_GOALS: ReadonlySet<MarketPlan['goals'][number]['kind']> = new Set([
  * The plan's situation as facts, where a figure maps onto a catalogue key without
  * interpretation.
  *
- * Mapped: take-home pay, rent, other outgoings, what they can save a month, savings held (the
- * sum of what they listed), credit card balances (summed), loan repayments (summed, only when
- * every loan states one), and the leading goal as the objective, its target and its date.
- * Not mapped: gross income, because `income.annualBasic` is basic salary and a gross figure
- * may include a bonus; and anything the catalogue's own schema refuses. Every one is recorded
- * as `customer_stated`: the customer said it, to their AI.
+ * Mapped: take-home pay, gross income (as `income.annualGrossStated`, never
+ * `income.annualBasic`: that is basic salary and a gross figure may include a bonus), rent,
+ * other outgoings, what they can save a month, savings held (the sum of what they listed),
+ * credit card balances (summed), loan repayments (summed, only when every loan states one), the
+ * leading goal as the objective, its target and its date, and for a home the price, first-time
+ * buyer and buying alone or together (`editableOf`: the plan's own inputs, else the arrival's
+ * chips and the comparison's price; 2026-11-13, when Saoirse asked a customer for the price and
+ * the income his claimed plan held). Buying together is recorded only when the plan states it.
+ * Not mapped: anything the catalogue's own schema refuses. Every one is recorded as
+ * `customer_stated`: the customer said it, to their AI.
  */
 export function factsFromPlan(plan: MarketPlan): PlanFact[] {
   const { situation } = plan
   const candidates: PlanFact[] = []
   const add = (key: FactKey, subject: PlanFact['subject'], value: unknown) => {
-    if (value === undefined) return
+    if (value === undefined || value === null) return
     candidates.push({ key, subject, value })
   }
-  const whole = (amount: number | undefined) =>
-    amount === undefined ? undefined : Math.round(amount)
+  const whole = (amount: number | null | undefined) =>
+    amount === undefined || amount === null ? undefined : Math.round(amount)
+  const home = editableOf(plan)
 
   add('income.netMonthly', 'primary', whole(situation.income?.netMonthly))
+  add('income.annualGrossStated', 'primary', whole(situation.income?.annualGross))
+  add('housing.purchasePrice', 'household', whole(home.homePrice))
+  add('housing.firstTimeBuyer', 'household', home.firstTimeBuyer)
+  add(
+    'household.buyingWith',
+    'household',
+    home.buyingTogether === null ? undefined : home.buyingTogether ? 'partner' : 'alone',
+  )
   add('expenditure.monthlyRent', 'household', whole(situation.outgoings?.rentMonthly))
   add('expenditure.monthlyOther', 'household', whole(situation.outgoings?.otherMonthly))
   add('goals.monthlySaving', 'household', whole(situation.monthlySaving))
@@ -489,6 +551,26 @@ export function factsFromPlan(plan: MarketPlan): PlanFact[] {
 
   // The catalogue decides what a value may be; a figure it refuses is left out, not coerced.
   return candidates.filter((fact) => factCatalogue[fact.key].schema.safeParse(fact.value).success)
+}
+
+/** The fact each figure the profile edits is recorded as; the kind of home has none. */
+const EDIT_FACTS: Readonly<Record<PlanEdit['field'], FactKey | null>> = {
+  targetDate: 'goals.targetDate',
+  homePrice: 'housing.purchasePrice',
+  monthlySaving: 'goals.monthlySaving',
+  propertyKind: null,
+  firstTimeBuyer: 'housing.firstTimeBuyer',
+  buyingTogether: 'household.buyingWith',
+}
+
+/**
+ * The facts an edit in the profile changes (2026-11-13): the rebuilt plan's `factsFromPlan`
+ * for the edited fields only, so the case's facts follow the plan and what they said in the
+ * conversation about anything else stands. Pure.
+ */
+export function factsFromEdit(plan: MarketPlan, fields: readonly PlanEdit['field'][]): PlanFact[] {
+  const keys = new Set(fields.flatMap((field) => EDIT_FACTS[field] ?? []))
+  return factsFromPlan(plan).filter((fact) => keys.has(fact.key))
 }
 
 const claimedRow = z.object({ id: z.string(), document: z.unknown() })

@@ -97,3 +97,63 @@ export function marketCatalogueSection(summary: MarketSummary | null): string {
     'what is not stated is the fact to relay. Saoi earns nothing from any provider.',
   ].join('\n')
 }
+
+/**
+ * How to use the tools in a market conversation, in place of the Demo Bank POC's (`TOOL_GUIDANCE`,
+ * which walks through product options, comparisons, forms, the partner and the review card,
+ * none of which a market conversation is offered). In the cached prefix: the same bytes for
+ * every market conversation.
+ */
+export const MARKET_TOOL_GUIDANCE = `# Using your tools
+
+- Record as you go. When the customer states something new about themselves or their money,
+  call record_facts in that turn; an account or a debt with its balance is record_holding, and a
+  date that matters to their money is set_reminder. Never ask again for anything the case below
+  holds, the figures of the plan they brought included.
+- Products come from the market tools and nowhere else: show_products for a card on their own
+  figures, lookup_products for a product, provider or rate they name, compare_products for the
+  ones they selected on the cards. Writing about products without the tool leaves them nothing
+  to compare.
+- A card carries its figures. Say one line about why it is there and do not read it out.
+- Anything you said before calling a tool is already on their screen, so carry on from it. A
+  sentence cannot be taken back: decide before you write it.`
+
+/**
+ * The digest's guide for a market conversation, in place of the Demo Bank POC's stage
+ * (`stageSection`): no fork between a plan and a product, no plan to build, nothing to start
+ * (2026-11-13: ten replies in one conversation ended "would you like this kept as a plan that
+ * follows your deposit, or would you rather look at the accounts?", and "yes a plan" ran the
+ * POC's plan flow). The plan is the one they brought; a reply ends on the one question a tool
+ * result carries, or on nothing.
+ */
+export function marketConversationSection(): string {
+  return [
+    '## How this conversation runs',
+    'They brought a plan from their own AI assistant, made with Saoi’s market data, and this',
+    'conversation compares the market on its figures. There is no choice of direction to put to',
+    'them, no plan to build and nothing to start or apply for here.',
+    '',
+    'Length of your reply: one to three sentences unless they ask for more. The cards carry the',
+    'figures.',
+    '',
+    '- The plan is the one they saved: "The comparison they brought", below, whose card opened',
+    '  this conversation. Asked for a plan, or to keep this as one, say in a line that this is',
+    '  the plan they saved and it is kept with this conversation, then carry on with what they',
+    '  asked. Never offer to build, propose or start another.',
+    '- Its figures are held, and listed below: never ask for any of them again. A figure of the',
+    '  plan changes in the app, under Your plan; what they hold changes with record_holding. When',
+    '  they give a new one, say so in a line.',
+    '- End a reply on the one question a tool result carries (its next question, or a',
+    '  comparison’s `decides`), or on nothing. Never end on a choice of what to do next: not "a',
+    '  plan or the accounts", not "would you like me to", not "what would you like to look at".',
+    '- Saoi opens no product. They apply with the provider directly.',
+    '- Never tell them to check anything with the provider or the bank: what is not stated is',
+    '  the fact to relay.',
+  ].join('\n')
+}
+
+/**
+ * The whole reply to a sign-in in a market conversation (2026-11-13: two greetings re-asked "a
+ * plan or the accounts?"): one line, no question, written by the server, not the model.
+ */
+export const MARKET_SIGNED_IN_LINE = 'Signed in; this conversation is kept.'

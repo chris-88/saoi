@@ -363,6 +363,24 @@ export const factCatalogue = {
     extractable: true,
     label: "Partner's annual salary, as the customer described it",
   },
+  /**
+   * What they earn before tax, as they gave it to their own AI with a plan they brought here
+   * (2026-11-13: Saoirse asked a customer what he earned, a figure his claimed plan already held).
+   *
+   * Not `income.annualBasic`: a gross figure may include a bonus, and basic salary is what an
+   * application reads. No journey reads this one. Not extractable: it is written only from the
+   * plan (`factsFromPlan`), and what a customer says about their pay in conversation is still
+   * `income.annualBasic`. Leaving it out of the keys the model records also leaves the Demo Bank
+   * prompt's fact reference as it was.
+   */
+  'income.annualGrossStated': {
+    schema: positiveEuro,
+    subject: 'person',
+    reuse: 'never',
+    sensitivity: 'standard',
+    extractable: false,
+    label: 'Annual income before tax, as given with their plan',
+  },
 
   // ---- Expenditure (§9) ----
   'expenditure.monthlyRent': {

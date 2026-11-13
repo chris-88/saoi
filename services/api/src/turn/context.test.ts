@@ -143,6 +143,13 @@ describe('the return turn after a plan edit', () => {
     expect(instruction).not.toContain('Then name the other things')
   })
 
+  it('ends on nothing: no question about what to look at next (2026-11-13)', () => {
+    const instruction = returnInstruction([edited])
+    expect(instruction).toContain('End there: ask nothing after it')
+    expect(instruction).not.toContain('End by asking')
+    expect(instruction).not.toMatch(/asking what they would like/)
+  })
+
   it('is text only: no show_products or other card unless they ask', () => {
     const instruction = returnInstruction([edited])
     expect(instruction).toContain(
@@ -168,6 +175,19 @@ describe('the return turn after a plan edit', () => {
     const instruction = returnInstruction([{ type: 'application_approved', payload: {} }])
     expect(instruction).toContain('Then call show_status')
     expect(instruction).not.toContain('changed their plan')
+    expect(returnInstruction([{ type: 'application_approved', payload: {} }], {})).toBe(instruction)
+  })
+
+  it('in a market conversation names what changed and asks nothing, with no status card', () => {
+    const instruction = returnInstruction([{ type: 'plan_milestone_reached', payload: {} }], {
+      market: true,
+    })
+    expect(instruction).toContain('"Changed since they were last here"')
+    expect(instruction).toContain('Ask nothing after it.')
+    expect(instruction).not.toContain('show_status')
+    expect(instruction).not.toContain('what they want to deal with first')
+    // A plan edit's return is its own, as it was.
+    expect(returnInstruction([edited], { market: true })).toBe(returnInstruction([edited]))
   })
 })
 

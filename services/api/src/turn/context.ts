@@ -595,7 +595,12 @@ export async function buildGeneration(
     })
   } else if (turn.trigger === 'return') {
     // §36 — the customer did not ask anything; they came back. Lead with what changed.
-    history.push({ role: 'user', content: returnInstruction(loaded.eventsSinceLastSeen) })
+    history.push({
+      role: 'user',
+      content: returnInstruction(loaded.eventsSinceLastSeen, {
+        market: claimedPlans.length > 0 || heldNow.length > 0,
+      }),
+    })
   }
 
   if (history.length === 0) {
@@ -840,13 +845,28 @@ export function returnsAfterPlanEdit(
  * the turn builds on it: no greeting, not the same words again, no status card; what the change
  * means for the options they compare, which now fit and which no longer do, as facts in their
  * figures, never "better" and never a pick. Text only: no `show_products` and no other card,
- * as the customer asked for none (the turn is offered no tool either).
+ * as the customer asked for none (the turn is offered no tool either). It ends on nothing, like
+ * every other return in a market conversation (2026-11-13), where a plan edit always is.
  */
 export function returnInstruction(
   events: readonly { readonly type: string; readonly payload: Record<string, unknown> }[],
+  options: {
+    /**
+     * A market conversation (2026-11-13): no `show_status` (it is not offered) and no question
+     * put back to them; what changed, and nothing after it.
+     */
+    readonly market?: boolean
+  } = {},
 ): string {
   const edits = events.filter((event) => event.type === PLAN_EDITED_EVENT)
   const latest = edits.at(-1)
+  if (latest === undefined && options.market === true) {
+    return (
+      '(The customer has just come back after being away. Open by naming each thing under ' +
+      '"Changed since they were last here", in your own words and as facts. Ask nothing ' +
+      'after it.)'
+    )
+  }
   if (latest === undefined) {
     return (
       '(The customer has just come back after being away. Open by naming each thing under ' +
@@ -871,7 +891,7 @@ export function returnInstruction(
     'show_products or any other tool that shows a card, as they have not asked to see ' +
     'products; when their own next message asks for them, show them then. ' +
     (others ? 'Then name the other things under "Changed since they were last here". ' : '') +
-    'End by asking what they would like to look at next.)'
+    'End there: ask nothing after it, not even what they would like to look at next.)'
   )
 }
 
