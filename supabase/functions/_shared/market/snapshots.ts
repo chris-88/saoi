@@ -1,12 +1,14 @@
-import { boiSnapshot } from './boi.snapshot.ts'
-import { bunqSnapshot } from './bunq.snapshot.ts'
-import { mocoSnapshot } from './moco.snapshot.ts'
+import { ccpcSnapshot } from './ccpc.snapshot.ts'
 import type { MarketProduct, MarketSnapshot } from './schema.ts'
 
-/** Every provider's committed snapshot. A new provider's generated file is added here. */
-export const MARKET_SNAPSHOTS: readonly MarketSnapshot[] = [boiSnapshot, bunqSnapshot, mocoSnapshot]
+/**
+ * The committed snapshot: CCPC's rows, every provider, as the last `--snapshot` refresh read them
+ * (Chris, 2026-11-13: CCPC is the source of every rate). The Bank of Ireland, bunq and MoCo
+ * snapshots read from their own sites were retired with that decision.
+ */
+export const MARKET_SNAPSHOTS: readonly MarketSnapshot[] = [ccpcSnapshot]
 
-/** The fallback when `market_products` is empty: every provider's committed products. */
+/** The fallback when `market_products` holds no CCPC rows: every committed product. */
 export const snapshotProducts: readonly MarketProduct[] = MARKET_SNAPSHOTS.flatMap(
   (snapshot) => snapshot.products,
 )

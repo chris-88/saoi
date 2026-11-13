@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { boiSnapshot } from '../../market/boi.snapshot.ts'
+import { ccpcSnapshot } from '../../market/ccpc.snapshot.ts'
 import { depositRatesOf } from '../../market/schema.ts'
-import { publishedProducts } from './market.ts'
+import { catalogueRecords, publishedProducts } from './market.ts'
 import { rateOf } from './rates.ts'
 
 const byId = (id: string) => {
@@ -16,21 +16,22 @@ const byId = (id: string) => {
  * The comparison card showed features and no figure, which made three savings accounts look
  * interchangeable when one of them pays a full percentage point more than another.
  */
-/** The figures as the committed market snapshot has them, so these hold when the site moves. */
+/** The figures as the committed CCPC snapshot has them, so these hold when CCPC moves. */
+const records = catalogueRecords(ccpcSnapshot.products)
 const market = (id: string) => {
-  const record = boiSnapshot.products.find((candidate) => candidate.productId === id)
+  const record = records.get(id)
   expect(record, `${id} has gone from the market snapshot`).toBeDefined()
   return depositRatesOf(record!)
 }
 
 describe('reading a rate out of the pack', () => {
-  it('leads with the introductory rate and says what follows it', () => {
+  it('leads with the fixed rate and says the rate after it is not stated, as CCPC does not', () => {
     const rate = rateOf(byId('savings.supersaver'))
 
     expect(rate?.headline).toBe(
       `${String(market('savings.supersaver').aerPct)}% AER fixed for 12 months`,
     )
-    expect(rate?.note).toMatch(/then the standard/i)
+    expect(rate?.note).toMatch(/the rate after it is not stated/i)
   })
 
   it('quotes the tiered rate with the tier, not just the flattering half', () => {
@@ -38,7 +39,8 @@ describe('reading a rate out of the pack', () => {
 
     const rates = market('savings.mortgagesaver')
 
-    expect(rate?.headline).toBe(`${String(rates.aerPct)}% AER variable on monthly savings`)
+    // CCPC states neither whether it is variable nor a separate lump-sum rate.
+    expect(rate?.headline).toBe(`${String(rates.aerPct)}% AER`)
     // 0.5% above €15,000 is the part that decides whether the strategy is any good.
     expect(rate?.note).toContain(`${String(rates.aboveTierAerPct)}%`)
     expect(rate?.note).toContain(`€${(rates.tierCapEur ?? 0).toLocaleString('en-IE')}`)

@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import { demoCombinations, combinationsSection } from './combinations.ts'
-import { boiSnapshot } from '../../market/boi.snapshot.ts'
-import { depositRatesOf } from '../../market/schema.ts'
 import { SURFACEABLE_PRODUCTS } from './kb-prompt.ts'
 
 /**
@@ -39,36 +37,17 @@ describe('product combinations', () => {
       .toLowerCase()
 
     expect(said).not.toMatch(/\bbest\b|\byou should\b|\bwe recommend\b|\bideal\b/)
-    expect(combinationsSection()).toMatch(/let them decide/)
+    // The section's own instructions are checked where there is a combination to carry them.
   })
 
-  it('quotes figures that match the market records', () => {
-    const market = (id: string) => {
-      const record = boiSnapshot.products.find((p) => p.productId === id)
-      expect(record, id).toBeDefined()
-      return { ...record!, rates: depositRatesOf(record!) }
-    }
-    const superSaver = market('savings.supersaver').rates
-    const mortgageSaver = market('savings.mortgagesaver')
-    const euro = (n: number | undefined) => `€${(n ?? 0).toLocaleString('en-IE')}`
-    const text = combinationsSection()
-
-    // Every number quoted in the deposit stack, checked against where it came from.
-    expect(text).toContain(`${String(superSaver.aerPct)}% AER fixed`)
-    expect(text).toContain(`${String(mortgageSaver.rates.aerPct)}% AER on monthly contributions`)
-    expect(text).toContain(`${String(mortgageSaver.rates.aboveTierAerPct)}%`)
-    expect(text).toContain(`${euro(mortgageSaver.rates.tierCapEur)} tier`)
-    expect(text).toContain(`${euro(mortgageSaver.conditions.bonus?.amountEur)} before DIRT`)
-  })
-
-  it('carries the bonus conditions, which are what the arrangement turns on', () => {
-    const bonus = boiSnapshot.products.find((p) => p.productId === 'savings.mortgagesaver')
-      ?.conditions.bonus
-
-    expect(bonus).toMatchObject({ minMonthlyEur: 200, minMonths: 6, withinMonths: 30 })
-
-    const text = combinationsSection()
-    expect(text).toContain('€200 a month for six consecutive months')
-    expect(text).toContain('30 months')
+  /*
+   * The deposit stack quoted MortgageSaver's bonus conditions from Bank of Ireland's own page.
+   * CCPC states the €2,000 and the mortgage, not the months, the minimum or the window, so since
+   * CCPC is the only source (2026-11-13) there is no combination to quote: nothing is assumed.
+   * Its arithmetic is covered in `market.test.ts` with rows that state the bonus in full.
+   */
+  it('offers no deposit stack while the bonus conditions are not stated', () => {
+    expect(demoCombinations.map((combination) => combination.id)).not.toContain('deposit_stack')
+    expect(combinationsSection()).toBe('')
   })
 })

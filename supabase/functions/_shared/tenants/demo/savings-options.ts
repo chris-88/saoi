@@ -36,9 +36,15 @@ function optionFor(product: KnowledgeProduct): SavingsOption | null {
   const market = marketOf(product)
   if (market === null) return null
   const { rates, conditions } = market
-  // A source that does not say which kinds of money the account takes cannot be arranged.
-  if (conditions.takesLumpSum === undefined || conditions.takesMonthly === undefined) return null
-  const { takesLumpSum, takesMonthly } = conditions
+  /*
+   * A source that does not say whether the account takes monthly saving cannot be arranged.
+   * CCPC lists regular savers (SuperSaver, GoalSaver) without saying whether they take a lump
+   * sum: no lump sum is placed in one, which assumes nothing it could take (2026-11-13).
+   */
+  if (conditions.takesMonthly === undefined) return null
+  if (conditions.takesLumpSum === undefined && !conditions.takesMonthly) return null
+  const takesMonthly = conditions.takesMonthly
+  const takesLumpSum = conditions.takesLumpSum ?? false
 
   /*
    * The headline is the rate on money held, and for MortgageSaver it only applies to monthly

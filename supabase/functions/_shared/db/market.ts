@@ -4,14 +4,16 @@ import type { MarketRecord } from '../domain/market/types.ts'
 import type { Db } from './case-repository.ts'
 
 /**
- * Market data as a turn should use it: Bank of Ireland's own current rows of `market_products`
- * (the only ones laid over the catalogue), or the committed snapshot when there are none or the
- * table is unreadable (a fresh database, CI, a local stack nobody has refreshed). Each row is
- * re-validated on the way out; one that no longer matches the schema is skipped with a note in
- * the logs, so a product shows no rate rather than a wrong one.
+ * Market data as a turn should use it: every current CCPC row of `market_products`, all
+ * providers (Chris, 2026-11-13: CCPC is the source of every rate; provider sites are not read
+ * for rates), or the committed CCPC snapshot when there are none or the table is unreadable (a
+ * fresh database, CI, a local stack nobody has refreshed). The catalogue overlay
+ * (`tenants/demo/market.ts`) takes Bank of Ireland's from them. Each row is re-validated on the
+ * way out; one that no longer matches the schema is skipped with a note in the logs, so a
+ * product shows no rate rather than a wrong one.
  *
- * Other providers' rows and every CCPC row stay in the table for comparison and the console;
- * they are not read on a turn.
+ * Rows read from a provider's own site before that decision (`source: 'bank'`) stay in the
+ * table with their history; nothing reads them for a figure.
  */
 
 export type LoadedMarket = {
@@ -123,22 +125,25 @@ export function recordsFromRows(rows: readonly MarketHistoryRow[]): readonly Mar
   })
 }
 
-/** The current version of every Bank of Ireland product read from its own site. */
-export async function loadMarket(client: Db): Promise<LoadedMarket> {
-  const result = await client
-    .from('market_products')
-    .select(MARKET_COLUMNS)
-    .eq('provider', 'boi')
-    .eq('source', 'bank')
-    .is('superseded_at', null)
-  const rows = (result.data ?? []) as MarketRow[]
+/** PostgREST returns at most a thousand rows a request; CCPC lists more than seven hundred. */
+const PAGE = 1000
 
-  if (result.error !== null || rows.length === 0) {
-    // Turns read Bank of Ireland's own rows only, whichever providers have a snapshot.
-    return {
-      products: snapshotProducts.filter((product) => product.provider === 'boi'),
-      loaded: false,
-    }
+/** The current version of every CCPC row, all providers. */
+export async function loadMarket(client: Db): Promise<LoadedMarket> {
+  const rows: MarketRow[] = []
+  for (let from = 0; ; from += PAGE) {
+    const result = await client
+      .from('market_products')
+      .select(MARKET_COLUMNS)
+      .eq('source', 'ccpc')
+      .is('superseded_at', null)
+      .order('id', { ascending: true })
+      .range(from, from + PAGE - 1)
+    if (result.error !== null) return { products: snapshotProducts, loaded: false }
+    const page = (result.data ?? []) as MarketRow[]
+    rows.push(...page)
+    if (page.length < PAGE) break
   }
+  if (rows.length === 0) return { products: snapshotProducts, loaded: false }
   return { products: productsFromRows(rows), loaded: true }
 }

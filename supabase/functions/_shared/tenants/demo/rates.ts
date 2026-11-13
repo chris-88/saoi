@@ -60,7 +60,7 @@ function marketRate(market: DepositMarketProduct): Rate {
   if (rates.basis === 'fixed' && rates.fixedMonths !== undefined) {
     const then =
       rates.thenAerPct === undefined
-        ? null
+        ? 'The rate after it is not stated'
         : `Then the standard variable rate, ${String(rates.thenAerPct)}% AER`
     const notes = [then, tier].filter((note): note is string => note !== null)
     return {

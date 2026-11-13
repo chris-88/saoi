@@ -1,14 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import { demoSavingsOptions } from './savings-options.ts'
-import { boiSnapshot } from '../../market/boi.snapshot.ts'
+import { ccpcSnapshot } from '../../market/ccpc.snapshot.ts'
 import { depositRatesOf } from '../../market/schema.ts'
+import { catalogueRecords } from './market.ts'
 import { arrange, type SavingsSituation } from '../../domain/savings/arrange.ts'
 
 const byId = (id: string) => demoSavingsOptions.find((option) => option.id === id)
 
 /** The market record behind an option: what the engine's numbers must agree with. */
+const records = catalogueRecords(ccpcSnapshot.products)
 const market = (id: string) => {
-  const record = boiSnapshot.products.find((candidate) => candidate.productId === id)
+  const record = records.get(id)
   expect(record, id).toBeDefined()
   return { ...record!, rates: depositRatesOf(record!) }
 }
@@ -39,22 +41,21 @@ describe('translating the pack into something that can be arranged', () => {
    * numbers travelling together, ranking on the headline puts €32,000 in the worst home on the
    * page.
    */
-  it('carries the lump-sum rate from the market record', () => {
-    expect(byId('savings.mortgagesaver')?.lumpSumRate).toBeCloseTo(
-      (market('savings.mortgagesaver').rates.lumpSumAerPct ?? Number.NaN) / 100,
-      6,
-    )
+  it('places no lump sum where CCPC does not state one is taken, or at what rate', () => {
+    // CCPC lists MortgageSaver as a regular saver; what a lump sum earns there is not stated.
+    expect(market('savings.mortgagesaver').conditions.takesLumpSum).toBeUndefined()
+    expect(byId('savings.mortgagesaver')?.takesLumpSum).toBe(false)
+    expect(byId('savings.mortgagesaver')?.lumpSumRate).toBeUndefined()
   })
 
-  it('carries the tier and the rate above it', () => {
+  it('carries the tier and the rate above it, from CCPC’s two balance bands', () => {
     expect(byId('savings.mortgagesaver')).toMatchObject({
       tierCap: 15000,
       aboveTierRate: 0.005,
-      maxLumpSum: 20000,
     })
   })
 
-  it('knows which accounts refuse a lump sum', () => {
+  it('knows which accounts take no lump sum, or none CCPC states', () => {
     expect(byId('savings.supersaver')?.takesLumpSum).toBe(false)
     expect(byId('savings.advantage_fixed')?.takesMonthly).toBe(false)
   })
@@ -70,20 +71,13 @@ describe('translating the pack into something that can be arranged', () => {
   })
 
   /**
-   * The bonus conditions are the reason €200 is the number. They come from the product page by
-   * way of the market record, and must arrive in the engine unchanged.
+   * The bonus conditions were the reason €200 was the number, read from Bank of Ireland's page.
+   * CCPC states the €2,000 and the mortgage, not the months, the minimum or the window, so since
+   * CCPC is the only source (2026-11-13) the engine is handed no bonus: nothing is assumed.
    */
-  it('carries the bonus conditions across from the market record', () => {
-    const bonus = market('savings.mortgagesaver').conditions.bonus
-
-    expect(byId('savings.mortgagesaver')?.bonus).toEqual({
-      amount: bonus?.amountEur,
-      requiresMortgageHere: true,
-      minMonthly: bonus?.minMonthlyEur,
-      minMonths: bonus?.minMonths,
-      minTotal: bonus?.minTotalEur,
-      withinMonths: bonus?.withinMonths,
-    })
+  it('hands the engine no bonus whose conditions CCPC does not state', () => {
+    expect(market('savings.mortgagesaver').conditions.bonus).toBeUndefined()
+    expect(byId('savings.mortgagesaver')?.bonus).toBeUndefined()
   })
 })
 
@@ -105,13 +99,11 @@ describe('a lump sum against the real catalogue', () => {
       demoSavingsOptions,
     )
     const lump = result?.allocations.find((allocation) => allocation.cadence === 'once')
-    const lumpRate = (market('savings.mortgagesaver').rates.lumpSumAerPct ?? 0) / 100
     const noticeRate = (market('savings.notice_31_day').rates.aerPct ?? 0) / 100
 
-    expect(lump?.productId).toBe(
-      noticeRate > lumpRate ? 'savings.notice_31_day' : 'savings.mortgagesaver',
-    )
-    expect(lump?.annualRate).toBeCloseTo(Math.max(noticeRate, lumpRate), 6)
+    // MortgageSaver takes no lump sum CCPC states, so the notice account is where it can go.
+    expect(lump?.productId).toBe('savings.notice_31_day')
+    expect(lump?.annualRate).toBeCloseTo(noticeRate, 6)
   })
 })
 
@@ -140,11 +132,12 @@ describe('case c77e613f, against the real catalogue', () => {
       })),
     ).toEqual([
       { id: 'savings.advantage_fixed', amount: 32000, cadence: 'once', termMonths: 6 },
-      { id: 'savings.mortgagesaver', amount: 200, cadence: 'monthly', termMonths: null },
-      { id: 'savings.supersaver', amount: 2300, cadence: 'monthly', termMonths: null },
+      // No €200 into MortgageSaver for its bonus: CCPC does not state the bonus's conditions
+      // (2026-11-13), so the monthly money goes where it earns the most.
+      { id: 'savings.supersaver', amount: 2500, cadence: 'monthly', termMonths: null },
     ])
 
-    expect(result?.bonus?.amount).toBe(2000)
+    expect(result?.bonus ?? null).toBeNull()
     expect(result?.unallocated).toEqual({ lumpSum: 0, monthly: 0 })
   })
 
