@@ -503,8 +503,13 @@ amounts, projections and unknowns, the payoff order, the ranking basis, assumpti
   the token is spent). It records the situation's figures that map cleanly onto the fact
   catalogue (`factsFromPlan` in `_shared/db/saved-plans.ts`: take-home pay, rent, outgoings,
   monthly saving, savings held, card balances, loan repayments, the leading goal, its target and
-  date; never gross income) as `customer_stated`, skipping keys the case holds, and writes
-  `plan_saved` and `plan_claimed`. The same browser opening its link again lands in the same
+  date, and for a home the price, first-time buyer and buying alone or together when stated
+  (`editableOf`); gross income as `income.annualGrossStated`, non-extractable and read by no
+  journey, never as `income.annualBasic`) as `customer_stated`, skipping keys the case holds, and
+  writes `plan_saved` and `plan_claimed`. The digest's plan lines carry the figures it holds in
+  one line (`heldFiguresLines`: price, income, first-time buyer, buying alone or together, the
+  monthly saving, what was held), with "never ask for any of these again" and where each
+  changes (2026-11-13). The same browser opening its link again lands in the same
   conversation; another browser gets 409, an expired link 410 `expired`, an unknown one 404.
 - **Opening** (2026-11-12, "3. Arrival"): the claim writes Saoirse's first message itself, one
   row with the `saved_plan` card (and its `arrival`) and `opening` as the text, then moves
@@ -520,7 +525,8 @@ amounts, projections and unknowns, the payoff order, the ranking basis, assumpti
   with the edit applied, on the inputs it was built on (`MarketPlan.inputs`, kept from
   2026-11-12; older plans read the arrival's chips and the comparison's sort, and the price shown
   is held), keeping `createdAt` and the opening line (`openedWith`) and recording `edits`. The
-  rebuilt plan replaces the claimed plan's document; `plan_edited` carries the changes, the
+  rebuilt plan replaces the claimed plan's document, and the case's facts for the edited figures
+  follow it (`factsFromEdit`, 2026-11-13); `plan_edited` carries the changes, the
   effects (keys month, cash needed, what now fits and no longer fits: fixed terms by the goal's
   date, lender options by the comparison), `reading` and the previous document. `reading` is one
   or two sentences of fact ("Moving the keys to March 2028 means €4,751 less saved by then at
@@ -800,8 +806,14 @@ form tools are gated further on a form existing, and `show_products`, `lookup_pr
 `compare_products` are offered in any stage once the case holds a claimed plan or holdings, and never without. With
 them, the tools that read or start Demo Bank's catalogue (`DEMO_CATALOGUE_TOOLS` in
 `turn/stage.ts`: `show_product_options`, `show_comparison`, `show_quote`, `show_mortgage_rates`,
-`show_arrangement`, `show_transfer`) are withheld. Withholding a tool is enforcement; telling the
-model not to use one is advice.
+`show_arrangement`, `show_transfer`) are withheld, and so is the POC's plan and application arc
+(`DEMO_PLAN_TOOLS`: `propose_plan`, `show_arrangement`, `show_product_options`, `show_review`,
+`show_status`, `show_pause_prompt`, `request_upload`, `show_partner_invite`, the four form
+tools and the three linking tools; 2026-11-13, after "yes a plan" on a claimed plan ran
+`propose_plan` and `show_arrangement`), so a market conversation is offered the same six tools
+in every stage: `record_facts`, `set_reminder`, `record_holding` and the three market tools.
+Withholding a tool is enforcement; telling the model not to use one is advice. A call to a tool
+the turn does not offer is refused unrun (`runSaoirseTurn`), whatever the provider sends.
 
 **A market conversation** (2026-11-13, the same test: a claimed plan or holdings) is prompted
 as Saoi, not Demo Bank: the domain block is `saoiDomainConfig` (Saoi's scope: Irish savings,
@@ -814,6 +826,33 @@ Demo Bank's catalogue (`kb-prompt.ts`), rate table, switching guidance, "How app
 "What the bank can do" and the digest's "Banking here" are left out. The persona block is the
 same (Invariant 5). A case with neither keeps the Demo Bank prompt, journeys and catalogue
 unchanged. The gate's canned refusals (`refusals.ts`) still name Demo Bank in both.
+
+It runs none of the POC's conversation arc either (2026-11-13: ten replies in one conversation
+ended "would you like this kept as a plan that follows your deposit, or would you rather look at
+the accounts?", and the price and income the plan held were asked again). The stage is still
+computed but says nothing: the digest's stage section is replaced by "How this conversation
+runs" (`marketConversationSection`): the plan is the one they saved, and asked for "a plan"
+Saoirse says so in a line and carries on; its figures are held and change under Your plan or
+with `record_holding`; a reply ends on the one question a tool result carries (`nextQuestion`,
+`decides`) or on nothing, never on a choice of what to do next; nothing is started or applied
+for here; nothing is to be checked with the provider. The tool guidance is
+`MARKET_TOOL_GUIDANCE`, naming only the tools offered. The digest leaves out what fed the arc:
+the needs, the goals and what they lack (the plan card's gating), suitability, prospect,
+revived needs, the check-in, the POC's kept plans, plan and arrangement, and the empty
+applications. A return turn names what changed and asks nothing (`returnInstruction` with
+`market`). The saved plan's card needs no tool: the claim writes it as the first message (and
+older claims are shown it on the first turn after), so it is always in the transcript.
+
+**Signing in** writes one "Signed in." and one reply per case (2026-11-13): the app sends a
+"Signed in." `action` turn on every landing after a sign-in, and the same account signing in
+again on another device or tab landed in the same conversation each time (four greetings in one
+day on a claimed-plan case, each after its own Google login). Once a "Signed in." message exists
+from the case's `customer_signed_in` on (`signInAlreadyAnswered`), a later one writes nothing,
+calls no model and ends on the earlier message. In a market conversation the first is answered
+by the server, not the model, with one line and no question (`MARKET_SIGNED_IN_LINE`, "Signed in;
+this conversation is kept."); a Demo Bank sign-in is the model's turn, as before. There is no
+post-check of the model's final text against `adviceWordsIn`: the market rules say never to tell
+the customer to check with a provider, and the tool results carry the same rule.
 
 Stream events are a Zod discriminated union: `text_delta | retract | card | status | done | error`. A round that spoke and then had a tool refused is withdrawn: `retract` takes its characters back off the screen and out of the record, and the refused result tells the model to write again. A handler marks a refusal with `refused: true`; partial rejections from the two recording tools are not refusals.
 
