@@ -561,6 +561,11 @@ export type CaseDigest = {
    */
   readonly productsBasis?: readonly string[]
   /**
+   * What `lookup_products` was asked in earlier turns, newest first: the query and what it
+   * found, never the figures, which are looked up again when they are needed.
+   */
+  readonly productsLookedUp?: readonly string[]
+  /**
    * Whether what they asked for is what suits them, worked out from what they have said about
    * the amount and how soon they mean to repay it. Already decided; the figures are not yours.
    */
@@ -1087,6 +1092,14 @@ function digestSection(digest: CaseDigest): string {
       'a card has been shown). Never say a figure will not be realised unless the row says the',
       'rate after is not stated, and never tell them to check with the provider: the row’s note',
       'is the fact to relay.',
+      'When they name a product, a provider or a rate, call `lookup_products` with their words',
+      'before answering, and answer from what it returns, with the source and the day checked.',
+      ...(digest.productsLookedUp === undefined || digest.productsLookedUp.length === 0
+        ? []
+        : [
+            'Already looked up (call `lookup_products` again for the figures; they are not kept):',
+            ...digest.productsLookedUp.map((line) => `- ${line}`),
+          ]),
       ...(digest.productsShown === undefined || digest.productsShown.length === 0
         ? []
         : [

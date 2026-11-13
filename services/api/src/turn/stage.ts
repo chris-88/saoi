@@ -8,6 +8,9 @@ import type { ToolName } from '@shared/llm/tools.ts'
 import { type describeGoals } from '@shared/db/goals.ts'
 import { type LoadedCase } from '@shared/db/loaded-case.ts'
 
+/** Offered in every stage of a market conversation: the card, and the lookup it answers from. */
+export const MARKET_TOOLS: readonly ToolName[] = ['show_products', 'lookup_products']
+
 /**
  * Which tools a turn is offered, from the stage it is in.
  *
@@ -26,14 +29,15 @@ export function toolsForTurn(
   /**
    * The case has the customer's figures for the market (a claimed plan, or holdings).
    *
-   * `show_products` is offered on that, in whatever stage: the stages are the Demo Bank arc, and
-   * a customer who brought a plan from their own AI asks to see products from the first reply
-   * on. Without either it is withheld, as a card would have nothing to run on.
+   * `show_products` and `lookup_products` are offered on that, in whatever stage: the stages
+   * are the Demo Bank arc, and a customer who brought a plan from their own AI asks about
+   * products from the first reply on. Without either they are withheld, as a card would have
+   * nothing to run on.
    */
   hasFigures = false,
 ): readonly ToolName[] {
   const staged = CONVERSATION[stage].tools
-  const allowed: readonly ToolName[] = hasFigures ? [...staged, 'show_products'] : staged
+  const allowed: readonly ToolName[] = hasFigures ? [...staged, ...MARKET_TOOLS] : staged
   if (hasForm) return allowed
 
   return allowed.filter(
