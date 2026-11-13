@@ -3,6 +3,7 @@ import { loadHoldings } from '@shared/db/holdings.ts'
 import { loadClaimedPlans } from '@shared/db/saved-plans.ts'
 import {
   caseFigures,
+  groupsInWords,
   productsCard,
   productsCardText,
   type RowBasis,
@@ -115,7 +116,11 @@ export const showProductsTool: ToolModule<'show_products'> = {
       result:
         `The card is on screen: "${card.arrangement.title}", ${String(card.rows.length)} rows` +
         (card.more > 0 ? ` and ${String(card.more)} more they can ask for` : '') +
-        `. ${card.arrangement.line} Say one line about what it shows, in their terms, and ask ` +
+        `. ${card.arrangement.line}` +
+        (groupsInWords(card) === null
+          ? ''
+          : ` It is in groups: ${groupsInWords(card) ?? ''}; refer to a group by its label.`) +
+        ' Say one line about what it shows, in their terms, and ask ' +
         'nothing else. Do not read the rows or figures out, do not rank them in words, and ' +
         'never say which one to take: it is a comparison, and they decide.' +
         figureBasisText(outcome.figureBasis),

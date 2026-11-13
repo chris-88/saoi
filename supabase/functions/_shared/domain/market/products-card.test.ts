@@ -6,6 +6,7 @@ import { normaliseMarket } from './normalise.ts'
 import {
   bonusTiming,
   caseFigures,
+  groupsInWords,
   productsCard,
   productsCardText,
   type ProductsResult,
@@ -643,5 +644,75 @@ describe('productsCard: each row’s key facts and detail (2026-11-13)', () => {
     const parsed = marketProductsCardSchema.parse(old)
     expect(parsed.rows[0]?.detail).toBeUndefined()
     expect(parsed.rows[0]?.note).toBe(card.rows[0]?.note)
+  })
+})
+
+describe('productsCard: the rows in groups (2026-11-13)', () => {
+  /** Each group's rows as the card lists them, and the rows in group order. */
+  function groupsOf(card: MarketProductsCard) {
+    const groups = card.arrangement.groups ?? []
+    const flat = groups.flatMap((group) => group.rowIds)
+    expect(flat).toEqual(card.rows.map((row) => row.id))
+    return groups.map((group) => ({
+      label: group.label,
+      rows: group.rowIds.map((id) => card.rows.find((row) => row.id === id)),
+    }))
+  }
+
+  it('held_vs_market: theirs, then the market by rate', () => {
+    const result = productsCard(MARKET, FIGURES, { arrangement: 'held_vs_market' }, PRODUCTS_AS_OF)
+    const groups = groupsOf(cardOf(result))
+    expect(groups.map((group) => group.label)).toEqual(['Yours', 'The market'])
+    expect(groups[0]?.rows.every((row) => row?.held)).toBe(true)
+    expect(groups[1]?.rows.every((row) => row?.held === false)).toBe(true)
+    const rates = (groups[1]?.rows ?? []).map((row) => Number(row?.value.replace(/%.*/, '')))
+    expect(rates).toEqual([...rates].sort((a, b) => b - a))
+    if (result.kind === 'card') {
+      expect(result.figureBasis.map((row) => row.id)).toEqual(result.card.rows.map((row) => row.id))
+    }
+  })
+
+  it('by_access: instant access, then fixed term, each by rate', () => {
+    const groups = groupsOf(
+      cardOf(productsCard(MARKET, FIGURES, { arrangement: 'by_access' }, PRODUCTS_AS_OF)),
+    )
+    expect(groups.map((group) => group.label)).toEqual(['Instant access', 'Fixed term'])
+    expect(groups[0]?.rows.every((row) => row?.kind === 'instant access')).toBe(true)
+    expect(groups[1]?.rows.every((row) => row?.kind.endsWith('fixed'))).toBe(true)
+    for (const group of groups) {
+      const rates = group.rows.map((row) => Number(row?.value.replace(/%.*/, '')))
+      expect(rates, group.label).toEqual([...rates].sort((a, b) => b - a))
+    }
+  })
+
+  it('fits_date: fixed terms that end in time, then instant access, then notice', () => {
+    const groups = groupsOf(
+      cardOf(productsCard(MARKET, FIGURES, { arrangement: 'fits_date' }, PRODUCTS_AS_OF)),
+    )
+    expect(groups.map((group) => group.label)).toEqual(['Fixed term', 'Instant access', 'Notice'])
+    expect(groups[2]?.rows.every((row) => row?.kind.endsWith('notice'))).toBe(true)
+    expect(
+      groupsInWords(
+        cardOf(productsCard(MARKET, FIGURES, { arrangement: 'fits_date' }, PRODUCTS_AS_OF)),
+      ),
+    ).toMatch(
+      /^“Fixed term” \(\d rows?\), “Instant access” \(\d rows?\) and “Notice” \(\d rows?\)$/,
+    )
+  })
+
+  it('mortgage_by_sort: one comparison, no groups', () => {
+    const card = cardOf(
+      productsCard(MARKET, FIGURES, { arrangement: 'mortgage_by_sort' }, PRODUCTS_AS_OF),
+    )
+    expect(card.arrangement.groups).toBeUndefined()
+    expect(groupsInWords(card)).toBeNull()
+  })
+
+  it('a card stored before groups still parses as one list', () => {
+    const card = cardOf(productsCard(MARKET, FIGURES, { arrangement: 'by_access' }, PRODUCTS_AS_OF))
+    const { groups: _groups, ...arrangement } = card.arrangement
+    expect(
+      marketProductsCardSchema.parse({ ...card, arrangement }).arrangement.groups,
+    ).toBeUndefined()
   })
 })

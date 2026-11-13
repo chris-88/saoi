@@ -618,6 +618,9 @@ export type ProductsArrangement = (typeof MARKET_ARRANGEMENT_KINDS)[number]
 /** The most rows a products card shows; the rest are counted in `more`. */
 export const PRODUCTS_CARD_MAX_ROWS = 8
 
+/** The most groups a products card divides its rows into (`arrangement.groups`). */
+export const PRODUCTS_CARD_MAX_GROUPS = 4
+
 /** The most facts a products row puts in front of the customer before they choose (`mustKnow`). */
 export const PRODUCTS_ROW_MAX_MUST_KNOW = 3
 
@@ -656,6 +659,18 @@ export const marketProductsCardSchema = z.object({
     title: z.string(),
     /** Names the arrangement and how to change it, in one short sentence. */
     line: z.string(),
+    /**
+     * The rows in groups, in the card's order (Chris, 2026-11-13: instant access and fixed term
+     * in one undivided list read as one ranking): `held_vs_market` "Yours" and "The market",
+     * `by_access` "Instant access", "Notice" and "Fixed term", `fits_date` "Fixed term",
+     * "Instant access" and "Notice"; a mortgage card has none. Each group's rows keep the card's
+     * order within it, and the rows array is in group order. Optional: cards stored before it
+     * are one list. `more` stays card-level.
+     */
+    groups: z
+      .array(z.object({ label: z.string(), rowIds: z.array(z.string()) }))
+      .max(PRODUCTS_CARD_MAX_GROUPS)
+      .optional(),
   }),
   rows: z
     .array(

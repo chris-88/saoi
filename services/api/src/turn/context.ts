@@ -654,7 +654,7 @@ export function productsBasisLines(events: readonly { readonly payload: unknown 
 
 /**
  * The products cards shown so far, newest last, at most three: "Your account against the market
- * (held_vs_market), your last reply". Pure.
+ * (held_vs_market; in groups: Yours, The market), your last reply". Pure.
  */
 export function productsShownLines(messages: readonly LoadedMessage[]): string[] {
   const replies = messages.filter((message) => message.role === 'assistant')
@@ -662,7 +662,11 @@ export function productsShownLines(messages: readonly LoadedMessage[]): string[]
     .flatMap((message, index) =>
       (message.productsShown ?? []).map((shown) => {
         const ago = replies.length - index
-        return `${shown.title} (${shown.kind}), ${ago === 1 ? 'your last reply' : `${String(ago)} replies ago`}`
+        const groups =
+          shown.groups === undefined || shown.groups.length === 0
+            ? ''
+            : `; in groups: ${shown.groups.join(', ')}`
+        return `${shown.title} (${shown.kind}${groups}), ${ago === 1 ? 'your last reply' : `${String(ago)} replies ago`}`
       }),
     )
     .slice(-3)

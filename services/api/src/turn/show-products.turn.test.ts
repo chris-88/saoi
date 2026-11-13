@@ -177,6 +177,10 @@ describe('a turn that shows products', () => {
     expect(results).toHaveLength(1)
     const result = results[0] ?? ''
     expect(result).toContain('figureBasis')
+    // The groups, by label, so a reply can name them.
+    expect(result).toMatch(
+      /It is in groups: “Yours” \(2 rows\) and “The market” \(6 rows\); refer to a group by its label\./,
+    )
     expect(result).toMatch(
       /- bunq Savings Account: €[\d,]+ counts 3\.11% to 1 January, then 1\.61% to €10,000 and 1\.51% above\./,
     )
@@ -278,6 +282,52 @@ describe('a turn that shows products', () => {
       'Second, 1.00% (held_vs_market): Second line.',
     ])
     expect(productsBasisLines([{ payload: null }, { payload: { arrangement: 'x' } }])).toEqual([])
+  })
+
+  it('reads a stored card’s groups back by label, and names them to the next turn', () => {
+    const row = messageRow.parse({
+      role: 'assistant',
+      content: 'Here it is.',
+      created_at: '2026-11-13T10:00:00Z',
+      cards: [
+        {
+          type: 'market_products',
+          arrangement: {
+            kind: 'by_access',
+            title: 'Instant access against fixed term',
+            line: 'x',
+            groups: [
+              { label: 'Instant access', rowIds: ['a'] },
+              { label: 'Fixed term', rowIds: ['b'] },
+            ],
+          },
+          rows: [],
+        },
+      ],
+    })
+    expect(row.productsShown).toEqual([
+      {
+        kind: 'by_access',
+        title: 'Instant access against fixed term',
+        groups: ['Instant access', 'Fixed term'],
+      },
+    ])
+    const loaded = loadedCase(CASE, {
+      messages: [
+        { role: 'customer', content: 'By access?', cards: [], createdAt: '', timing: null },
+        {
+          role: 'assistant',
+          content: 'Here it is.',
+          cards: ['market_products'],
+          productsShown: row.productsShown,
+          createdAt: '',
+          timing: null,
+        },
+      ],
+    })
+    expect(productsShownLines(loaded.messages)).toEqual([
+      'Instant access against fixed term (by_access; in groups: Instant access, Fixed term), your last reply',
+    ])
   })
 
   it('reads a stored products card back as its arrangement and title only', () => {

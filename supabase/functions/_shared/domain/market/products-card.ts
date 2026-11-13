@@ -1659,6 +1659,81 @@ function mortgageBySort(
 // The entry
 // ---------------------------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------------------------
+// Groups (Chris, 2026-11-13: instant access and fixed term in one undivided list)
+// ---------------------------------------------------------------------------------------------
+
+type Group = NonNullable<MarketProductsCard['arrangement']['groups']>[number]
+
+/** "Instant access", "Notice" or "Fixed term", from a savings row's kind. */
+const accessGroup = (row: Row): string =>
+  row.kind.endsWith('notice') ? 'Notice' : /fixed/.test(row.kind) ? 'Fixed term' : 'Instant access'
+
+/**
+ * How each arrangement divides its rows, and the order of the groups; null: one list (a
+ * mortgage card's options are one comparison).
+ */
+const GROUPING: Readonly<
+  Record<
+    ProductsArrangement,
+    { readonly labelOf: (row: Row) => string; readonly order: readonly string[] } | null
+  >
+> = {
+  held_vs_market: {
+    labelOf: (row) => (row.held ? 'Yours' : 'The market'),
+    order: ['Yours', 'The market'],
+  },
+  by_access: { labelOf: accessGroup, order: ['Instant access', 'Notice', 'Fixed term'] },
+  fits_date: { labelOf: accessGroup, order: ['Fixed term', 'Instant access', 'Notice'] },
+  mortgage_by_sort: null,
+}
+
+/**
+ * The card's rows in groups: each group together, in the arrangement's order, the card's order
+ * kept within it; a group with no rows is left out. The figure basis follows the rows' order.
+ */
+function withGroups(result: ProductsResult): ProductsResult {
+  if (result.kind !== 'card') return result
+  const grouping = GROUPING[result.card.arrangement.kind]
+  if (grouping === null) return result
+  const rank = (row: Row): number => {
+    const index = grouping.order.indexOf(grouping.labelOf(row))
+    return index === -1 ? grouping.order.length : index
+  }
+  const rows = result.card.rows
+    .map((row, index) => ({ row, index }))
+    .sort((a, b) => rank(a.row) - rank(b.row) || a.index - b.index)
+    .map(({ row }) => row)
+  const groups: Group[] = []
+  for (const row of rows) {
+    const label = grouping.labelOf(row)
+    const group = groups.find((item) => item.label === label)
+    if (group === undefined) groups.push({ label, rowIds: [row.id] })
+    else group.rowIds.push(row.id)
+  }
+  const place = new Map(rows.map((row, index) => [row.id, index]))
+  return {
+    ...result,
+    card: { ...result.card, arrangement: { ...result.card.arrangement, groups }, rows },
+    figureBasis: [...result.figureBasis].sort(
+      (a, b) => (place.get(a.id) ?? 0) - (place.get(b.id) ?? 0),
+    ),
+  }
+}
+
+/** "“Instant access” (4 rows) and “Fixed term” (4 rows)": the groups, for the model. */
+export function groupsInWords(card: MarketProductsCard): string | null {
+  const groups = card.arrangement.groups ?? []
+  if (groups.length === 0) return null
+  const parts = groups.map(
+    (group) =>
+      `“${group.label}” (${String(group.rowIds.length)} row${group.rowIds.length === 1 ? '' : 's'})`,
+  )
+  return parts.length === 1
+    ? (parts[0] ?? null)
+    : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1) ?? ''}`
+}
+
 /** Whether the case has anything a products card could run on. */
 export function hasFigures(figures: CaseFigures): boolean {
   return figures.held.length > 0 || figures.monthlySavingEur !== null || figures.priceEur !== null
@@ -1689,11 +1764,11 @@ export function productsCard(
   }
   switch (request.arrangement) {
     case 'held_vs_market':
-      return heldVsMarket(market, figures, request, asOf)
+      return withGroups(heldVsMarket(market, figures, request, asOf))
     case 'by_access':
-      return byAccess(market, figures, request, asOf)
+      return withGroups(byAccess(market, figures, request, asOf))
     case 'fits_date':
-      return fitsDate(market, figures, request, asOf)
+      return withGroups(fitsDate(market, figures, request, asOf))
   }
 }
 
@@ -1703,6 +1778,7 @@ export function productsCardText(card: MarketProductsCard): string {
     card.question,
     card.arrangement.title,
     card.arrangement.line,
+    ...(card.arrangement.groups ?? []).map((group) => group.label),
     ...card.rows.flatMap((row) => [
       row.lead,
       row.kind,
