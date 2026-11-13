@@ -195,6 +195,8 @@ export function casePlanRoutes(options: CasePlanRouteOptions) {
         reminders: moved,
         previous: claimed.plan,
       },
+      fields: result.changes.map((change) => change.field),
+      participantId,
     })
     c.get('log').info('plan edited', {
       requestId: c.get('requestId'),

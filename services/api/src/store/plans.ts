@@ -1,15 +1,16 @@
 import type { Database, Json } from '@shared/db/database.types.ts'
-import { mustWrite, saveMessage, writeEvent } from '@shared/db/case-repository.ts'
+import { mustWrite, recordFacts, saveMessage, writeEvent } from '@shared/db/case-repository.ts'
 import {
   arrivalMessage,
   type ClaimedPlan,
+  factsFromEdit,
   factsFromPlan,
   loadClaimedPlans,
 } from '@shared/db/saved-plans.ts'
 import { seedHoldingsFromPlan } from '@shared/db/holdings.ts'
 import { DATA_NOTICE_EVENT } from '@shared/llm/data-notice.ts'
 import { PLAN_EDITED_EVENT } from '@shared/domain/narration.ts'
-import type { MarketPlan } from '@shared/contracts/market-plan.ts'
+import type { MarketPlan, PlanEdit } from '@shared/contracts/market-plan.ts'
 import type { Db } from './client.ts'
 
 /**
@@ -73,13 +74,19 @@ export type PlanStore = {
   /**
    * An edit in the app (2026-11-12, "6. The saving months"): the rebuilt plan replaces the
    * claimed plan's document (the previous one travels in the event, not a new table), and
-   * `plan_edited` is written with `event`, which the next return turn narrates.
+   * `plan_edited` is written with `event`, which the next return turn narrates. The case's
+   * facts for the edited figures follow the rebuilt plan (`factsFromEdit`, 2026-11-13), so a
+   * price changed in the profile is the price the conversation holds.
    */
   saveEdit(input: {
     planId: string
     caseId: string
     plan: MarketPlan
     event: Record<string, unknown>
+    /** The figures edited; their facts are recorded from the rebuilt plan. */
+    fields?: readonly PlanEdit['field'][]
+    /** The editing participant, for a fact about a person (none of the edited ones is). */
+    participantId?: string | null
   }): Promise<void>
 }
 
@@ -169,7 +176,7 @@ export function supabasePlanStore(db: Db): PlanStore {
       return (result.data ?? []).length === 1
     },
 
-    async saveEdit({ planId, caseId, plan, event }) {
+    async saveEdit({ planId, caseId, plan, event, fields = [], participantId = null }) {
       const result = await db
         .from('saved_plans')
         .update({ document: plan, title: plan.title })
@@ -184,6 +191,15 @@ export function supabasePlanStore(db: Db): PlanStore {
         actor: 'customer',
         payload: event,
       })
+      const edited = factsFromEdit(plan, fields)
+      if (edited.length > 0) {
+        await recordFacts(db, {
+          caseId,
+          facts: edited.map((fact) => ({ key: fact.key, value: fact.value })),
+          participants: { primary: participantId, partner: null },
+          source: 'customer_stated',
+        })
+      }
     },
 
     async recordClaim({ planId, caseId, participantId, plan, client, savedAt }) {
