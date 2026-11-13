@@ -57,7 +57,7 @@ export const provenanceSchema = z
     source: z
       .enum(MARKET_SOURCES)
       .describe(
-        '`bank`: read from the provider’s own website. `ccpc`: read from the Competition and Consumer Protection Commission’s comparison tables.',
+        '`ccpc`: read from the Competition and Consumer Protection Commission’s comparison tables, the source of every rate since 2026-11-13. `bank` (the provider’s own website) is no longer compared.',
       ),
     sourceUrl: z.string().describe('Where the figures were read.'),
     providerUrl: z.string().nullable().describe('The provider’s own page, where known.'),
@@ -85,7 +85,7 @@ export const provenanceSchema = z
         }),
       )
       .describe(
-        'Rows for the same product from another source, set aside because the provider’s own page is read directly.',
+        'Rows for the same product from another source that were set aside. Empty since 2026-11-13: CCPC is the only source compared.',
       ),
   })
   .describe('Where the figures came from and how fresh they are. Nothing here is estimated.')
@@ -311,7 +311,7 @@ export const productViewSchema = z
     rateConfirmed: z
       .boolean()
       .describe(
-        'False for a savings or deposit rate read only from CCPC with nothing stated about what follows it: the provider may pay it only for a period, or only on part of the balance. Shown as a flag when it ranks in the top three.',
+        'False for a savings or deposit rate whose CCPC entry calls it a bonus, introductory or promotional rate, or which is fixed for a period with nothing stated after it: it may be paid only for a period, or only on part of the balance. Shown as a flag when it ranks in the top three.',
       ),
     checks: z
       .array(z.string())
@@ -659,7 +659,7 @@ export const moneyFoundSchema = z
         }),
       )
       .describe(
-        'Money that may be there but is not counted: a rate not confirmed beyond CCPC’s one figure, a current rate not given, bonuses, cashback.',
+        'Money that may be there but is not counted: a rate CCPC’s own words make conditional, a current rate not given, bonuses, cashback.',
       ),
     basis: z.string(),
   })

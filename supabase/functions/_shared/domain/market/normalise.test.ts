@@ -41,33 +41,51 @@ describe('normaliseMarket', () => {
     expect(nordax.ladder).toEqual([{ months: 24, aerPct: 3.45, productId: 'deposit.c7830' }])
   })
 
-  it('prefers the bank’s own row over CCPC’s for the same Bank of Ireland product, and says so', () => {
-    const supersaver = view('boi:savings.supersaver')
-    expect(supersaver.provenance.source).toBe('bank')
-    expect(supersaver.provenance.preferredOver).toEqual([
-      { source: 'ccpc', productId: 'savings.c5047', providerProductName: 'SuperSaver Account' },
+  it('compares CCPC’s rows only: a row read from a provider’s own site is never a figure', () => {
+    // The table still holds Bank of Ireland's rows from its own pages (before 2026-11-13).
+    expect(MARKET_FIXTURE.some((record) => record.product.source === 'bank')).toBe(true)
+    expect(market.products.every((product) => product.provenance.source === 'ccpc')).toBe(true)
+    expect(market.products.every((product) => product.provenance.preferredOver.length === 0)).toBe(
+      true,
+    )
+    expect(market.products.some((product) => product.id === 'boi:savings.supersaver')).toBe(false)
+    expect(view('boi:savings.c5047').name).toBe('SuperSaver Account')
+    // Advantage is CCPC's three terms, folded into one ladder like any other.
+    const advantage = deposit('boi:deposit.ladder_advantage_fixed_term_account_25pct_access')
+    expect(advantage.ladder.map((rung) => [rung.months, rung.aerPct])).toEqual([
+      [6, 2.01],
+      [12, 2.4],
+      [18, 2.48],
     ])
-    expect(market.products.some((product) => product.id === 'boi:savings.c5047')).toBe(false)
-    expect(market.viewOfRow.get('boi:savings.c5047')).toBe('boi:savings.supersaver')
-
-    const advantage = view('boi:savings.advantage_fixed')
-    expect(advantage.provenance.preferredOver.map((row) => row.productId).sort()).toEqual([
-      'deposit.c4161',
-      'deposit.c5330',
-      'deposit.c5596',
-    ])
-    // A different product with a similar name is not paired.
+    // A different product with a similar name stays its own.
     expect(view('boi:deposit.c505').name).toBe('31 Day Set Notice Account')
   })
 
-  it('reads the bank row’s reversion: SuperSaver is 3% for 12 months, then 2%', () => {
-    const terms = deposit('boi:savings.supersaver')
-    expect(terms.introductory).toEqual({ months: 12, thenAerPct: 2 })
+  it('reads a fixed period from CCPC’s own words: SuperSaver’s 12 months, then not stated', () => {
+    const terms = deposit('boi:savings.c5047')
+    expect(terms.introductory).toEqual({ months: 12, thenAerPct: null })
+    expect(terms.basis).toBe('fixed')
     expect(terms.bands).toEqual([
       { fromEur: 0, toEur: 30000, aerPct: 3 },
       { fromEur: 30000, toEur: null, aerPct: 0.5 },
     ])
     expect(terms.maxMonthlyEur).toBe(2500)
+    expect(view('boi:savings.c5047').unknowns.map((unknown) => unknown.field)).toContain(
+      'rates.thenAerPct',
+    )
+  })
+
+  it('reads a bonus from CCPC’s own words, and leaves lump sums unknown: MortgageSaver', () => {
+    const terms = deposit('boi:savings.c583')
+    expect(terms.bonus).toEqual({
+      amountEur: 2000,
+      conditions: [
+        'In CCPC’s words: “€2,000 top up on savings when customers draw down a BOI FTB mortgage”',
+      ],
+    })
+    // Its prose mentions lump sums, but not plainly what one earns: not placed there.
+    expect(terms.takesLumpSum).toBeNull()
+    expect(view('boi:savings.c583').rateConfirmed).toBe(true)
   })
 
   it('flags Raisin-platform products and the home country’s deposit guarantee', () => {
@@ -88,7 +106,7 @@ describe('normaliseMarket', () => {
     // Raisin Bank itself is reached through the platform too.
     expect(view('raisin_bank:deposit.c8504').platform?.name).toBe('Raisin')
     // A foreign bank that is not on the platform: guarantee, no platform.
-    const bunq = view('bunq:deposit.bunq_savings')
+    const bunq = view('bunq:deposit.c3147')
     expect(bunq.platform).toBeNull()
     expect(bunq.depositGuarantee?.country).toBe('Netherlands')
     // An Irish bank: recorded by Saoi, not stated by CCPC.
@@ -175,55 +193,36 @@ describe('normaliseMarket', () => {
     expect(boiBer?.terms.kind === 'mortgage' && boiBer.terms.berFromName).toBe(true)
   })
 
-  it('reads bunq from its own page: a bonus that gives way to base rates at each reset', () => {
-    const bunq = view('bunq:deposit.bunq_savings')
-    expect(bunq.provenance.source).toBe('bank')
-    expect(bunq.provenance.preferredOver.map((row) => row.productId)).toEqual(['deposit.c3147'])
-    expect(market.viewOfRow.get('bunq:deposit.c3147')).toBe('bunq:deposit.bunq_savings')
-    expect(view('bunq:savings.bunq_savings').provenance.source).toBe('bank')
-    expect(bunq.terms.kind === 'deposit' && bunq.terms.thresholdBonus).toMatchObject({
-      bonusAerPct: 3.11,
-      resetMonths: [1, 7],
-      lookbackMonths: 6,
-    })
+  it('reads bunq as CCPC states it: a rate for new customers its own words call a bonus', () => {
+    const bunq = view('bunq:deposit.c3147')
+    expect(bunq.name).toBe('bunq Free')
+    expect(bunq.terms.kind === 'deposit' && bunq.terms.thresholdBonus).toBeNull()
+    expect(bunq.terms.kind === 'deposit' && bunq.terms.rateForNewAccounts).toBe(true)
+    expect(bunq.terms.kind === 'deposit' && bunq.terms.introductory).toBeNull()
+    expect(bunq.rateConfirmed).toBe(false)
     expect(bunq.depositGuarantee?.country).toBe('Netherlands')
     expect(bunq.checks.join(' ')).toMatch(/may not take DIRT at source/)
     expect(view('aib:savings.c396').checks.join(' ')).not.toMatch(/DIRT at source/)
   })
 
-  it('reads MoCo from its own pages: the rate confirmed, who can open it stated', () => {
-    const moco = view('moco:deposit.moco_easysaver')
-    expect(moco.provenance.source).toBe('bank')
-    expect(moco.provenance.preferredOver.map((row) => row.productId)).toEqual(['deposit.c8548'])
-    expect(market.viewOfRow.get('moco:deposit.c8548')).toBe('moco:deposit.moco_easysaver')
+  it('reads MoCo as CCPC states it: 2.1% variable, who can open it not recorded', () => {
+    const moco = view('moco:deposit.c8548')
     expect(moco.rateConfirmed).toBe(true)
-    expect(moco.eligibility).toEqual({
-      minAge: 18,
-      residentIn: 'Ireland',
-      notForUsCitizens: true,
-      individualsOnly: true,
-      jointAccounts: false,
-      needsAccountWithProvider: null,
-    })
-    expect(moco.terms.kind === 'deposit' && moco.terms.interestPaid).toBe('daily')
-    expect(moco.terms.kind === 'deposit' && moco.terms.rateForNewAccounts).toBe(true)
-    const checks = moco.checks.join(' ')
-    expect(checks).toMatch(/aged 18 or over, resident in Ireland, not a US citizen/)
-    expect(checks).toMatch(/rate for new accounts/)
-    // MoCo's page says it deducts DIRT: no note that a bank abroad may not.
-    expect(checks).not.toMatch(/may not take DIRT at source/)
-    expect(checks).not.toMatch(/who can open it is not recorded|CCPC does not record/)
-    for (const check of moco.checks) expect(check.length).toBeLessThanOrEqual(200)
-    expect(view('aib:savings.c396').eligibility).toBeNull()
+    expect(moco.eligibility).toBeNull()
+    expect(moco.terms.kind === 'deposit' && moco.terms.rateForNewAccounts).toBe(false)
+    expect(moco.checks.join(' ')).toMatch(/CCPC does not record who can open it/)
   })
 
-  it('marks a rate resting on CCPC’s one figure as not confirmed', () => {
-    expect(view('aib:savings.c396').rateConfirmed).toBe(false)
-    expect(view('banca_cf:deposit.c7028').rateConfirmed).toBe(false)
-    expect(view('bunq:savings.bunq_savings').rateConfirmed).toBe(true)
-    expect(view('boi:savings.supersaver').rateConfirmed).toBe(true)
+  it('takes CCPC’s figure as the record, unconfirmed only where its own words say it may not hold', () => {
+    // Plain stated rates, bands and terms: the record.
+    expect(view('aib:savings.c396').rateConfirmed).toBe(true)
+    expect(view('moco:deposit.c8548').rateConfirmed).toBe(true)
     expect(view('nordax:deposit.c7830').rateConfirmed).toBe(true)
     expect(view('aib:loan.c174').rateConfirmed).toBe(true)
+    // A bonus rate in its own words, or a fixed period with nothing stated after it: not.
+    expect(view('bunq:deposit.c3147').rateConfirmed).toBe(false)
+    expect(view('boi:savings.c5047').rateConfirmed).toBe(false)
+    expect(view('raisin_bank:deposit.c8504').rateConfirmed).toBe(false)
   })
 
   it('compares only providers that operate in Ireland: Raisin’s platform banks are left out', () => {
@@ -255,7 +254,7 @@ describe('normaliseMarket', () => {
 
 describe('deposit guarantees, from primary pages', () => {
   it('records MoCo under the Austrian scheme, with its source and date', () => {
-    const moco = view('moco:deposit.moco_easysaver')
+    const moco = view('moco:deposit.c8548')
     expect(moco.depositGuarantee).toMatchObject({
       country: 'Austria',
       coverEur: 100_000,
@@ -268,7 +267,7 @@ describe('deposit guarantees, from primary pages', () => {
   })
 
   it('records every Irish deposit-taker it compares, each with a source', () => {
-    for (const id of ['aib:savings.c396', 'boi:savings.supersaver', 'state_savings:deposit.c120']) {
+    for (const id of ['aib:savings.c396', 'boi:savings.c5047', 'state_savings:deposit.c120']) {
       const guarantee = view(id).depositGuarantee
       expect(guarantee?.basis).toBe('recorded_by_saoi')
       expect(guarantee?.sourceUrl).toMatch(/^https:\/\//)

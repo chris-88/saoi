@@ -128,11 +128,29 @@ export function ratePeriod(
 
 /**
  * One line for a tile or a summary that names a top rate with a period ("3.11% is a bonus rate
- * to 1 January; the interest figure counts the rate after it."), or null when the rate holds to
- * the date. It names no provider: the arrival's tiles never do.
+ * to 1 January; the interest figure counts the rate after it."), or, with no period, a rate whose
+ * hold is not stated: a rate for new accounts, or one CCPC's own words make conditional
+ * (2026-11-13: bunq's bonus end is no longer read, so its 3.11% says how long it holds is not
+ * stated). Null when the rate holds to the date as stated. It names no provider: the arrival's
+ * tiles never do.
  */
-export function ratePeriodLine(period: RatePeriod | null, ratePct: number): string | null {
-  if (period === null) return null
+export function ratePeriodLine(
+  period: RatePeriod | null,
+  ratePct: number,
+  holds: { readonly newAccounts: boolean; readonly confirmed: boolean } = {
+    newAccounts: false,
+    confirmed: true,
+  },
+): string | null {
+  if (period === null) {
+    if (holds.newAccounts) {
+      return `${pct(ratePct)} is a rate for new accounts; how long it holds is not stated, and the interest figure counts it throughout.`
+    }
+    if (!holds.confirmed) {
+      return `${pct(ratePct)} is a conditional rate in CCPC’s words; how long it holds is not stated, and the interest figure counts it throughout.`
+    }
+    return null
+  }
   const what = period.kind === 'bonus' ? 'a bonus rate' : 'an introductory rate'
   return (
     `${pct(ratePct)} is ${what} to ${period.endsLong}; ` +

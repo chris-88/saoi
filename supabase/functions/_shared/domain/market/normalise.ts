@@ -7,8 +7,8 @@ import type {
   Provenance,
   UnknownField,
 } from '../../contracts/market-tools.ts'
-import { BANK_CCPC_PAIRS } from '../../market/bank-ccpc-pairs.ts'
 import { cashbackOffered, cashbackPctOf } from '../../market/cashback.ts'
+import { readProse, withProseRead } from '../../market/ccpc-prose.ts'
 import { DEPOSIT_GUARANTEES } from '../../market/deposit-guarantees.ts'
 import type { DepositRates, MarketProduct } from '../../market/schema.ts'
 import type { Market, MarketRecord } from './types.ts'
@@ -16,19 +16,19 @@ import type { Market, MarketRecord } from './types.ts'
 /**
  * Market rows into one comparable view per product.
  *
- * The rows come from two sources with different shapes. CCPC lists every fixed term as its own
- * product; the bank's own page is one product with a ladder. CCPC gives a regular saver's
- * balance bands; the bank gives a cap and a rate above it. Bank of Ireland is read from both.
- * The comparison needs one shape, so this is where:
+ * Every figure comes from CCPC's comparison tables (Chris, 2026-11-13: CCPC is the source of
+ * every rate in the application; provider sites are not read for rates). Rows read from a
+ * provider's own site (`source: 'bank'`) may still be in the table, from before that decision;
+ * they are not compared. CCPC lists every fixed term as its own product, so this is where:
  *
  * - CCPC's per-term rows fold into a ladder (same provider, same name once the term is taken
  *   out, same limits);
- * - Bank of Ireland's own row is shown and its CCPC twin is set aside, by the pairing recorded
- *   in `market/bank-ccpc-pairs.ts`, and the view names what it set aside;
+ * - what a row's own prose states about its rate (a fixed period, a rate for new accounts, a
+ *   bonus; `market/ccpc-prose.ts`) fills the fields CCPC left empty, and nothing else does;
  * - products reached through the Raisin platform are flagged, with the home country's deposit
  *   guarantee where the source names it;
- * - every view carries where it came from, when it was checked, when it last changed and the
- *   attribution the source requires;
+ * - every view carries where it came from, when it was checked, when it last changed and
+ *   CCPC's attribution;
  * - anything the source does not give stays unknown, named, and is never read as zero.
  */
 
@@ -102,7 +102,21 @@ export function normaliseMarket(
     const key = rowKey(record.product)
     versions.set(key, [...(versions.get(key) ?? []), record])
   }
-  const current = records.filter((record) => record.supersededAt === null)
+  // CCPC's rows only, each with what its own prose states read into it.
+  const ccpcRows = records.filter(
+    (record) => record.supersededAt === null && record.product.source === 'ccpc',
+  )
+  const twinProse = proseOfTwins(ccpcRows.map((record) => record.product))
+  const current = ccpcRows.map((record) => ({
+    ...record,
+    product: withProseRead({
+      ...record.product,
+      conditions: {
+        ...record.product.conditions,
+        prose: twinProse.get(twinKey(record.product)) ?? {},
+      },
+    }),
+  }))
   const providerNames = providerNamesFrom(current)
 
   const products: ProductView[] = []
@@ -124,33 +138,6 @@ export function normaliseMarket(
       viewOfRow.set(rowId(row.product), view.id)
       used.add(rowKey(row.product))
     }
-  }
-
-  // ---- Bank-direct rows, with the CCPC rows they replace ---------------------------------
-  for (const bank of current.filter((record) => record.product.source === 'bank')) {
-    const twins = current.filter(
-      (record) =>
-        record.product.source === 'ccpc' &&
-        BANK_CCPC_PAIRS.some(
-          (pair) =>
-            pair.provider === bank.product.provider &&
-            pair.bankId === bank.product.productId &&
-            pair.category === record.product.category &&
-            record.product.provider === pair.provider &&
-            pair.ccpcName.test(record.product.providerProductName) &&
-            (pair.termMonths === undefined ||
-              (record.product.rates.kind === 'deposit' &&
-                record.product.rates.termMonths === pair.termMonths)),
-        ),
-    )
-    const view = viewFor({
-      id: rowId(bank.product),
-      rows: [bank],
-      setAside: twins,
-      versions,
-      providerNames,
-    })
-    emit(view, [bank, ...twins])
   }
 
   // ---- CCPC fixed terms, folded into ladders ---------------------------------------------
@@ -190,6 +177,30 @@ export function normaliseMarket(
   }
 
   return { products, recordsOf, viewOfRow }
+}
+
+/** One product CCPC lists in two tables (bunq Free, MoCo EasySaver): same provider, same name. */
+const twinKey = (product: MarketProduct): string =>
+  `${product.provider}|${product.providerProductName.trim().toLowerCase()}`
+
+/**
+ * Every row's prose, joined across the rows CCPC lists for the same product in its two tables:
+ * bunq Free's lump-sum entry calls its 3.11% a bonus rate for new customers, its regular-savings
+ * entry does not, and it is one account. What either entry states is read for both.
+ */
+function proseOfTwins(products: readonly MarketProduct[]): Map<string, Record<string, string>> {
+  const joined = new Map<string, Record<string, string>>()
+  for (const product of products) {
+    const key = twinKey(product)
+    const held = joined.get(key) ?? {}
+    for (const [label, text] of Object.entries(product.conditions.prose ?? {})) {
+      if (Object.values(held).includes(text)) continue
+      const free = label in held ? `${label} (${product.category})` : label
+      held[free] = text
+    }
+    joined.set(key, held)
+  }
+  return joined
 }
 
 // -------------------------------------------------------------------------------------------
@@ -297,15 +308,18 @@ function viewFor(input: ViewInput): ProductView {
 }
 
 /**
- * Whether a savings or deposit rate is confirmed beyond CCPC's one figure. CCPC states a rate
- * and nothing after it; bunq's "3.11% variable" turned out to be a bonus that lasts only until
- * the next threshold reset. A fixed term is confirmed (the money comes back at maturity); a
- * provider's own page, or a stated reversion, confirms the rest.
+ * Whether a savings or deposit rate is confirmed as the record states it: CCPC's figure is the
+ * record, and it is confirmed unless the record itself says it may not hold. A fixed term is
+ * confirmed (the money comes back at maturity); an introductory or fixed period is confirmed
+ * when the rate after it is stated; any other rate is confirmed unless the row's own words make
+ * it conditional (a bonus rate, an introductory or promotional rate: bunq's "the bonus rate
+ * applies up to a threshold"), when it may be paid only for a period or on part of the balance.
  */
 function rateConfirmed(product: MarketProduct, terms: ProductTerms): boolean {
   if (terms.kind !== 'deposit') return true
-  if (product.source === 'bank' || terms.access === 'fixed_term') return true
-  return terms.introductory !== null && terms.introductory.thenAerPct !== null
+  if (terms.access === 'fixed_term') return true
+  if (terms.introductory !== null) return terms.introductory.thenAerPct !== null
+  return readProse(product).conditional === null
 }
 
 function providerNamesFrom(records: readonly MarketRecord[]): Map<string, string> {
@@ -524,7 +538,9 @@ function depositTerms(
     unknowns.push({ field: 'rates.thenAerPct', meaning: meaningOf('rates.thenAerPct') })
   }
 
+  // A bonus stated in full (none since CCPC is the only source), else as CCPC's words state it.
   const bonus = conditions.bonus
+  const statedBonus = bonus === undefined ? readProse(head).bonus : null
   return {
     kind: 'deposit',
     access,
@@ -558,22 +574,27 @@ function depositTerms(
     rateForNewAccounts: conditions.rateForNewAccounts ?? false,
     dirtApplies: conditions.details?.['DIRT applicable:'] !== DIRT_FREE,
     bonus:
-      bonus === undefined
-        ? null
-        : {
-            amountEur: bonus.amountEur,
-            conditions: [
-              `At least €${String(bonus.minMonthlyEur)} a month for ${String(bonus.minMonths)} months in a row.`,
-              `At least €${bonus.minTotalEur.toLocaleString('en-IE')} saved.`,
-              ...(bonus.firstTimeBuyerOnly ? ['First-time buyers only.'] : []),
-              ...(bonus.requiresMortgageHere
-                ? [
-                    `A mortgage drawn down with the same provider within ${String(bonus.withinMonths)} months.`,
-                  ]
-                : []),
-              ...(bonus.lessDirt ? ['Paid less DIRT.'] : []),
-            ],
-          },
+      statedBonus !== null
+        ? {
+            amountEur: statedBonus.amountEur,
+            conditions: [`In CCPC’s words: “${statedBonus.words}”`],
+          }
+        : bonus === undefined
+          ? null
+          : {
+              amountEur: bonus.amountEur,
+              conditions: [
+                `At least €${String(bonus.minMonthlyEur)} a month for ${String(bonus.minMonths)} months in a row.`,
+                `At least €${bonus.minTotalEur.toLocaleString('en-IE')} saved.`,
+                ...(bonus.firstTimeBuyerOnly ? ['First-time buyers only.'] : []),
+                ...(bonus.requiresMortgageHere
+                  ? [
+                      `A mortgage drawn down with the same provider within ${String(bonus.withinMonths)} months.`,
+                    ]
+                  : []),
+                ...(bonus.lessDirt ? ['Paid less DIRT.'] : []),
+              ],
+            },
   }
 }
 
@@ -746,9 +767,7 @@ function checksFor(
   }
   if (eligibility === null) {
     checks.push(
-      product.source === 'ccpc'
-        ? `Check eligibility with ${providerName}: CCPC does not record who can open it (for example, whether an account with ${providerName} is needed first).`
-        : `Check eligibility with ${providerName}: the rates and limits were read from its own page; who can open it is not recorded.`,
+      `Check eligibility with ${providerName}: CCPC does not record who can open it (for example, whether an account with ${providerName} is needed first).`,
     )
   }
   return checks

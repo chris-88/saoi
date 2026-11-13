@@ -178,18 +178,19 @@ describe('a turn that shows products', () => {
     const result = results[0] ?? ''
     expect(result).toContain('figureBasis')
     expect(result).toMatch(
-      /- bunq Savings Account: €[\d,]+ counts 3\.11% to 1 January, then 1\.61% to €10,000 and 1\.51% above\./,
+      /- bunq Free: €[\d,]+ counts 3\.11%, the rate for new accounts, to [A-Z][a-z]+ \d{4}; how long it holds is not stated\./,
     )
-    expect(result).toMatch(/- MoCo EasySaver: €[\d,]+ counts 2\.10%, the rate for new accounts,/)
+    expect(result).toMatch(/- MoCo EasySaver: €[\d,]+ counts 2\.10%, a variable rate,/)
     expect(adviceWordsIn(result)).toEqual([])
 
     // The card carries the period on the value and the note, and no figureBasis.
     const card = marketProductsCardSchema.parse(
       events.flatMap((event) => (event.type === 'card' ? [event.card] : []))[0],
     )
-    const bunq = card.rows.find((row) => row.id === 'bunq:savings.bunq_savings')
-    expect(bunq?.value).toBe('3.11% to 1 Jan')
-    expect(bunq?.note).toBe('then 1.61% to €10,000 and 1.51% above; the money counts both')
+    // CCPC is the source (2026-11-13): bunq's bonus end, read from its own page, is gone.
+    const bunq = card.rows.find((row) => row.id === 'bunq:deposit.c3147')
+    expect(bunq?.value).toBe('3.11%')
+    expect(bunq?.note).toBe('rate for new accounts; how long it holds is not stated')
     expect(JSON.stringify(card)).not.toContain('figureBasis')
 
     // The event records what the model was handed.
@@ -197,7 +198,7 @@ describe('a turn that shows products', () => {
       .mocked(writeEvent)
       .mock.calls.find((call) => call[1].type === 'products_shown')?.[1]
     const recorded = shown?.payload?.['figureBasis'] as readonly { id: string }[] | undefined
-    expect(recorded?.map((row) => row.id)).toContain('bunq:savings.bunq_savings')
+    expect(recorded?.map((row) => row.id)).toContain('bunq:deposit.c3147')
   })
 
   it('the turn after a card sees what each row’s money figure counts in its digest', async () => {
@@ -249,11 +250,8 @@ describe('a turn that shows products', () => {
       sliders: slidersFor('default'),
       digest,
     })
-    expect(prompt).toContain(
-      '- bunq Savings Account, 3.11% to 1 Jan (held_vs_market): €456 counts 3.11% to 1 January, then 1.61% to €10,000 and 1.51% above.',
-    )
-    expect(prompt).toContain(
-      '€456 counts 3.11% to 1 January, then 1.61% to €10,000 and 1.51% above.',
+    expect(prompt).toMatch(
+      /- bunq Free, 3\.11% \(held_vs_market\): €[\d,]+ counts 3\.11%, the rate for new accounts, to July 2028; how long it holds is not stated\./,
     )
     expect(prompt).toMatch(/- Your BoI savings, 0\.50% \(held_vs_market\): €\d+ counts 0\.50%/)
   })

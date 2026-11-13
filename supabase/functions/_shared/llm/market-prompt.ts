@@ -65,7 +65,7 @@ export function marketCatalogueSection(summary: MarketSummary | null): string {
       : [
           `Saoi holds ${String(summary.total)} products from ${String(summary.byProvider.length)} ` +
             `providers that operate in Ireland, as the Competition and Consumer Protection ` +
-            `Commission (CCPC) and the providers' own pages state them, last checked ` +
+            `Commission's (CCPC) comparison tables state them, last checked ` +
             `${summary.checkedOn === null ? 'on a date not recorded' : longDate(summary.checkedOn)}:`,
           ...summary.byCategory.map(
             (entry) => `- ${String(entry.count)} ${CATEGORY_NAMES[entry.category]}`,

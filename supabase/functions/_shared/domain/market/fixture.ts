@@ -1,10 +1,8 @@
-import { bunqSnapshot } from '../../market/bunq.snapshot.ts'
-import { mocoSnapshot } from '../../market/moco.snapshot.ts'
 import type { MarketRecord } from './types.ts'
 
 /**
- * A slice of `market_products` as it stood on 2026-11-09, for tests: every Bank of Ireland
- * bank-direct row and its CCPC pairs, a spread of other providers' savings and deposits
+ * A slice of `market_products` as it stood on 2026-11-09, for tests: Bank of Ireland's CCPC rows
+ * and the rows once read from its own site, a spread of other providers' savings and deposits
  * (Raisin partners, State Savings, ladders CCPC lists one term at a time), and some loans,
  * cards, accounts and mortgages. Read from the live table; `details` trimmed to the fields the
  * engine reads.
@@ -3395,18 +3393,9 @@ const CCPC_AND_BOI: readonly MarketRecord[] = [
   },
 ]
 
-/** The fixture as it stood before MoCo's own pages were read: MoCo rests on CCPC alone. */
-export const withoutMocoBankRows = (records: readonly MarketRecord[]): readonly MarketRecord[] =>
-  records.filter(
-    (record) => !(record.product.provider === 'moco' && record.product.source === 'bank'),
-  )
-
-/** Plus bunq's and MoCo's own rows, read from their pages (committed snapshots, 2026-11-09). */
-export const MARKET_FIXTURE: readonly MarketRecord[] = [
-  ...CCPC_AND_BOI,
-  ...[...bunqSnapshot.products, ...mocoSnapshot.products].map((product) => ({
-    product,
-    firstSeenAt: product.checkedAt,
-    supersededAt: null,
-  })),
-]
+/**
+ * The fixture as the comparison reads it. Bank of Ireland's rows read from its own site are kept
+ * (the table still holds them, from before CCPC became the only source, 2026-11-13) to show
+ * that nothing reads them for a figure.
+ */
+export const MARKET_FIXTURE: readonly MarketRecord[] = CCPC_AND_BOI

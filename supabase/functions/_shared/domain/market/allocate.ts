@@ -82,11 +82,13 @@ function known(
     .netInterest
 }
 
-/** Views that are one account: the same provider page, or else the view itself. */
+/**
+ * Views that are one account: CCPC lists some accounts in both its regular-savings and its
+ * lump-sum tables (MoCo EasySaver, bunq), as two rows under one name. Same provider, same name:
+ * one account.
+ */
 export function accountOf(product: ProductView): string {
-  return product.provenance.source === 'bank'
-    ? `${product.provider}|${product.provenance.sourceUrl}`
-    : product.id
+  return `${product.provider}|${product.name.trim().toLowerCase()}`
 }
 
 export function allocate(products: readonly ProductView[], input: AllocateInput): Allocation {
@@ -96,9 +98,8 @@ export function allocate(products: readonly ProductView[], input: AllocateInput)
       : [],
   )
   const used = () => slots.filter((slot) => slot.lump > 0 || slot.monthly > 0).length
-  // One account read from one provider page can be listed in both categories (MoCo's and
-  // bunq's savings accounts are savings and deposits): money goes into one of the two views,
-  // never split across them as if they were two accounts.
+  // One account can be listed in both CCPC tables (a savings and a deposit row under one name):
+  // money goes into one of the two views, never split across them as if they were two accounts.
   const inUse = (slot: Slot) =>
     slots.some(
       (other) =>

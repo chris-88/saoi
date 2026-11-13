@@ -659,12 +659,17 @@ export const marketProductsCardSchema = z.object({
         figure: z.string(),
         /**
          * One flag, or null: "then 1.51%; the money counts both", "rate for new accounts; how
-         * long it holds is not stated", "rate from CCPC only; how long it holds is not stated".
+         * long it holds is not stated", "a conditional rate in CCPC’s words; how long it holds
+         * is not stated".
          */
         note: z.string().nullable(),
         /** Their own account, the baseline. */
         held: z.boolean(),
-        /** False where the rate or an incentive rests on CCPC's figure alone. */
+        /**
+         * False where CCPC's own words make the rate conditional (a bonus, introductory or
+         * promotional rate, or a fixed period with nothing stated after it), or a mortgage
+         * incentive is not read from the lender's own page.
+         */
         confirmed: z.boolean(),
       }),
     )

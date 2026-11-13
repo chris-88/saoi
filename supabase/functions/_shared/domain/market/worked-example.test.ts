@@ -289,9 +289,15 @@ describe('build_plan: what the first Claude test showed (2026-11-09)', () => {
     targetDate: '2028-11',
     priority: 1,
   }
+  /*
+   * Without bunq: CCPC's words make its 3.11% a conditional rate with no stated end, so since CCPC
+   * is the only source (2026-11-13) it outearns every term at face value and nothing is locked.
+   * What this tests is the lock thresholds, on the rates that hold.
+   */
+  const held = { ...market, products: market.products.filter((p) => p.rateConfirmed) }
   const plan = (extra: Record<string, unknown> = {}) =>
     buildPlan(
-      market,
+      held,
       buildPlanRequestSchema.parse({ situation: asked, goals: [goal], ...extra }),
       AS_OF,
       CREATED,

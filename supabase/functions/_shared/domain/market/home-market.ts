@@ -149,7 +149,10 @@ function savingsSummary(
   return {
     topRatePct: top.rate,
     topRateProvider: top.product.providerName,
-    topRatePeriod: ratePeriodLine(period, top.rate),
+    topRatePeriod: ratePeriodLine(period, top.rate, {
+      newAccounts: top.terms.rateForNewAccounts,
+      confirmed: top.product.rateConfirmed,
+    }),
     accounts,
     interestToTargetEur: round2(result.netInterest),
     by,

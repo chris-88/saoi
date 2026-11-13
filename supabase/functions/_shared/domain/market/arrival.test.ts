@@ -77,10 +77,10 @@ describe('the arrival on a home plan', () => {
       /^Interest after DIRT on the deposit money to [A-Z][a-z]+ \d{4}, the keys month$/,
     )
     expect(savings?.detail[1]).toMatch(/^Top rate among the \d+ accounts? that take this saving/)
-    // The top rate is bunq's bonus, which ends at the next reset: one line says so, naming no
-    // provider, and that the interest counts the rate after it (2026-11-12).
+    // The top rate is bunq's 3.11% as CCPC states it, for new customers with no end stated: one
+    // line says so, naming no provider (2026-11-13; it named the bonus end from bunq's own page).
     expect(savings?.detail.slice(2)).toEqual([
-      '3.11% is a bonus rate to 1 January; the interest figure counts the rate after it.',
+      '3.11% is a rate for new accounts; how long it holds is not stated, and the interest figure counts it throughout.',
     ])
     // Mortgage: the lowest monthly repayment, the loan and the lowest rate under it.
     expect(mortgage?.qualifier).toBe('from')

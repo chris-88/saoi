@@ -58,7 +58,8 @@ describe('simulateDeposit', () => {
   })
 
   it('honours a monthly cap and says what it could not take', () => {
-    const { figures } = simulateDeposit(terms('boi:savings.supersaver'), {
+    // SuperSaver as CCPC lists it: €5 to €2,500 a month, no lump sum stated.
+    const { figures } = simulateDeposit(terms('boi:savings.c5047'), {
       lumpSum: 5_000,
       monthly: 3_000,
       horizonMonths: 12,
@@ -84,8 +85,9 @@ describe('simulateDeposit', () => {
   })
 
   it('moves to the stated reversion rate after an introductory period', () => {
-    const supersaver = terms('boi:savings.supersaver')
-    const two = simulateDeposit(supersaver, { lumpSum: 0, monthly: 800, horizonMonths: 24 }).figures
+    // 3% fixed for 12 months, then 2%: the shape a stated reversion takes.
+    const stated = flat(3, { basis: 'fixed', introductory: { months: 12, thenAerPct: 2 } })
+    const two = simulateDeposit(stated, { lumpSum: 0, monthly: 800, horizonMonths: 24 }).figures
     expect(two.knownMonths).toBe(24)
     expect(two.stop).toBeNull()
     // Slower in year two (2%) than a flat 3% would be.
@@ -95,6 +97,16 @@ describe('simulateDeposit', () => {
       horizonMonths: 24,
     }).figures
     expect(two.netInterest).toBeLessThan(flatThree.netInterest)
+  })
+
+  it('stops SuperSaver at the end of the 12 fixed months CCPC’s words state, the rate after unknown', () => {
+    const { figures } = simulateDeposit(terms('boi:savings.c5047'), {
+      lumpSum: 0,
+      monthly: 800,
+      horizonMonths: 24,
+    })
+    expect(figures.knownMonths).toBe(12)
+    expect(figures.stop?.reason).toMatch(/not stated/)
   })
 
   it('stops at the end of an introductory period whose reversion is unknown, and says so', () => {
@@ -140,8 +152,20 @@ describe('simulateDeposit', () => {
   })
 })
 
-describe('a threshold bonus (bunq)', () => {
-  const bunq = terms('bunq:deposit.bunq_savings')
+describe('a threshold bonus (the shape bunq’s own page described)', () => {
+  // CCPC states no threshold bonus, so nothing in the market has one since CCPC became the only
+  // source (2026-11-13); the engine still reads the shape, and these keep it right.
+  const bunq = flat(3.11, {
+    thresholdBonus: {
+      bonusAerPct: 3.11,
+      resetMonths: [1, 7],
+      lookbackMonths: 6,
+      baseBands: [
+        { fromEur: 0, toEur: 10_000, aerPct: 1.61 },
+        { fromEur: 10_000, toEur: null, aerPct: 1.51 },
+      ],
+    },
+  })
 
   it('pays the bonus on every euro only until the first reset, then base up to the threshold', () => {
     // Opened in December; the threshold is set on 1 January at December's balance, so a steady

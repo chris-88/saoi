@@ -93,8 +93,8 @@ async function run(provider: ModelProvider, executeTool: ToolExecutor) {
 
 const ANSWER =
   'Both are in the market. Bank of Ireland’s Advantage pays 2.48% AER fixed for 18 months and ' +
-  'AIB’s fixed term deposit 2.26% AER fixed for two years, both from CCPC and the bank’s own ' +
-  'page, checked 9 November 2026; MoCo’s EasySaver is 2.10% variable with instant access.'
+  'AIB’s fixed term deposit 2.26% AER fixed for two years, both from CCPC, checked 9 November ' +
+  '2026; MoCo’s EasySaver is 2.10% variable with instant access.'
 
 describe('a market conversation asked about named products', () => {
   it('offers lookup_products in every stage, and Demo Bank’s catalogue tools in none', () => {
@@ -154,7 +154,8 @@ describe('a market conversation asked about named products', () => {
 
     // Both lookups found their product, with the figure, the period and the answer rule.
     expect(results).toHaveLength(2)
-    expect(results[0]).toContain('Bank of Ireland, Advantage Fixed Term Deposit Account')
+    expect(results[0]).toContain('Bank of Ireland, Advantage Fixed Term Account 25% Access')
+    expect(results[0]).toContain('Source: CCPC')
     expect(results[0]).toContain('Rate: 2.48% AER for 18 months')
     expect(results[1]).toContain('AIB, Personal Fixed Term Deposit')
     expect(results[1]).toContain('Rate: 2.26% AER for 2 years')
@@ -179,7 +180,7 @@ describe('a market conversation asked about named products', () => {
       .mocked(writeEvent)
       .mock.calls.flatMap((call) => (call[1].type === 'products_looked_up' ? [call[1]] : []))
     expect(recordedLookups.map((event) => event.payload?.['ids'])).toEqual([
-      ['boi:savings.advantage_fixed'],
+      ['boi:deposit.ladder_advantage_fixed_term_account_25pct_access'],
       ['aib:deposit.ladder_personal_fixed_term_deposit'],
     ])
     const lines = productsLookedUpLines(
@@ -187,7 +188,7 @@ describe('a market conversation asked about named products', () => {
     )
     expect(lines).toEqual([
       '“AIB 24 month fixed”: AIB Personal Fixed Term Deposit [aib:deposit.ladder_personal_fixed_term_deposit]',
-      '“Bank of Ireland 18 month fixed”: Bank of Ireland Advantage Fixed Term Deposit Account [boi:savings.advantage_fixed]',
+      '“Bank of Ireland 18 month fixed”: Bank of Ireland Advantage Fixed Term Account 25% Access [boi:deposit.ladder_advantage_fixed_term_account_25pct_access]',
     ])
   })
 

@@ -53,11 +53,13 @@ or the monthly repayment, as they choose. Saoi earns nothing from any provider.
 
 ## Where the data comes from
 
-Two sources, side by side: the provider's own website (Bank of Ireland's savings and deposit
-products, and bunq's savings account, so far) and the Competition and Consumer Protection
-Commission's comparison tables. Where Saoi reads a provider directly, that row is shown and the
-CCPC row for the same product is set aside and named. Every product carries its source, when it
+Every rate is from the Competition and Consumer Protection Commission's comparison tables, and
+every result carries CCPC's attribution. Saoi does not read providers' own websites for rates.
+What a product's CCPC entry states in its own words (a fixed period, a rate for new accounts, a
+bonus) is read from those words; nothing else is assumed. Every product carries when it
 was last checked, when Saoi last saw it change, and every field the source does not give.
+Cashback and savings bonuses linked to a mortgage are recorded from the lenders' own pages, with
+their source.
 
 ## Which providers are compared
 
@@ -67,16 +69,14 @@ MoCo). Their deposits may be protected by their home country's deposit guarantee
 than Ireland's, and the result says which. Banks reached only through a deposit platform, such
 as Raisin, are not compared.
 
-A savings rate that rests on CCPC's single figure, with nothing stated about what follows it, is
-flagged as not confirmed when it ranks near the top: some providers pay their headline rate only
-for a period, or only on part of the balance.
+A savings rate whose CCPC entry calls it a bonus, introductory or promotional rate, or which is
+fixed for a period with nothing stated after it, is flagged as not confirmed when it ranks near
+the top: it may be paid only for a period, or only on part of the balance.
 
 ## What the data does not say
 
 Who can open a product (for example, whether an account with the same bank is needed first) is
-not in CCPC's data. Where Saoi has read the provider's own page, the result states who can open
-it as that page does (age, residence, joint accounts); otherwise it says to check eligibility
-with the provider.
+not in CCPC's data, so the result says so and names the provider.
 `
 
 const EARNINGS = `# How Saoi earns
@@ -107,15 +107,13 @@ ${CORE_STATEMENT}
 
 ## The data
 
-Comparison data for most providers is from the Competition and Consumer Protection Commission's
-comparison tables, shown with its attribution:
+Every rate is from the Competition and Consumer Protection Commission's comparison tables,
+shown with its attribution:
 
 > ${CCPC_ATTRIBUTION}
-
-Bank of Ireland's savings and deposit figures are read from Bank of Ireland's own website.
 `
 
 export const ABOUT: Readonly<Record<AboutTopic, About>> = {
-  ranking: { topic: 'ranking', title: 'How Saoi ranks', text: RANKING, updatedOn: '2026-11-10' },
-  earnings: { topic: 'earnings', title: 'How Saoi earns', text: EARNINGS, updatedOn: '2026-11-12' },
+  ranking: { topic: 'ranking', title: 'How Saoi ranks', text: RANKING, updatedOn: '2026-11-13' },
+  earnings: { topic: 'earnings', title: 'How Saoi earns', text: EARNINGS, updatedOn: '2026-11-13' },
 }

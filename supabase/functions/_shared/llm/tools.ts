@@ -378,7 +378,7 @@ export const TOOLS: readonly ToolDefinition[] = [
     name: 'lookup_products',
     description:
       'Look up a product, a provider or a rate the customer names, in the whole Irish market ' +
-      'Saoi holds (every provider CCPC lists, and the providers whose own pages Saoi reads). ' +
+      'Saoi holds (every provider in CCPC’s comparison tables, the source of every rate). ' +
       'Call it before answering whenever they name one: "BOI has an 18-month fix at 2.48%", ' +
       '"what does AIB pay on a 2-year fixed", "is MoCo still 2.1%". Pass their words as the ' +
       'query: the provider and the product or kind ("Bank of Ireland 18 month fixed", "AIB 24 ' +

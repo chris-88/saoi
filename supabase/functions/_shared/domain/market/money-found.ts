@@ -18,7 +18,7 @@ import type { AsOf, Market } from './types.ts'
  * rate and the customer's own figures. Honest by construction:
  *
  * - idle cash counts only where what it earns now was given (an unknown rate is never zero);
- * - only confirmed rates count (a rate resting on CCPC's one figure is shown in `notCounted`);
+ * - only confirmed rates count (a rate CCPC's own words make conditional is shown in `notCounted`);
  * - bonuses and cashback are never counted (the savings figures exclude bonuses; a switch's
  *   saving is the repayment difference only);
  * - debt interest is what clearing it from savings would avoid in the next twelve months, less
@@ -65,7 +65,7 @@ const netOn = (best: Best, amount: number): number =>
   best.figures.paidIn > 0 ? (best.figures.netInterest * amount) / best.figures.paidIn : 0
 
 const sourceOf = (product: ProductView) => ({
-  source: product.provenance.source === 'bank' ? `${product.providerName}’s own site` : 'CCPC',
+  source: 'CCPC',
   sourceUrl: product.provenance.providerUrl ?? product.provenance.sourceUrl,
   checkedAt: product.provenance.checkedAt,
 })
@@ -161,7 +161,7 @@ function finish(
 }
 
 const BASIS =
-  'A year’s figures, after DIRT at 33%: idle cash against the best confirmed instant-access rate (only where its current rate was given), debt interest not paid in the next twelve months less what the same money would earn, and a mortgage switch’s lower repayment. Bonuses, cashback and rates resting on CCPC’s one figure are not counted.'
+  'A year’s figures, after DIRT at 33%: idle cash against the best confirmed instant-access rate (only where its current rate was given), debt interest not paid in the next twelve months less what the same money would earn, and a mortgage switch’s lower repayment. Bonuses, cashback and rates CCPC’s own words make conditional (a bonus, introductory or promotional rate) are not counted. Every rate is CCPC’s.'
 
 /** For a review: what the situation as given could find, before any plan. */
 export function moneyFoundForReview(market: Market, given: Situation, asOf: AsOf): MoneyFound {
@@ -235,7 +235,7 @@ export function moneyFoundForReview(market: Market, given: Situation, asOf: AsOf
         notCounted.push({
           label: `${item.label}: ${displayName(best.any.product)}`,
           annualEur: whole(more),
-          why: `${euro(whole(more))} a year more at ${displayName(best.any.product)}’s rate, but that rate rests on CCPC’s one figure: the provider may pay it only for a period or on part of the balance.`,
+          why: `${euro(whole(more))} a year more at ${displayName(best.any.product)}’s rate, but CCPC’s own words make that rate conditional (a bonus, introductory or promotional rate): it may be paid only for a period or on part of the balance.`,
         })
       }
     }
@@ -304,7 +304,7 @@ export function moneyFoundForPlan(
       notCounted.push({
         label: `${euro(lump.amount)} in ${name}`,
         annualEur: whole(lump.netInterest12 - now * knownShare),
-        why: 'Its rate rests on CCPC’s one figure: the provider may pay it only for a period or on part of the balance, so it is not counted.',
+        why: 'CCPC’s own words make its rate conditional (a bonus, introductory or promotional rate): it may be paid only for a period or on part of the balance, so it is not counted.',
       })
       continue
     }

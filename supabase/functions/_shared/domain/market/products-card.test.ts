@@ -11,7 +11,7 @@ import {
   type ProductsResult,
 } from './products-card.ts'
 import { PRODUCTS_AS_OF, productsHoldings, productsPlan } from './products-card.fixture.ts'
-import type { ProductView } from '../../contracts/market-tools.ts'
+import type { DepositTerms, ProductView } from '../../contracts/market-tools.ts'
 import type { Market } from './types.ts'
 
 const MARKET = normaliseMarket(MARKET_FIXTURE)
@@ -112,8 +112,13 @@ describe('productsCard: arranged by the question asked', () => {
   })
 
   it('fits_date: the MortgageSaver bonus is paid after drawdown, so it is noted and not counted', () => {
-    const card = cardOf(productsCard(MARKET, FIGURES, { arrangement: 'fits_date' }, PRODUCTS_AS_OF))
-    const saver = card.rows.find((row) => row.lead === 'Bank of Ireland MortgageSaver account')
+    // Monthly saving only: CCPC states no lump sum MortgageSaver takes (2026-11-13), so with the
+    // sum held it is not among the eight; on the monthly money alone it is.
+    const monthlyOnly = { ...FIGURES, held: [] }
+    const card = cardOf(
+      productsCard(MARKET, monthlyOnly, { arrangement: 'fits_date' }, PRODUCTS_AS_OF),
+    )
+    const saver = card.rows.find((row) => row.lead === 'Bank of Ireland MortgageSaver Account')
     expect(saver).toBeDefined()
     expect(saver?.note).toBe('bonus paid after drawdown, not counted')
     // What it adds by July 2028 is its interest alone: the €2,000 bonus (€1,340 after DIRT) is not in it.
@@ -127,7 +132,8 @@ describe('productsCard: arranged by the question asked', () => {
 
   it('bonusTiming: after drawdown for a mortgage-linked saver, not stated otherwise', () => {
     const deposits = MARKET.products.filter((product) => product.terms.kind === 'deposit')
-    const saver = deposits.find((product) => product.id === 'boi:savings.mortgagesaver')
+    // CCPC's row for it (`boi:savings.c583`), matched to the brochure's record by name.
+    const saver = deposits.find((product) => product.id === 'boi:savings.c583')
     expect(saver).toBeDefined()
     if (saver === undefined || saver.terms.kind !== 'deposit') return
     expect(bonusTiming(saver, saver.terms, 20)).toBe('after_drawdown')
@@ -256,10 +262,51 @@ describe('productsCard: a rate states its period (2026-11-12)', () => {
     return { card, row, basis: basis.line }
   }
 
+  const MOCO = 'moco:deposit.c8548'
+  const BUNQ = 'bunq:deposit.c3147'
+
+  /** MoCo's view as CCPC states it: the base the synthetic accounts below are built on. */
+  function mocoView(): ProductView & { terms: DepositTerms } {
+    const base = MARKET.products.find((product) => product.id === MOCO)
+    if (base === undefined || base.terms.kind !== 'deposit') throw new Error('no MoCo row')
+    return { ...base, terms: base.terms }
+  }
+
+  /**
+   * A market with one more instant-access account on a threshold bonus, the shape bunq's own page
+   * once described. CCPC states no such bonus, so nothing in the market has one since CCPC became
+   * the only source (2026-11-13); the engine still reads it, and this keeps it covered.
+   */
+  function withThresholdBonus(): Market {
+    const base = mocoView()
+    const bonus: ProductView = {
+      ...base,
+      id: 'test:savings.threshold',
+      name: 'Threshold Saver',
+      provenance: { ...base.provenance, sourceUrl: 'https://example.ie/threshold-saver' },
+      rateConfirmed: true,
+      terms: {
+        ...base.terms,
+        aerPct: 3.11,
+        bands: [{ fromEur: 0, toEur: null, aerPct: 3.11 }],
+        thresholdBonus: {
+          bonusAerPct: 3.11,
+          resetMonths: [1, 7],
+          lookbackMonths: 6,
+          baseBands: [
+            { fromEur: 0, toEur: 10_000, aerPct: 1.61 },
+            { fromEur: 10_000, toEur: null, aerPct: 1.51 },
+          ],
+        },
+        rateForNewAccounts: false,
+      },
+    }
+    return { ...MARKET, products: [...MARKET.products, bonus] }
+  }
+
   /** A market with one more instant-access account, an introductory rate on CCPC's figures. */
   function withIntro(thenAerPct: number | null): Market {
-    const base = MARKET.products.find((product) => product.id === 'moco:savings.moco_easysaver')
-    if (base === undefined || base.terms.kind !== 'deposit') throw new Error('no MoCo row')
+    const base = mocoView()
     const intro: ProductView = {
       ...base,
       id: 'test:savings.intro',
@@ -277,10 +324,15 @@ describe('productsCard: a rate states its period (2026-11-12)', () => {
     return { ...MARKET, products: [...MARKET.products, intro] }
   }
 
-  it('bunq: the bonus to 1 January on the value, the rate after in the note and the basis', () => {
+  it('a threshold bonus: the bonus to 1 January on the value, the rate after in the note and the basis', () => {
     const { row, basis } = rowOf(
-      productsCard(MARKET, FIGURES, { arrangement: 'held_vs_market' }, PRODUCTS_AS_OF),
-      'bunq:savings.bunq_savings',
+      productsCard(
+        withThresholdBonus(),
+        FIGURES,
+        { arrangement: 'held_vs_market' },
+        PRODUCTS_AS_OF,
+      ),
+      'test:savings.threshold',
     )
     expect(row.value).toBe('3.11% to 1 Jan')
     expect(row.note).toBe('then 1.61% to €10,000 and 1.51% above; the money counts both')
@@ -289,10 +341,10 @@ describe('productsCard: a rate states its period (2026-11-12)', () => {
     expect(basis).toBe(`${money} counts 3.11% to 1 January, then 1.61% to €10,000 and 1.51% above.`)
   })
 
-  it('bunq with monthly saving: the bonus on money added after each reset is named', () => {
+  it('a threshold bonus with monthly saving: the bonus on money added after each reset is named', () => {
     const { row, basis } = rowOf(
-      productsCard(MARKET, FIGURES, { arrangement: 'fits_date' }, PRODUCTS_AS_OF),
-      'bunq:savings.bunq_savings',
+      productsCard(withThresholdBonus(), FIGURES, { arrangement: 'fits_date' }, PRODUCTS_AS_OF),
+      'test:savings.threshold',
     )
     expect(row.value).toBe('3.11% to 1 Jan')
     expect(basis).toMatch(
@@ -325,25 +377,68 @@ describe('productsCard: a rate states its period (2026-11-12)', () => {
     expect(basis).toMatch(/^€[\d,]+ counts 4\.50% to May 2027, then 1\.50%\.$/)
   })
 
-  it('a rate for new accounts: how long it holds is not stated, and the row stays confirmed', () => {
+  it('bunq as CCPC states it (2026-11-13): a rate for new accounts, how long it holds not stated', () => {
+    // Its own page's bonus to 1 January is no longer read: CCPC's words say "for new customers"
+    // and call it a bonus rate up to a threshold, with no end date and no rate after it.
     const { row, basis } = rowOf(
       productsCard(MARKET, FIGURES, { arrangement: 'held_vs_market' }, PRODUCTS_AS_OF),
-      'moco:savings.moco_easysaver',
+      BUNQ,
     )
-    expect(row.value).toBe('2.10%')
+    expect(row.value).toBe('3.11%')
     expect(row.note).toBe('rate for new accounts; how long it holds is not stated')
-    expect(row.confirmed).toBe(true)
+    expect(row.confirmed).toBe(false)
     expect(basis).toMatch(
-      /^€[\d,]+ counts 2\.10%, the rate for new accounts, to July 2028; how long it holds is not stated\.$/,
+      /^€[\d,]+ counts 3\.11%, the rate for new accounts, to July 2028; how long it holds is not stated\.$/,
     )
   })
 
+  it('a conditional rate in CCPC’s words: how long it holds is not stated, and the row is not confirmed', () => {
+    const base = mocoView()
+    const conditional: ProductView = {
+      ...base,
+      id: 'test:savings.conditional',
+      name: 'Bonus Saver',
+      provenance: { ...base.provenance, sourceUrl: 'https://example.ie/bonus-saver' },
+      rateConfirmed: false,
+      terms: { ...base.terms, aerPct: 4, bands: [{ fromEur: 0, toEur: null, aerPct: 4 }] },
+    }
+    const { row, basis } = rowOf(
+      productsCard(
+        { ...MARKET, products: [...MARKET.products, conditional] },
+        FIGURES,
+        { arrangement: 'held_vs_market' },
+        PRODUCTS_AS_OF,
+      ),
+      'test:savings.conditional',
+    )
+    expect(row.note).toBe('a conditional rate in CCPC’s words; how long it holds is not stated')
+    expect(row.confirmed).toBe(false)
+    expect(basis).toMatch(/counts 4\.00% as CCPC states it, to July 2028; CCPC’s own words/)
+    expect(basis).not.toMatch(/CCPC only|one figure/)
+  })
+
+  it('MoCo as CCPC states it: a variable rate, confirmed, no period', () => {
+    const { row } = rowOf(
+      productsCard(MARKET, FIGURES, { arrangement: 'held_vs_market' }, PRODUCTS_AS_OF),
+      MOCO,
+    )
+    expect(row.value).toBe('2.10%')
+    // Its one flag is the deposit guarantee abroad; nothing about how long the rate holds.
+    expect(row.note).toBe('Austria deposit guarantee')
+    expect(row.confirmed).toBe(true)
+  })
+
   it('a rate that holds to the date: no period on the value', () => {
-    // Keys in December: bunq's bonus runs past the date, so nothing is stated against it.
+    // Keys in December: the bonus runs past the date, so nothing is stated against it.
     const december = { ...FIGURES, keysMonth: '2026-12' }
     const { row, basis } = rowOf(
-      productsCard(MARKET, december, { arrangement: 'held_vs_market' }, PRODUCTS_AS_OF),
-      'bunq:savings.bunq_savings',
+      productsCard(
+        withThresholdBonus(),
+        december,
+        { arrangement: 'held_vs_market' },
+        PRODUCTS_AS_OF,
+      ),
+      'test:savings.threshold',
     )
     expect(row.value).toBe('3.11%')
     expect(row.note ?? '').not.toMatch(/then|stops|not stated/)
@@ -353,7 +448,7 @@ describe('productsCard: a rate states its period (2026-11-12)', () => {
   it('a fixed term that ends before the date: as before, and the basis says the money stops', () => {
     const { row, basis } = rowOf(
       productsCard(MARKET, FIGURES, { arrangement: 'held_vs_market' }, PRODUCTS_AS_OF),
-      'boi:savings.advantage_fixed',
+      'boi:deposit.ladder_advantage_fixed_term_account_25pct_access',
     )
     expect(row.value).toBe('2.48%')
     expect(row.note).toBe('interest to May 2028 only: the rate after is not stated')
@@ -372,7 +467,7 @@ describe('productsCard: a rate states its period (2026-11-12)', () => {
   })
 
   it('every new string is free of advice and instruction', () => {
-    for (const market of [MARKET, withIntro(null), withIntro(1.5)]) {
+    for (const market of [MARKET, withIntro(null), withIntro(1.5), withThresholdBonus()]) {
       for (const arrangement of ['held_vs_market', 'by_access', 'fits_date'] as const) {
         const result = productsCard(market, FIGURES, { arrangement }, PRODUCTS_AS_OF)
         const card = cardOf(result)

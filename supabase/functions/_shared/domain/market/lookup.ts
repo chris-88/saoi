@@ -41,7 +41,7 @@ export type LookupFact = {
   readonly access: string
   /** What the source states about it: limits, bonuses, who can open it, its own words. */
   readonly conditions: readonly string[]
-  /** "CCPC" or "Bank of Ireland's own page". */
+  /** "CCPC": the source of every rate. */
   readonly source: string
   readonly attribution: string | null
   /** YYYY-MM-DD: the day the figures were last read. */
@@ -527,7 +527,7 @@ function conditionsOf(market: Market, view: ProductView): string[] {
 }
 
 function sourceOf(view: ProductView): string {
-  return view.provenance.source === 'ccpc' ? 'CCPC' : `${view.providerName}’s own page`
+  return view.provenance.source === 'ccpc' ? 'CCPC' : view.provenance.source
 }
 
 function factsOf(market: Market, view: ProductView, term: number | null): LookupFact {
@@ -578,7 +578,7 @@ function factLines(fact: LookupFact, index: number): string[] {
     `   Confirmed: ${
       fact.confirmed
         ? 'yes'
-        : 'no, the rate rests on CCPC’s one figure and nothing is stated about what follows it'
+        : 'no, CCPC’s own words make it a conditional rate (a bonus, introductory or promotional rate, or a period with nothing stated after it)'
     }.`,
   ]
 }

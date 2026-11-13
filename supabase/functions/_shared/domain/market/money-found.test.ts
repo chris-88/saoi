@@ -6,7 +6,7 @@ import {
   reviewResponseSchema,
   type Situation,
 } from '../../contracts/market-tools.ts'
-import { MARKET_FIXTURE, withoutMocoBankRows } from './fixture.ts'
+import { MARKET_FIXTURE } from './fixture.ts'
 import { normaliseMarket } from './normalise.ts'
 import { buildPlan } from './plan.ts'
 import { review } from './review.ts'
@@ -59,15 +59,15 @@ describe('money found', () => {
   })
 
   it('counts idle cash when its rate is given, against a confirmed rate only', () => {
-    // MoCo as CCPC alone lists it: its rate is shown, not counted.
-    const ccpcMoco = normaliseMarket(withoutMocoBankRows(MARKET_FIXTURE))
+    // bunq as CCPC lists it: a bonus rate in its own words, so it is shown, not counted.
     const request = reviewRequestSchema.parse({ situation: situation(0), goals: [goal] })
-    const found = review(ccpcMoco, request, AS_OF).moneyFound
+    const found = review(market, request, AS_OF).moneyFound
     const idle = found.parts.find((part) => part.kind === 'idle_cash')
     expect(idle).toBeDefined()
     // The money that clears the loan is not counted again as idle.
     expect(idle?.label).toMatch(/€16,000/)
-    expect(found.notCounted.some((item) => /CCPC’s one figure/.test(item.why))).toBe(true)
+    expect(found.notCounted.some((item) => /make that rate conditional/.test(item.why))).toBe(true)
+    expect(found.parts.every((part) => part.source === 'CCPC')).toBe(true)
   })
 
   it('puts money into one account once, though its page lists it as savings and deposit', () => {
@@ -92,11 +92,11 @@ describe('money found', () => {
     }
   })
 
-  it('counts MoCo once its own pages confirm the rate', () => {
+  it('counts MoCo at the rate CCPC states, with CCPC as the source', () => {
     const found = reviewOf(situation(0)).moneyFound
     const idle = found.parts.find((part) => part.kind === 'idle_cash')
     expect(idle?.label).toMatch(/MoCo EasySaver/)
-    expect(idle?.source).toBe('MoCo’s own site')
+    expect(idle?.source).toBe('CCPC')
     expect(found.notCounted.some((item) => /MoCo/.test(item.label))).toBe(false)
   })
 

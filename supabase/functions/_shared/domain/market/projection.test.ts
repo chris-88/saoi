@@ -7,9 +7,18 @@ import { MarketInputError } from './search.ts'
 
 const market = normaliseMarket(MARKET_FIXTURE)
 const AS_OF = '2026-11-09'
+/**
+ * Without bunq: CCPC's words make its 3.11% a conditional rate and state no end, so since CCPC is
+ * the only source (2026-11-13) it outearns every term at face value. These tests are about how
+ * money is split; the conditional rate has tests of its own.
+ */
+const withoutConditional = {
+  ...market,
+  products: market.products.filter((product) => product.rateConfirmed),
+}
 
 describe('allocate', () => {
-  const pool = allocatable(market.products, {
+  const pool = allocatable(withoutConditional.products, {
     horizonMonths: 24,
     lockAllowed: true,
   })
@@ -88,7 +97,7 @@ describe('project', () => {
         horizonMonths: 24,
         lines: [
           { productId: 'aib:deposit.ladder_personal_fixed_term_deposit', lumpSum: 25_000 },
-          { productId: 'boi:savings.supersaver', monthly: 800 },
+          { productId: 'aib:savings.c396', monthly: 800 },
         ],
         targetAmount: 40_000,
       },
@@ -133,7 +142,11 @@ describe('project', () => {
   })
 
   it('finds the best available split when no products are named', () => {
-    const result = project(market, { horizonMonths: 24, lumpSum: 25_000, monthly: 800 }, AS_OF)
+    const result = project(
+      withoutConditional,
+      { horizonMonths: 24, lumpSum: 25_000, monthly: 800 },
+      AS_OF,
+    )
     expect(result.lines.length).toBeGreaterThan(1)
     expect(result.basis).toMatch(/best available/)
   })

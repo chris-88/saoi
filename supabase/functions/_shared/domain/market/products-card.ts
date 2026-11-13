@@ -408,9 +408,9 @@ function savingsWords(
     return {
       value,
       period: false,
-      note: 'rate from CCPC only; how long it holds is not stated',
+      note: 'a conditional rate in CCPC’s words; how long it holds is not stated',
       figureBasis:
-        `${amount} counts ${pct(rate)}, CCPC’s one figure, ${to}; how long it holds is not stated.` +
+        `${amount} counts ${pct(rate)} as CCPC states it, ${to}; CCPC’s own words make it a conditional rate (a bonus, introductory or promotional rate), and how long it holds is not stated.` +
         notPlaced,
     }
   }
@@ -620,7 +620,7 @@ function coverageLine(
   const left = excluded.reduce((sum, item) => sum + item.count, 0)
   const top = [...excluded].sort((a, b) => b.count - a.count)[0]
   return (
-    `${String(matched)} ${what} on the Irish market take this money, from CCPC's comparison tables and the providers' own pages` +
+    `${String(matched)} ${what} on the Irish market take this money, from CCPC's comparison tables` +
     (checked === null ? '' : `, the oldest figure checked ${checked.slice(0, 10)}`) +
     (left === 0 || top === undefined
       ? '.'
@@ -852,14 +852,21 @@ export function bonusTiming(
   terms: DepositTerms,
   horizonMonths: number,
 ): 'by_keys' | 'after_drawdown' | 'not_stated' {
-  const saver = (LINKED_SAVERS[product.provider] ?? []).find((item) =>
-    product.id.endsWith(`:${item.productId}`),
+  // By the saver's name: CCPC's id for it (`boi:savings.c583`) is not the brochure's.
+  const saver = (LINKED_SAVERS[product.provider] ?? []).find(
+    (item) =>
+      product.id.endsWith(`:${item.productId}`) ||
+      product.name.toLowerCase().startsWith(item.name.toLowerCase()),
   )
   if (saver !== undefined) {
     if (saver.paid === 'after_drawdown') return 'after_drawdown'
     return saver.minMonths <= horizonMonths ? 'by_keys' : 'not_stated'
   }
-  if ((terms.bonus?.conditions ?? []).some((line) => /mortgage drawn down/i.test(line))) {
+  if (
+    (terms.bonus?.conditions ?? []).some((line) =>
+      /mortgage (?:is )?drawn down|\bdraws? down (?:a|an|the|their)\b[^.]*\bmortgage\b/i.test(line),
+    )
+  ) {
     return 'after_drawdown'
   }
   return 'not_stated'
@@ -1236,7 +1243,7 @@ function mortgageBySort(
         objective: `${home.sortedBy} Each option is a lender’s product per rate type and fixed period, its cost over the first ${String(HORIZON_YEARS)} years being interest and the valuation fee less cashback and any savings bonus.`,
         assumptions: [...home.assumptions],
         coverage:
-          `${String(home.pathways.length)} options from ${String(lenders)} lender${lenders === 1 ? '' : 's'} that fit ${whole(home.loan)} at ${String(home.ltvPct)}% loan-to-value, from CCPC's mortgage tables and the lenders' own pages` +
+          `${String(home.pathways.length)} options from ${String(lenders)} lender${lenders === 1 ? '' : 's'} that fit ${whole(home.loan)} at ${String(home.ltvPct)}% loan-to-value, the rates from CCPC's mortgage tables and cashback and savings bonuses as the lenders' own pages state them` +
           (checked === null ? '' : `, the oldest checked ${checked.slice(0, 10)}`) +
           (home.leftOut.length === 0 ? '.' : `; left out: ${home.leftOut.join(' ')}`) +
           ' The lender’s own assessment decides what is lent; the Central Bank limits are what the limits allow.',

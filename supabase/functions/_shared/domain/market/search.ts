@@ -56,12 +56,12 @@ const LOAN_PURPOSE_LABELS: Readonly<Record<NonNullable<SearchRequest['purpose']>
   student: 'Student loans',
 }
 
-/** Results this high carry the flag below when their rate rests on CCPC's one figure. */
+/** Results this high carry the flag below when CCPC's own words make their rate conditional. */
 const UNCONFIRMED_FLAG_TOP = 3
 
 /** Under 200 characters: it travels into a plan's checks, which the plan contract caps there. */
 export const UNCONFIRMED_RATE =
-  'Introductory or tiered rate not confirmed: CCPC states only this rate. The provider may pay it only for a period or on part of the balance; check its terms.'
+  'A conditional rate: CCPC’s own words call it a bonus, introductory or promotional rate, so it may be paid only for a period or on part of the balance, and how long it holds is not stated.'
 
 const NOT_FOR_ADULT_SAVING = /child|kid|junior|teen|student|third level/i
 

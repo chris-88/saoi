@@ -37,7 +37,7 @@ describe('lookupProducts', () => {
     expect(easySaver?.product).toBe('MoCo EasySaver')
     expect(easySaver?.rate).toBe('2.10% AER variable')
     expect(easySaver?.access).toBe('instant access')
-    expect(easySaver?.conditions.join(' ')).toMatch(/opened now/)
+    expect(easySaver?.source).toBe('CCPC')
   })
 
   it('finds the 24-month term of AIB’s fixed term deposit, with its source and day', () => {
@@ -59,13 +59,18 @@ describe('lookupProducts', () => {
 
   it('finds Bank of Ireland’s 18-month fixed by the bank’s name and the customer’s words', () => {
     const outcome = lookupProducts(MARKET, { query: 'Bank of Ireland 18m fix at 2.48%' })
-    expect(outcome.matches.map((fact) => fact.id)).toEqual(['boi:savings.advantage_fixed'])
+    expect(outcome.matches.map((fact) => fact.id)).toEqual([
+      'boi:deposit.ladder_advantage_fixed_term_account_25pct_access',
+    ])
     expect(outcome.matches[0]?.rate).toMatch(/^2\.48% AER for 18 months/)
+    expect(outcome.matches[0]?.source).toBe('CCPC')
   })
 
   it('says when the products found do not list the term asked for', () => {
     const outcome = lookupProducts(MARKET, { query: 'BOI Advantage fixed 24 month' })
-    expect(outcome.matches.map((fact) => fact.id)).toEqual(['boi:savings.advantage_fixed'])
+    expect(outcome.matches.map((fact) => fact.id)).toEqual([
+      'boi:deposit.ladder_advantage_fixed_term_account_25pct_access',
+    ])
     expect(outcome.termNotListed).toBe(24)
     expect(lookupResultText(outcome)).toContain('None of these lists a 24-month term.')
   })

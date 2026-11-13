@@ -120,13 +120,13 @@ describe('the home calculator with the market beside it', () => {
     expect(savingsLine).toMatch(
       /^Savings: the top rate on the market is \d+\.\d{2}% \(.+\), about €[\d,]+ interest after DIRT by April 2028 in that account; \d+ accounts fit\./,
     )
-    // bunq's 3.11% is a bonus to the next reset: the line names its end, and the interest
-    // already counts the rate after it (2026-11-12).
+    // bunq's 3.11% as CCPC states it (2026-11-13): for new customers, no end stated, so the line
+    // says how long it holds is not stated (it named the bonus end from bunq's own page before).
     expect(savingsLine).toMatch(
-      / 3\.11% is a bonus rate to 1 January; the interest figure counts the rate after it\.$/,
+      / 3\.11% is a rate for new accounts; how long it holds is not stated, and the interest figure counts it throughout\.$/,
     )
     expect(result.market?.savings?.topRatePeriod).toBe(
-      '3.11% is a bonus rate to 1 January; the interest figure counts the rate after it.',
+      '3.11% is a rate for new accounts; how long it holds is not stated, and the interest figure counts it throughout.',
     )
     expect(mortgageLine).toMatch(
       /^Mortgages: \d+ fit €360,000 over 30 years, from €[\d,]+ to €[\d,]+ a month\.$/,
