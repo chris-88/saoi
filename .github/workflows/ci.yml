@@ -84,7 +84,7 @@ jobs:
           cache: npm
           cache-dependency-path: services/api/package-lock.json
 
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@v3
         with:
           version: 2.108.0
 
