@@ -1,7 +1,13 @@
 import { z } from 'zod'
 import { DOCUMENT_TYPES, PRODUCTS } from '../domain/journey.ts'
 import { APPLICATION_STATES } from '../domain/state-machine.ts'
-import { planArrivalViewSchema, planRouteSchema, upgradeStoredArrival } from './market-plan.ts'
+import {
+  PLAN_CHOICE_SLOTS,
+  planArrivalViewSchema,
+  planChoiceSchema,
+  planRouteSchema,
+  upgradeStoredArrival,
+} from './market-plan.ts'
 
 /**
  * Cards are what the model asks for and the server renders.
@@ -575,6 +581,10 @@ export const savedPlanCardSchema = z.object({
             confirmed: z.boolean(),
             /** The figure the comparison is sorted by, short: "€49,338 / 5 yrs", "€1,362/mo". */
             lead: z.string().optional(),
+            /** The option's row id, to choose it for the mortgage (`POST …/plan/choices`). */
+            rowId: z.string().optional(),
+            /** Set when this option is the customer's mortgage choice. */
+            chosen: z.enum(PLAN_CHOICE_SLOTS).optional(),
           }),
         )
         .max(3),
@@ -591,6 +601,17 @@ export const savedPlanCardSchema = z.object({
    * them (2026-11-12). Optional: other plans, and plans saved before then, have none.
    */
   arrival: planArrivalViewSchema.optional(),
+  /**
+   * What the customer chose for each part of the plan (2026-11-13), as `GET …/plan` returns
+   * them; null: open. Optional: cards stored before it carry none.
+   */
+  choices: z
+    .object({
+      lump_sum: planChoiceSchema.nullable(),
+      monthly_saving: planChoiceSchema.nullable(),
+      mortgage: planChoiceSchema.nullable(),
+    })
+    .optional(),
   createdAt: z.string(),
   dataCheckedAt: z.string(),
 })
@@ -719,6 +740,11 @@ export const marketProductsCardSchema = z.object({
          * Netherlands, not Ireland", "Monthly saving not accepted; lump sum only".
          */
         mustKnow: z.array(z.string()).max(PRODUCTS_ROW_MAX_MUST_KNOW).optional(),
+        /**
+         * The part of the plan this row is the customer's choice for (2026-11-13), so the card
+         * can badge it; absent when it is not chosen.
+         */
+        chosen: z.enum(PLAN_CHOICE_SLOTS).optional(),
       }),
     )
     .max(PRODUCTS_CARD_MAX_ROWS),
@@ -801,6 +827,8 @@ export const productComparisonCardSchema = z
           brand: providerBrandSchema.nullable().optional(),
           /** "instant access", "18-month fixed", "31-day notice". */
           kind: z.string(),
+          /** The part of the plan this column is the customer's choice for; absent: not chosen. */
+          chosen: z.enum(PLAN_CHOICE_SLOTS).optional(),
         }),
       )
       .min(COMPARISON_MIN_COLUMNS)

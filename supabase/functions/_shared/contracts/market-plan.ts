@@ -417,6 +417,81 @@ export const planEditSchema = z.object({
 })
 export type PlanEdit = z.infer<typeof planEditSchema>
 
+/**
+ * The parts of a plan the customer chooses a product for (Chris, 2026-11-13: "the goal is to get
+ * the customer to pick products from the product lists we're presenting, so that we have a goal
+ * in mind of what they're going to do"): the sum held, the monthly saving and the mortgage. A
+ * choice is the customer's, committed from a card through `POST /api/cases/{id}/plan/choices`;
+ * the model never makes one.
+ */
+export const PLAN_CHOICE_SLOTS = ['lump_sum', 'monthly_saving', 'mortgage'] as const
+export type PlanChoiceSlot = (typeof PLAN_CHOICE_SLOTS)[number]
+
+/** Repeats `PRODUCT_ROW_ID_PATTERN` (`contracts/cards.ts`); `contracts.test.ts` holds them equal. */
+export const PLAN_ROW_ID_PATTERN = /^[A-Za-z0-9_.:@-]+$/
+
+/**
+ * One choice as the customer made it, with the row's key facts as the products card showed them
+ * when it was made. Every word is rebuilt on the server from the market by `rowId` (the products
+ * card's rules; a mortgage from the plan's comparison options), never taken from the client.
+ */
+export const planChoiceSchema = z.object({
+  slot: z.enum(PLAN_CHOICE_SLOTS),
+  /** The row id on the card: a market product id, a ladder rung's row id, `held:<n>`, or a mortgage option's `rowId`. */
+  rowId: z.string().min(1).max(160).regex(PLAN_ROW_ID_PATTERN),
+  /** The provider and product: "bunq Savings Account". */
+  lead: text(160),
+  /** The provider's id (`bunq`, `boi`), for its logo; absent for their own account not matched. */
+  providerId: z
+    .string()
+    .regex(/^[a-z0-9_]{2,40}$/)
+    .optional(),
+  /** "instant access", "18-month fixed", "3-year fixed at 3.45%". */
+  kind: text(80),
+  /** The headline: "3.11% to 1 Jan", "€1,751/mo". */
+  value: text(80),
+  /** The money in their figures when it was chosen: "€815 by Jul 2028". */
+  figure: text(160),
+  chosenAt: isoDateTime,
+  /**
+   * YYYY-MM-DD the rate or the term ends, where it does: a bonus or introductory rate's end, a
+   * fixed term's maturity counted from the day it was chosen, a mortgage's fixed period counted
+   * from the keys month. A reminder is kept for it.
+   */
+  endsOn: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+})
+export type PlanChoice = z.infer<typeof planChoiceSchema>
+
+/**
+ * A choice as the plan document stores it: what the customer sees, plus the reminder kept for
+ * its end and the market rows the alerts run watches for it. Never sent to the apps.
+ */
+export const storedPlanChoiceSchema = planChoiceSchema.extend({
+  reminderId: z.uuid().optional(),
+  watches: z
+    .array(
+      z.object({
+        provider: z.string().regex(/^[a-z0-9_]{2,40}$/),
+        source: z.enum(PLAN_PRODUCT_SOURCES),
+        productId: text(80),
+        ratePct: pct.optional(),
+      }),
+    )
+    .max(12)
+    .optional(),
+})
+export type StoredPlanChoice = z.infer<typeof storedPlanChoiceSchema>
+
+export const planChoicesSchema = z.object({
+  lump_sum: storedPlanChoiceSchema.optional(),
+  monthly_saving: storedPlanChoiceSchema.optional(),
+  mortgage: storedPlanChoiceSchema.optional(),
+})
+export type PlanChoices = z.infer<typeof planChoicesSchema>
+
 export const RANKING_OBJECTIVES = [
   'highest_net_return',
   'lowest_total_cost',
@@ -488,6 +563,12 @@ export const marketPlanSchema = z
         options: z
           .array(
             z.object({
+              /**
+               * The option's row id (2026-11-13): the lender's market product id, the same id a
+               * mortgage products card's row carries, so the mortgage can be chosen from either.
+               * Plans saved before then have none; `mortgageOptionRowId` derives a stable one.
+               */
+              rowId: z.string().min(1).max(160).regex(PLAN_ROW_ID_PATTERN).optional(),
               lender: text(80),
               kind: text(40),
               productName: text(120),
@@ -526,6 +607,11 @@ export const marketPlanSchema = z
      * arrival. Absent: the arrival's own hook (`arrivalOpening`).
      */
     openedWith: text(800).optional(),
+    /**
+     * What the customer chose for each part of the plan, from the cards (2026-11-13). Optional:
+     * absent, nothing is chosen. Kept when an edit rebuilds the plan.
+     */
+    choices: planChoicesSchema.optional(),
     createdAt: isoDateTime,
     /** When the oldest market figure in the plan was last checked. */
     dataCheckedAt: isoDateTime,
