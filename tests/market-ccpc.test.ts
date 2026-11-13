@@ -19,7 +19,6 @@ import {
   regularSaving,
 } from '../scripts/market/ccpc.ts'
 import { providerFor } from '../scripts/market/ccpc-providers.ts'
-import { crossCheckBoi } from '../scripts/market/crosscheck.ts'
 
 /**
  * CCPC items as compare.ccpc.ie served them on 2026-11-09, trimmed to the fields that matter.
@@ -342,83 +341,5 @@ describe('provider names', () => {
       platform: 'Raisin',
       generated: true,
     })
-  })
-})
-
-describe('Bank of Ireland, its own pages against CCPC', () => {
-  const bank = (overrides: Partial<MarketProduct>): MarketProduct => ({
-    provider: 'boi',
-    source: 'bank',
-    productId: 'savings.supersaver',
-    category: 'savings',
-    providerProductName: 'SuperSaver Account',
-    rates: {
-      kind: 'deposit',
-      aerPct: 3,
-      basis: 'fixed',
-      fixedMonths: 12,
-      thenAerPct: 2,
-      tierCapEur: 30000,
-      aboveTierAerPct: 0.5,
-    },
-    conditions: { takesMonthly: true, takesLumpSum: false, minMonthlyEur: 5, maxMonthlyEur: 2500 },
-    sourceUrl: 'https://personalbanking.bankofireland.com/x/',
-    checkedAt: '2026-11-09T12:00:00.000Z',
-    effectiveFrom: null,
-    ...overrides,
-  })
-  const advantage = bank({
-    productId: 'savings.advantage_fixed',
-    category: 'deposit',
-    providerProductName: 'Advantage Fixed Term Deposit Account',
-    rates: {
-      kind: 'deposit',
-      aerPct: null,
-      basis: 'fixed',
-      terms: [
-        { months: 6, aerPct: 2.01 },
-        { months: 12, aerPct: 2.4 },
-        { months: 18, aerPct: 2.48 },
-      ],
-    },
-    conditions: { takesMonthly: false, takesLumpSum: true, minLumpSumEur: 5000 },
-  })
-
-  it('agrees when the figures agree, pairing one rung of a ladder with each CCPC term', () => {
-    const check = crossCheckBoi(
-      [bank({}), advantage],
-      [checked(regularSaving(SUPERSAVER)), checked(lumpSum(ADVANTAGE_12))],
-    )
-    expect(check.differences).toEqual([])
-    expect(check.missingFromCcpc).toEqual([
-      'savings.advantage_fixed 6m',
-      'savings.advantage_fixed 18m',
-    ])
-  })
-
-  it('names every figure that differs', () => {
-    const stale: CcpcItem = {
-      Id: 4161,
-      ProductName: 'Advantage 12 Month Fixed Term Account 25% Access',
-      ProviderName: 'Bank of Ireland',
-      ...f({
-        'AER:': '2.15',
-        'Rate type:': 'Fixed Rate',
-        'Minimum lodgement:': '€5,000',
-        'Additional lodgements:': 'No',
-        'Term in months:': '12',
-      }),
-    }
-    const check = crossCheckBoi([advantage], [checked(lumpSum(stale))])
-    expect(check.differences).toEqual([
-      "savings.advantage_fixed 12m: AER is 2.4 on the bank's page, 2.15 on CCPC",
-    ])
-  })
-
-  it('lists what CCPC has that the bank-direct refresh does not read', () => {
-    const childSave = { ...SUPERSAVER, Id: 597, ProductName: 'ChildSave Account' }
-    expect(crossCheckBoi([bank({})], [checked(regularSaving(childSave))]).notReadFromBank).toEqual([
-      'savings.c597 ChildSave Account',
-    ])
   })
 })

@@ -1,13 +1,13 @@
 /**
- * Refresh Saoi's market data from every source: each provider's own website (`providers.ts`)
- * and the CCPC comparison tables (`ccpc.ts`), which cover every provider CCPC lists.
+ * Refresh Saoi's market data from the CCPC comparison tables (`ccpc.ts`), which cover every
+ * provider CCPC lists. CCPC is the source of every rate in the application (Chris, 2026-11-13);
+ * provider sites are not read for rates, and the Bank of Ireland, bunq and MoCo page readers
+ * were removed with that decision.
  *
  *   npm run market:refresh                       fetch, parse, validate and print the diff; writes nothing
- *   npm run market:refresh -- --snapshot         also rewrite each bank-direct provider's committed snapshot
+ *   npm run market:refresh -- --snapshot         also rewrite the committed CCPC snapshot
  *   npm run market:refresh -- --db               also record the result in market_products
- *   npm run market:refresh -- --accept-removals  let a bank-direct product whose page has gone be retired
- *   npm run market:refresh -- --provider boi     one provider only (its own site, and its CCPC rows)
- *   npm run market:refresh -- --source ccpc      one source only (bank or ccpc)
+ *   npm run market:refresh -- --provider boi     one provider's CCPC rows only (no snapshot)
  *
  * --db needs SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in the environment. Against the live
  * stack on this machine:
@@ -16,20 +16,17 @@
  *   SUPABASE_SERVICE_ROLE_KEY="$(pass show infra/saoi/SERVICE_ROLE_KEY | head -1)" \
  *   npm run market:refresh -- --db
  *
- * The diff is against the database with --db, otherwise against the committed snapshot (bank
- * rows) or nothing (CCPC rows, which have no snapshot).
+ * The diff is against the database with --db, otherwise against the committed snapshot.
  *
- * All or nothing per provider and source. A bank-direct provider whose page cannot be read or
- * parsed writes nothing; a CCPC request that fails means nothing from CCPC is written (the sweep
- * would be incomplete, so absences could not be trusted), and a CCPC item that cannot be read
- * means nothing from CCPC is written for that provider. One provider or source failing never
- * stops another being written. A product gone from a complete CCPC sweep is retired, unless more
- * than half a provider's products went at once, which fails that provider instead. A bank-direct
- * page that has gone (404) fails unless --accept-removals.
+ * All or nothing per provider. A CCPC request that fails means nothing from CCPC is written (the
+ * sweep would be incomplete, so absences could not be trusted), and a CCPC item that cannot be
+ * read means nothing is written for that provider. One provider failing never stops another
+ * being written. A product gone from a complete sweep is retired, unless more than half a
+ * provider's products went at once, which fails that provider instead. The snapshot is written
+ * only when every provider was read.
  *
- * Exit codes: 0 when every provider and source was read (and written, if asked); 1 when any
- * failed, or the run could not start (bad arguments, no database credentials). Cross-check
- * differences between Bank of Ireland's own pages and CCPC are warnings and do not change it.
+ * Exit codes: 0 when every provider was read (and written, if asked); 1 when any failed, or the
+ * run could not start (bad arguments, no database credentials).
  *
  * Polite by construction: robots.txt is read first on every host and every URL checked against
  * it (a 4xx answer is "unavailable" under RFC 9309 and allows everything; any other non-200
@@ -52,8 +49,9 @@ import {
   type MarketSnapshot,
   marketSnapshotSchema,
   type MarketSource,
+  CCPC_ATTRIBUTION,
 } from '../../supabase/functions/_shared/market/schema.ts'
-import { ParseError } from './boi.ts'
+import { ccpcSnapshot } from '../../supabase/functions/_shared/market/ccpc.snapshot.ts'
 import {
   type Built,
   CCPC_API,
@@ -64,23 +62,18 @@ import {
   merge,
   termBandSchema,
 } from './ccpc.ts'
-import { crossCheckBoi } from './crosscheck.ts'
 import { mortgageCheck } from './mortgage-check.ts'
 import { describeDiff, diffMarket } from './diff.ts'
-import type { MarketProvider } from './provider.ts'
-import { MARKET_PROVIDERS } from './providers.ts'
 import { robotsAllows } from './robots.ts'
 import { runProviders } from './run.ts'
 
 const USER_AGENT = 'saoi-market-refresh/0.1 (+https://saoi.ie; one run, a handful of pages)'
-const PAGE_PAUSE_MS = 2_000
 const API_PAUSE_MS = 1_500
 
 const argv = process.argv.slice(2)
 const args = new Set(argv)
 const writeSnapshot = args.has('--snapshot')
 const writeDb = args.has('--db')
-const acceptRemovals = args.has('--accept-removals')
 const valueOf = (flag: string) => (args.has(flag) ? argv[argv.indexOf(flag) + 1] : undefined)
 const onlyProvider = valueOf('--provider')
 const onlySource = valueOf('--source')
@@ -141,23 +134,23 @@ function databaseClient(): Db {
   return createClient<Database>(url, key, { auth: { persistSession: false } })
 }
 
-function snapshotFile(provider: string): string {
-  return fileURLToPath(
-    new URL(`../../supabase/functions/_shared/market/${provider}.snapshot.ts`, import.meta.url),
-  )
-}
+const SNAPSHOT_FILE = fileURLToPath(
+  new URL('../../supabase/functions/_shared/market/ccpc.snapshot.ts', import.meta.url),
+)
 
 function snapshotSource(snapshot: MarketSnapshot): string {
   return [
     '// GENERATED by scripts/market/refresh.ts (npm run market:refresh -- --snapshot). Do not edit by hand.',
     '//',
-    `// ${snapshot.provider}: the published rates and conditions for the products Saoi models, read`,
-    '// from the provider’s public website. The fallback when `market_products` is empty, and the',
-    '// record in git of what the site said on the date below.',
+    '// Every product in the Competition and Consumer Protection Commission’s comparison tables,',
+    '// every provider, as Saoi read them on the date below: the source of every rate, and the',
+    '// fallback when `market_products` holds no CCPC rows.',
+    '//',
+    `// ${CCPC_ATTRIBUTION}`,
     '',
     "import type { MarketSnapshot } from './schema.ts'",
     '',
-    `export const ${snapshot.provider}Snapshot: MarketSnapshot = ${JSON.stringify(snapshot, null, 2)}`,
+    `export const ccpcSnapshot: MarketSnapshot = ${JSON.stringify(snapshot, null, 2)}`,
     '',
   ].join('\n')
 }
@@ -170,11 +163,6 @@ type Group = {
   readonly source: MarketSource
   readonly products: MarketProduct[]
   readonly failures: string[]
-  /** Bank-direct pages that answered 404 or 410. */
-  readonly gone: string[]
-  /** Bank-direct only: the committed snapshot, its rate sheet this run. */
-  readonly snapshot?: MarketSnapshot
-  readonly rateSheet?: MarketSnapshot['rateSheet']
 }
 
 type Harvest = {
@@ -183,93 +171,6 @@ type Harvest = {
   /** Set when the source as a whole could not be read: nothing from it is written. */
   readonly failure: string | null
   readonly groups: readonly Group[]
-}
-
-async function harvestBank(provider: MarketProvider, checkedAt: string): Promise<Harvest> {
-  const name = provider.provider
-  const group: Group = {
-    provider: name,
-    source: 'bank',
-    products: [],
-    failures: [],
-    gone: [],
-    snapshot: provider.snapshot,
-  }
-  const urls = [
-    ...(provider.rateSheet === undefined ? [] : [provider.rateSheet.page]),
-    ...provider.sources.flatMap((source) => [source.url, ...(source.alsoRead ?? [])]),
-  ]
-  const refused = await robotsCheck(provider.origin, urls)
-  if (refused !== null) return { name, source: 'bank', failure: refused, groups: [] }
-
-  let rateSheet: MarketSnapshot['rateSheet'] = null
-  if (provider.rateSheet !== undefined) {
-    await pause(PAGE_PAUSE_MS)
-    const page = await get(provider.rateSheet.page)
-    rateSheet = page.status === 200 ? provider.rateSheet.read(page.html) : null
-    if (rateSheet === null) console.warn(`${name}: no rate sheet on ${provider.rateSheet.page}`)
-  }
-
-  // A page two products share (bunq's, MoCo's FAQ) is fetched once a run.
-  const fetched = new Map<string, Page>()
-  const fetchOnce = async (url: string): Promise<Page> => {
-    const seen = fetched.get(url)
-    if (seen !== undefined) return seen
-    await pause(PAGE_PAUSE_MS)
-    const page = await get(url)
-    fetched.set(url, page)
-    return page
-  }
-
-  sources: for (const source of provider.sources) {
-    const html: string[] = []
-    for (const url of [source.url, ...(source.alsoRead ?? [])]) {
-      let page: Page
-      try {
-        page = await fetchOnce(url)
-      } catch (error) {
-        group.failures.push(`${source.productId}: fetch failed on ${url} (${String(error)})`)
-        continue sources
-      }
-      if (url === source.url && (page.status === 404 || page.status === 410)) {
-        group.gone.push(source.productId)
-        continue sources
-      }
-      if (page.status !== 200) {
-        group.failures.push(`${source.productId}: ${url} answered ${String(page.status)}`)
-        continue sources
-      }
-      html.push(page.html)
-    }
-    try {
-      group.products.push({
-        provider: name,
-        source: 'bank',
-        productId: source.productId,
-        category: source.category,
-        ...source.parse(html.join('\n')),
-        sourceUrl: source.url,
-        checkedAt,
-        effectiveFrom: null,
-      })
-    } catch (error) {
-      if (!(error instanceof ParseError)) throw error
-      group.failures.push(`${source.productId}: ${error.message} on ${source.url}`)
-    }
-  }
-
-  const snapshot = marketSnapshotSchema.safeParse({
-    provider: name,
-    checkedAt,
-    rateSheet,
-    products: group.products,
-  })
-  if (!snapshot.success) {
-    for (const issue of snapshot.error.issues) {
-      group.failures.push(`schema: ${issue.path.join('.')}: ${issue.message}`)
-    }
-  }
-  return { name, source: 'bank', failure: null, groups: [{ ...group, rateSheet }] }
 }
 
 async function harvestCcpc(checkedAt: string): Promise<Harvest> {
@@ -340,7 +241,7 @@ async function harvestCcpc(checkedAt: string): Promise<Harvest> {
   const groupFor = (provider: string): Group => {
     const held = groups.get(provider)
     if (held !== undefined) return held
-    const group: Group = { provider, source: 'ccpc', products: [], failures: [], gone: [] }
+    const group: Group = { provider, source: 'ccpc', products: [], failures: [] }
     groups.set(provider, group)
     return group
   }
@@ -383,11 +284,10 @@ async function robotsCheckCached(origin: string, urls: readonly string[]): Promi
 async function settle(group: Group, db: Db | null): Promise<boolean> {
   const label = `${group.provider}/${group.source}`
 
-  let baseline: readonly MarketProduct[] = group.snapshot?.products ?? []
-  let baselineName =
-    group.snapshot === undefined
-      ? 'nothing (no snapshot for this source)'
-      : `the committed snapshot (${group.snapshot.checkedAt})`
+  let baseline: readonly MarketProduct[] = ccpcSnapshot.products.filter(
+    (product) => product.provider === group.provider && product.source === group.source,
+  )
+  let baselineName = `the committed snapshot (${ccpcSnapshot.checkedAt})`
   if (db !== null) {
     const result = await db
       .from('market_products')
@@ -408,27 +308,18 @@ async function settle(group: Group, db: Db | null): Promise<boolean> {
       (failure) => failure.startsWith(`${productId}:`) || failure.startsWith(`${productId} `),
     )
   const diff = diffMarket(baseline, group.products)
-  const disappeared = [
-    ...new Set([...group.gone, ...diff.disappeared.filter((productId) => !failed(productId))]),
-  ]
+  const disappeared = diff.disappeared.filter((productId) => !failed(productId))
 
   console.log(`\n${label}: ${String(group.products.length)} products, against ${baselineName}`)
-  if (group.rateSheet !== undefined && group.rateSheet !== null) {
-    console.log(`rate sheet: ${group.rateSheet.asOf ?? 'undated'} ${group.rateSheet.url}`)
+  // Hundreds of rows: say what moved, count the rest.
+  for (const line of describeDiff({ ...diff, added: [], unchanged: [], disappeared: [] })) {
+    console.log(line)
   }
-  if (group.source === 'bank') {
-    for (const line of describeDiff({ ...diff, disappeared: [] })) console.log(line)
-  } else {
-    // Hundreds of rows: say what moved, count the rest.
-    for (const line of describeDiff({ ...diff, added: [], unchanged: [], disappeared: [] })) {
-      console.log(line)
-    }
-    const added = diff.added.map((product) => product.providerProductName)
-    console.log(
-      `added ${String(added.length)}, same ${String(diff.unchanged.length)}, changed ${String(diff.changed.length)}` +
-        (added.length > 0 && added.length <= 6 ? `: ${added.join('; ')}` : ''),
-    )
-  }
+  const added = diff.added.map((product) => product.providerProductName)
+  console.log(
+    `added ${String(added.length)}, same ${String(diff.unchanged.length)}, changed ${String(diff.changed.length)}` +
+      (added.length > 0 && added.length <= 6 ? `: ${added.join('; ')}` : ''),
+  )
   for (const productId of disappeared) console.log(`GONE     ${productId}`)
   for (const failure of group.failures) console.error(`COULD NOT READ  ${label} ${failure}`)
 
@@ -438,14 +329,7 @@ async function settle(group: Group, db: Db | null): Promise<boolean> {
     )
     return false
   }
-  if (group.source === 'bank' && disappeared.length > 0 && !acceptRemovals) {
-    console.error(
-      `${label}: a product has gone from the site. Nothing written. Check the page, then run ` +
-        'again with --accept-removals to retire it.',
-    )
-    return false
-  }
-  if (group.source === 'ccpc' && baseline.length >= 4 && disappeared.length > baseline.length / 2) {
+  if (baseline.length >= 4 && disappeared.length > baseline.length / 2) {
     console.error(
       `${label}: ${String(disappeared.length)} of ${String(baseline.length)} products gone at once, ` +
         'which looks like a broken sweep rather than a withdrawal. Nothing written.',
@@ -479,18 +363,6 @@ async function settle(group: Group, db: Db | null): Promise<boolean> {
     )
   }
 
-  if (writeSnapshot && group.snapshot !== undefined) {
-    const snapshot: MarketSnapshot = {
-      provider: group.provider,
-      checkedAt: group.products[0]?.checkedAt ?? new Date().toISOString(),
-      rateSheet: group.rateSheet ?? null,
-      products: group.products,
-    }
-    const file = snapshotFile(group.provider)
-    writeFileSync(file, snapshotSource(snapshot))
-    execFileSync('npx', ['prettier', '--write', '--log-level', 'warn', file], { stdio: 'inherit' })
-    console.log(`wrote ${file}`)
-  }
   return true
 }
 
@@ -499,24 +371,19 @@ async function settle(group: Group, db: Db | null): Promise<boolean> {
 type Step = { readonly provider: string; readonly run: () => Promise<Harvest> }
 
 async function main(): Promise<number> {
-  if (onlySource !== undefined && onlySource !== 'bank' && onlySource !== 'ccpc') {
-    console.error(`No source called ${onlySource}.`)
+  if (onlySource !== undefined && onlySource !== 'ccpc') {
+    console.error(
+      `Source ${onlySource} is not read: CCPC is the source of every rate (2026-11-13), and ` +
+        'the provider-site readers were removed.',
+    )
+    return 1
+  }
+  if (writeSnapshot && onlyProvider !== undefined) {
+    console.error('--snapshot writes every provider; it cannot be combined with --provider.')
     return 1
   }
   const checkedAt = new Date().toISOString()
-  const banks = MARKET_PROVIDERS.filter(
-    (p) => onlyProvider === undefined || p.provider === onlyProvider,
-  )
-  const steps: Step[] = [
-    ...(onlySource === 'ccpc'
-      ? []
-      : banks.map((p) => ({ provider: p.provider, run: () => harvestBank(p, checkedAt) }))),
-    ...(onlySource === 'bank' ? [] : [{ provider: 'ccpc', run: () => harvestCcpc(checkedAt) }]),
-  ]
-  if (steps.length === 0) {
-    console.error(`Nothing to run for provider ${String(onlyProvider)}.`)
-    return 1
-  }
+  const steps: Step[] = [{ provider: 'ccpc', run: () => harvestCcpc(checkedAt) }]
 
   const db = writeDb ? databaseClient() : null
   const settled: Group[] = []
@@ -543,6 +410,29 @@ async function main(): Promise<number> {
 
   report(settled)
 
+  if (writeSnapshot) {
+    if (failed.length > 0) {
+      console.error('\nSnapshot not written: not every provider was read.')
+    } else {
+      const products = settled
+        .flatMap((group) => group.products)
+        .sort(
+          (a, b) => a.provider.localeCompare(b.provider) || a.productId.localeCompare(b.productId),
+        )
+      const snapshot = marketSnapshotSchema.parse({
+        provider: 'ccpc',
+        checkedAt,
+        rateSheet: null,
+        products,
+      })
+      writeFileSync(SNAPSHOT_FILE, snapshotSource(snapshot))
+      execFileSync('npx', ['prettier', '--write', '--log-level', 'warn', SNAPSHOT_FILE], {
+        stdio: 'inherit',
+      })
+      console.log(`\nwrote ${SNAPSHOT_FILE} (${String(products.length)} products)`)
+    }
+  }
+
   if (db === null && !writeSnapshot) console.log('\nDry run: nothing written.')
   if (failed.length > 0) {
     console.error(`\nFailed: ${failed.join(', ')}. Everything else was handled.`)
@@ -551,7 +441,7 @@ async function main(): Promise<number> {
   return 0
 }
 
-/** Counts per category and provider, and the Bank of Ireland cross-check. */
+/** Counts per category and provider, and the mortgage data check. */
 function report(groups: readonly Group[]): void {
   const ccpc = groups.filter((group) => group.source === 'ccpc')
   if (ccpc.length > 0) {
@@ -579,16 +469,6 @@ function report(groups: readonly Group[]): void {
     if (line.includes('CHECK')) console.warn(line)
     else console.log(line)
   }
-
-  const bank = groups.find((g) => g.provider === 'boi' && g.source === 'bank')?.products
-  const fromCcpc = groups.find((g) => g.provider === 'boi' && g.source === 'ccpc')?.products
-  if (bank === undefined || fromCcpc === undefined) return
-  const check = crossCheckBoi(bank, fromCcpc)
-  console.log('\nBank of Ireland, its own pages against CCPC:')
-  if (check.differences.length === 0) console.log('  every figure both state agrees')
-  for (const line of check.differences) console.warn(`  WARNING ${line}`)
-  for (const line of check.missingFromCcpc) console.warn(`  WARNING ${line}: not found on CCPC`)
-  for (const line of check.notReadFromBank) console.log(`  on CCPC only: ${line}`)
 }
 
 main().then(
