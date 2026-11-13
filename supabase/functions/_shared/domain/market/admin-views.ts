@@ -1,11 +1,12 @@
 import {
   ADMIN_MARKET_CATEGORIES,
+  type AdminMarketAccess,
   type AdminMarketCategory,
   type AdminMarketView,
   type AdminMarketViews,
 } from '../../contracts/market.ts'
 import type { ProductView } from '../../contracts/market-tools.ts'
-import { providerNameOf } from '../../market/provider-names.ts'
+import { providerDomainOf, providerNameOf } from '../../market/provider-names.ts'
 import type { MarketCategory } from '../../market/schema.ts'
 import { euro } from './figures.ts'
 import { rateLineOf } from './lookup.ts'
@@ -57,13 +58,15 @@ export function adminMarketViews(market: Market, asOf: string): AdminMarketViews
 
 function adminViewOf(market: Market, view: ProductView, asOf: string): AdminMarketView {
   const providerName = providerNameOf(view.provider)
-  const category = CATEGORY[view.category]
+  const category = categoryOf(view)
   const term = termOf(view)
   const days = Math.floor((Date.parse(asOf) - Date.parse(view.provenance.checkedAt)) / DAY_MS)
   return {
     id: view.id,
     provider: view.provider,
     providerName,
+    platform: view.platform === null ? null : 'Raisin',
+    providerDomain: providerDomainOf(view.provider),
     category: category.id,
     categoryLabel: category.label,
     name: view.name,
@@ -85,6 +88,17 @@ function adminViewOf(market: Market, view: ProductView, asOf: string): AdminMark
     retired: false,
     sources: sourcesOf(market, view),
   }
+}
+
+/**
+ * Chris, 2026-11-13: instant-access and notice accounts are Savings, with the regular savers;
+ * Deposits is money placed for a fixed term.
+ */
+function categoryOf(view: ProductView): { id: AdminMarketCategory; label: string } {
+  if (view.terms.kind === 'deposit' && view.terms.access !== 'fixed_term') {
+    return CATEGORY.savings
+  }
+  return CATEGORY[view.category]
 }
 
 function headlineOf(view: ProductView): AdminMarketView['headline'] {
@@ -143,14 +157,15 @@ function termOf(view: ProductView): { months: number | null; label: string | nul
   }
 }
 
-function accessOf(view: ProductView): string | null {
+function accessOf(view: ProductView): AdminMarketAccess | null {
   const terms = view.terms
   if (terms.kind !== 'deposit') return null
+  if (view.category === 'savings') return 'Regular saver'
   switch (terms.access) {
     case 'fixed_term':
       return 'Fixed term'
     case 'notice':
-      return `${String(terms.noticeDays ?? 0)} days’ notice`
+      return 'Notice'
     case 'instant':
       return 'Instant access'
   }

@@ -50,9 +50,9 @@ export type MarketProductList = z.infer<typeof marketProductListSchema>
 
 /**
  * The admin's market categories (Chris, 2026-11-13). One to one with the schema's
- * (`MARKET_CATEGORIES`): `savings` is the regular saver, `deposits` money placed (fixed term,
- * and the instant-access and notice accounts CCPC lists in the same table; `access` tells them
- * apart).
+ * (`MARKET_CATEGORIES`) except that the schema's `deposit` splits by access (Chris, 2026-11-13):
+ * `savings` holds the regular savers and the instant-access and notice accounts, `deposits`
+ * only fixed-term money. `access` is the chip that tells them apart.
  */
 export const ADMIN_MARKET_CATEGORIES = [
   'savings',
@@ -62,6 +62,15 @@ export const ADMIN_MARKET_CATEGORIES = [
   'credit_cards',
   'current_accounts',
 ] as const
+
+/** The access chip's values (`access` on a view). */
+export const ADMIN_MARKET_ACCESS = [
+  'Instant access',
+  'Notice',
+  'Regular saver',
+  'Fixed term',
+] as const
+export type AdminMarketAccess = (typeof ADMIN_MARKET_ACCESS)[number]
 export type AdminMarketCategory = (typeof ADMIN_MARKET_CATEGORIES)[number]
 
 /**
@@ -78,6 +87,18 @@ export const adminMarketViewSchema = z
     providerName: z
       .string()
       .describe('The readable name (`Bank of Ireland`); the id when none is recorded.'),
+    platform: z
+      .enum(['Raisin'])
+      .nullable()
+      .describe(
+        'The platform the product is sold through (`Raisin`), as the engine marks the view; null when it is opened with the provider directly. The console shows `Raisin · <providerName>` and groups these under Raisin.',
+      ),
+    providerDomain: z
+      .string()
+      .nullable()
+      .describe(
+        'The provider’s own public website domain (`bankofireland.com`), for its logo; never the platform’s. Null where none is recorded.',
+      ),
     category: z.enum(ADMIN_MARKET_CATEGORIES),
     categoryLabel: z
       .string()
@@ -104,9 +125,11 @@ export const adminMarketViewSchema = z
       .array(z.object({ months: z.number().int(), ratePct: z.number() }))
       .describe('A deposit’s terms and rates, shortest first. Empty for anything else.'),
     access: z
-      .string()
+      .enum(ADMIN_MARKET_ACCESS)
       .nullable()
-      .describe('Savings and deposits: "Instant access", "31 days’ notice", "Fixed term".'),
+      .describe(
+        'A short chip label from a fixed set, for savings and deposits; null for anything else. `Instant access`: withdraw any time. `Notice`: withdrawals need notice (the days are in `conditions`/`lines`). `Regular saver`: a monthly saver. `Fixed term`: money placed for a term.',
+      ),
     lines: z.array(z.string()).describe('The rates as the comparison engine words them.'),
     conditions: z
       .array(z.object({ label: z.string(), value: z.string() }))

@@ -136,6 +136,30 @@ describe('admin market views route', () => {
     ).toBe(true)
   })
 
+  it('marks Raisin-sold banks with the platform and gives each provider its domain', async () => {
+    const all = await views()
+    const aareal = all.find((view) => view.provider === 'aareal')
+    expect(aareal).toMatchObject({ platform: 'Raisin', providerDomain: 'aareal-bank.com' })
+    const boi = all.find((view) => view.id === 'boi:savings.supersaver')
+    expect(boi).toMatchObject({ platform: null, providerDomain: 'bankofireland.com' })
+  })
+
+  it('puts instant-access and notice accounts in savings, fixed terms in deposits', async () => {
+    const all = await views()
+    for (const view of all) {
+      if (view.access === 'Fixed term') expect(view.category).toBe('deposits')
+      if (view.access === 'Notice' || view.access === 'Instant access') {
+        expect(view.category).toBe('savings')
+      }
+      if (view.access === 'Regular saver') expect(view.category).toBe('savings')
+    }
+    expect(all.find((view) => view.access === 'Notice')?.category).toBe('savings')
+    expect(all.find((view) => view.id === 'boi:savings.advantage_fixed')).toMatchObject({
+      category: 'deposits',
+      access: 'Fixed term',
+    })
+  })
+
   it('is stale after 8 whole days', async () => {
     vi.setSystemTime(new Date('2026-11-19T00:00:00.000Z'))
     const view = (await views()).find((one) => one.id === 'boi:savings.supersaver')

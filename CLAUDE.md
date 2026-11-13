@@ -280,8 +280,10 @@ line in the refresh output. Shapes in `_shared/market/schema.ts`: `rates` is a u
   `market`). The console's Market data screen shows all of it: `GET /api/admin/market/views`
   is the engine's views over every current row (Raisin's platform banks included), one entry
   per product, with the readable name from `_shared/market/provider-names.ts` (every provider
-  id; an unnamed one falls back to the id), the categories as Savings (regular savers),
-  Deposits, Mortgages, Loans, Credit cards and Current accounts, and a term to filter on
+  id; an unnamed one falls back to the id), `platform` (`Raisin` where the engine marks the
+  view) and `providerDomain` (for the logo), the categories as Savings (regular savers,
+  instant-access and notice accounts), Deposits (fixed term only), Mortgages, Loans, Credit
+  cards and Current accounts, an `access` chip from a fixed set, and a term to filter on
   (`domain/market/admin-views.ts`); `GET /api/admin/market-products` the raw rows and history.
 - **Compared** by the public comparison API (below), which reads every row.
 
