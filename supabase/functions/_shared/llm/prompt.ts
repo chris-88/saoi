@@ -573,6 +573,16 @@ export type CaseDigest = {
    */
   readonly productsMustKnow?: readonly string[]
   /**
+   * What `compare_products` set side by side in earlier turns, newest first: the products by
+   * name and id, never the figures, so a follow-up compares them again.
+   */
+  readonly productsCompared?: readonly string[]
+  /**
+   * The products selected on the cards with this message, in the order selected: "bunq Savings
+   * Account [bunq:savings.bunq_savings]". This turn's selection only.
+   */
+  readonly productsSelected?: readonly string[]
+  /**
    * Whether what they asked for is what suits them, worked out from what they have said about
    * the amount and how soon they mean to repay it. Already decided; the figures are not yours.
    */
@@ -1115,6 +1125,26 @@ function digestSection(digest: CaseDigest, marketConversation: boolean): string 
       'second time, or say they will go with it, state its must-knows once, unprompted, as facts',
       'in a sentence or two, and do not repeat them after that. Never as a steer or a warning:',
       'no "but", "be aware", "make sure" or "worth checking"; the facts, and they decide.',
+      'They can select products on the cards. When their message carries a selection and asks',
+      'to compare them ("compare these", "which of these"), call `compare_products` with the',
+      'selected ids in the order selected. The reply is one line about the comparison card, then',
+      'its `decides` as the one question. Asked to help them choose, answer with the differences',
+      'as facts and that question, never a pick, never which is better. The must-knows of each',
+      'are on the comparison card, so do not repeat them in words. A follow-up about products',
+      'already compared ("and if I need the money sooner?") is answered from the comparison,',
+      'calling `compare_products` again with the same ids for the figures.',
+      ...(digest.productsSelected === undefined || digest.productsSelected.length === 0
+        ? []
+        : [
+            'Selected on the cards with this message, in this order:',
+            ...digest.productsSelected.map((line) => `- ${line}`),
+          ]),
+      ...(digest.productsCompared === undefined || digest.productsCompared.length === 0
+        ? []
+        : [
+            'Already compared (call `compare_products` again with these ids for the figures):',
+            ...digest.productsCompared.map((line) => `- ${line}`),
+          ]),
       ...(digest.productsLookedUp === undefined || digest.productsLookedUp.length === 0
         ? []
         : [
