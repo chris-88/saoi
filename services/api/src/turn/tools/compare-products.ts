@@ -2,9 +2,11 @@ import { writeEvent } from '@shared/db/case-repository.ts'
 import { loadHoldings } from '@shared/db/holdings.ts'
 import { loadClaimedPlans } from '@shared/db/saved-plans.ts'
 import { compareProducts, comparisonCardText } from '@shared/domain/market/compare.ts'
+import { markChosenColumns } from '@shared/domain/market/choices.ts'
 import { caseFigures } from '@shared/domain/market/products-card.ts'
 import { adviceWordsIn } from '@shared/market/disclosures.ts'
 import type { ToolModule } from './_shared.ts'
+import { chosenText } from './show-products.ts'
 
 /** Today in Europe/Dublin, YYYY-MM-DD: the day the figures are worked out from. */
 const dublinToday = (now: Date = new Date()): string =>
@@ -54,7 +56,8 @@ export const compareProductsTool: ToolModule<'compare_products'> = {
       }
     }
 
-    const card = outcome.card
+    // A column that is one of the customer's choices is marked, so the card can badge it.
+    const card = markChosenColumns(outcome.card, loaded.plan?.choices)
     // Held to the line on every string the card says and on what the model is handed beside it.
     const advice = adviceWordsIn(
       [comparisonCardText(card), ...outcome.figureBasis.map((column) => column.line)].join('\n'),
@@ -90,7 +93,8 @@ export const compareProductsTool: ToolModule<'compare_products'> = {
             (column) =>
               `- ${card.columns.find((item) => item.rowId === column.rowId)?.lead ?? column.rowId}: ${column.line}`,
           )
-          .join('\n')}`,
+          .join('\n')}` +
+        chosenText(card.columns),
       card,
     }
   },

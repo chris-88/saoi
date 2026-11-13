@@ -9,6 +9,8 @@ import {
   type RowBasis,
 } from '@shared/domain/market/products-card.ts'
 import type { MarketProductsCard } from '@shared/contracts/cards.ts'
+import type { PlanChoiceSlot } from '@shared/contracts/market-plan.ts'
+import { markChosenRows, SLOT_WORDS } from '@shared/domain/market/choices.ts'
 import { adviceWordsIn } from '@shared/market/disclosures.ts'
 import type { ToolModule } from './_shared.ts'
 
@@ -45,6 +47,23 @@ export function mustKnowText(rows: MarketProductsCard['rows']): string {
     'ask about one a second time or say they will go with it; not to read out with the card):\n' +
     lines.join('\n')
   )
+}
+
+/**
+ * The rows the card marks as the customer's choices (2026-11-13), for the model to know which
+ * are already chosen; empty when none is.
+ */
+export function chosenText(
+  rows: readonly { readonly lead: string; readonly chosen?: string | undefined }[],
+): string {
+  const chosen = rows.flatMap((row) =>
+    row.chosen === undefined
+      ? []
+      : [`${row.lead} (their ${SLOT_WORDS[row.chosen as PlanChoiceSlot]})`],
+  )
+  return chosen.length === 0
+    ? ''
+    : `\nMarked on the card as already chosen by them: ${chosen.join('; ')}.`
 }
 
 /**
@@ -99,7 +118,8 @@ export const showProductsTool: ToolModule<'show_products'> = {
       }
     }
 
-    const card = outcome.card
+    // A row that is one of the customer's choices is marked, so the card can badge it.
+    const card = markChosenRows(outcome.card, loaded.plan?.choices)
     // Held to the line on every string the card says (the duty of care, 2.2), and on what the
     // model is handed to quote beside it: never shown if not.
     const advice = adviceWordsIn(
@@ -154,6 +174,7 @@ export const showProductsTool: ToolModule<'show_products'> = {
         `${card.basis.objective.split('. ')[0] ?? ''}), never a pick. Asked about a product ` +
         'by name that is not on the card, call `lookup_products` and answer from what it ' +
         'returns and from what the card set aside; never say it did not make the cut.' +
+        chosenText(card.rows) +
         figureBasisText(outcome.figureBasis) +
         mustKnowText(card.rows),
       card,
