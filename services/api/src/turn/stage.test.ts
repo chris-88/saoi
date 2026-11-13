@@ -3,7 +3,7 @@ import { CONVERSATION } from '@shared/llm/conversation.ts'
 import { asApplicationId } from '@shared/domain/facts.ts'
 import { STAGES } from '@shared/domain/conversation/stages.ts'
 import { loadedCase } from '../testing.actions.ts'
-import { computeStage, toolsForTurn } from './stage.ts'
+import { computeStage, DEMO_PLAN_TOOLS, MARKET_TOOLS, toolsForTurn } from './stage.ts'
 
 const FORM_TOOLS = ['record_form_answers', 'show_form_declarations', 'show_form_upload']
 const noGoals = { candidates: [], lines: [] }
@@ -22,6 +22,33 @@ describe('toolsForTurn: withholding a tool is enforcement', () => {
   it('offers no product card while the conversation is still finding out what is wanted', () => {
     expect(toolsForTurn('opening', true)).not.toContain('show_product_options')
     expect(toolsForTurn('direction', true)).not.toContain('show_product_options')
+  })
+})
+
+/**
+ * A market conversation (a claimed plan or holdings), 2026-11-13: after "yes a plan" on a claimed
+ * home plan Saoirse ran the POC's `propose_plan` and `show_arrangement`. The plan is the one they
+ * brought, so the POC's plan, arrangement and application tools are offered in no stage.
+ */
+describe('toolsForTurn: a market conversation runs none of the Demo Bank plan flow', () => {
+  it.each(STAGES)('offers only recording and the market tools in %s, form or not', (stage) => {
+    for (const hasForm of [false, true]) {
+      expect(toolsForTurn(stage, hasForm, true)).toEqual([
+        'record_facts',
+        'set_reminder',
+        'record_holding',
+        ...MARKET_TOOLS,
+      ])
+      for (const tool of DEMO_PLAN_TOOLS) {
+        expect(toolsForTurn(stage, hasForm, true)).not.toContain(tool)
+      }
+    }
+  })
+
+  it('keeps the Demo Bank plan flow for a case without a claimed plan or holdings', () => {
+    expect(toolsForTurn('planning', false)).toContain('propose_plan')
+    expect(toolsForTurn('arranging', false)).toContain('show_arrangement')
+    expect(toolsForTurn('applying', true)).toContain('show_review')
   })
 })
 

@@ -25,6 +25,33 @@ export const DEMO_CATALOGUE_TOOLS: readonly ToolName[] = [
 ]
 
 /**
+ * The Demo Bank POC's own arc: proposing and keeping a plan, arranging money across its
+ * accounts, the product options card, and everything an application here needs (its review,
+ * pause, uploads, forms, the partner, its status card), with the simulated linking that feeds
+ * them. Withheld from a market conversation as well (2026-11-13: after "yes a plan" on a claimed
+ * home plan, Saoirse ran `propose_plan` and `show_arrangement` and offered to "start all of it with
+ * one tap"). There the plan is the one the customer brought: it changes in the profile or
+ * through `record_holding`, and Saoi opens nothing.
+ */
+export const DEMO_PLAN_TOOLS: readonly ToolName[] = [
+  'propose_plan',
+  'show_arrangement',
+  'show_product_options',
+  'show_review',
+  'show_status',
+  'show_pause_prompt',
+  'request_upload',
+  'show_partner_invite',
+  'show_form',
+  'show_form_declarations',
+  'show_form_upload',
+  'record_form_answers',
+  'show_connect_accounts',
+  'show_accounts',
+  'show_transfer',
+]
+
+/**
  * Offered in every stage of a market conversation: the card, the lookup it answers from, and
  * the comparison of the products selected on the cards.
  */
@@ -55,13 +82,21 @@ export function toolsForTurn(
    * `show_products` and `lookup_products` are offered on that, in whatever stage: the stages
    * are the Demo Bank arc, and a customer who brought a plan from their own AI asks about
    * products from the first reply on. Without either they are withheld, as a card would have
-   * nothing to run on, and the Demo Bank catalogue's tools are withheld with them.
+   * nothing to run on, and the Demo Bank catalogue's tools are withheld with them. With them,
+   * the POC's plan, arrangement and application tools (`DEMO_PLAN_TOOLS`) are withheld too, so
+   * a market conversation is offered the same tools in every stage: recording what they say
+   * (`record_facts`, `set_reminder`, `record_holding`) and `MARKET_TOOLS`.
    */
   hasFigures = false,
 ): readonly ToolName[] {
   const staged = CONVERSATION[stage].tools
   const allowed: readonly ToolName[] = hasFigures
-    ? [...staged.filter((tool) => !DEMO_CATALOGUE_TOOLS.includes(tool)), ...MARKET_TOOLS]
+    ? [
+        ...staged.filter(
+          (tool) => !DEMO_CATALOGUE_TOOLS.includes(tool) && !DEMO_PLAN_TOOLS.includes(tool),
+        ),
+        ...MARKET_TOOLS,
+      ]
     : staged
   if (hasForm) return allowed
 
