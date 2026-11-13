@@ -102,6 +102,7 @@ function fakes(claimed: ClaimedPlan | null) {
           state.claimed = { id: input.planId, plan: input.plan }
           return Promise.resolve()
         },
+        saveChoices: () => Promise.resolve(),
       },
       holdings: { list: () => Promise.resolve([holding(REMINDER_HELD)]) },
       reminders: {

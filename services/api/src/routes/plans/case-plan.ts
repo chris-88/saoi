@@ -26,7 +26,8 @@ import { dublinDate } from '../market/index.ts'
  */
 
 export type CasePlanRouteOptions = {
-  readonly plans: Pick<PlanStore, 'claimedPlan' | 'saveEdit'>
+  readonly plans: Pick<PlanStore, 'claimedPlan' | 'saveEdit' | 'saveChoices'> &
+    Partial<Pick<PlanStore, 'choiceInputs'>>
   /** Progress, and which reminders a holding keeps (those are not the plan's). */
   readonly holdings: Pick<HoldingStore, 'list'>
   readonly reminders: Pick<AlertStore, 'listForCase' | 'createReminder' | 'deleteReminder'>
@@ -36,6 +37,9 @@ export type CasePlanRouteOptions = {
 }
 
 const NO_PLAN = 'This conversation has no plan.'
+
+/** The plan as the profile shows it, registered once for every route that returns it. */
+export const CasePlanResponse = casePlanSchema.openapi('CasePlan')
 
 const getRoute = createRoute({
   method: 'get',
@@ -53,7 +57,7 @@ const getRoute = createRoute({
   responses: {
     200: {
       description: 'The plan.',
-      content: { 'application/json': { schema: casePlanSchema.openapi('CasePlan') } },
+      content: { 'application/json': { schema: CasePlanResponse } },
     },
     ...authenticatedErrors,
     404: errorResponse('No such case for this caller, or it has no claimed plan.'),
@@ -148,9 +152,13 @@ export function casePlanRoutes(options: CasePlanRouteOptions) {
     const goalDate = result.changes.find((change) => change.field === 'targetDate')
     const moves = remindersToMove({
       reminders,
-      heldBy: new Set(
-        holdings.flatMap((holding) => (holding.reminderId === null ? [] : [holding.reminderId])),
-      ),
+      // A holding's reminders and a choice's (its rate's or term's end) are not the plan's dates.
+      heldBy: new Set([
+        ...holdings.flatMap((holding) => (holding.reminderId === null ? [] : [holding.reminderId])),
+        ...Object.values(claimed.plan.choices ?? {}).flatMap((choice) =>
+          choice?.reminderId === undefined ? [] : [choice.reminderId],
+        ),
+      ]),
       moves: [
         ...(goalDate === undefined
           ? []

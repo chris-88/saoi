@@ -34,6 +34,7 @@ import {
 } from './routes/alerts/index.ts'
 import { holdingRoutes, type HoldingRouteOptions } from './routes/holdings/index.ts'
 import { casePlanRoutes, type CasePlanRouteOptions } from './routes/plans/case-plan.ts'
+import { planChoiceRoutes } from './routes/plans/plan-choices.ts'
 import type { CaseStore } from './store/cases.ts'
 import type { PartnerStore } from './store/partners.ts'
 import type { SessionStore } from './store/sessions.ts'
@@ -196,7 +197,10 @@ export function createApp(deps: AppDeps) {
   // Before `caseRoutes` too: they carry their own `requireCaseAccess` per route.
   if (deps.alerts) app.route('/', alertRoutes(deps.alerts))
   if (deps.holdings) app.route('/', holdingRoutes(deps.holdings))
-  if (deps.casePlan) app.route('/', casePlanRoutes(deps.casePlan))
+  if (deps.casePlan) {
+    app.route('/', casePlanRoutes(deps.casePlan))
+    app.route('/', planChoiceRoutes(deps.casePlan))
+  }
   app.route('/', caseRoutes)
   if (deps.plans) app.route('/', planRoutes(deps.plans))
   if (deps.market) app.route('/', marketRoutes(deps.market))

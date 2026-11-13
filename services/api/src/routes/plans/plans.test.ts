@@ -76,6 +76,8 @@ function fakePlans(init: { savedToday?: number; withPlan?: string[] } = {}) {
       return Promise.resolve({ facts: [] })
     },
     saveEdit: () => Promise.resolve(),
+    saveChoices: () => Promise.resolve(),
+    choiceInputs: () => Promise.resolve({ facts: {}, shown: [] }),
   }
   return { store, rows, claims }
 }

@@ -1,4 +1,7 @@
+import { z } from 'zod'
+import { MARKET_ARRANGEMENT_KINDS } from '@shared/contracts/cards.ts'
 import type { Database, Json } from '@shared/db/database.types.ts'
+import type { ShowProductsRequest } from '@shared/domain/market/products-card.ts'
 import { mustWrite, recordFacts, saveMessage, writeEvent } from '@shared/db/case-repository.ts'
 import {
   arrivalMessage,
@@ -88,7 +91,64 @@ export type PlanStore = {
     /** The editing participant, for a fact about a person (none of the edited ones is). */
     participantId?: string | null
   }): Promise<void>
+  /**
+   * A choice made or taken off on a card (2026-11-13): the plan with its choices replaces the
+   * claimed plan's document, and the event (`product_chosen` or `product_choice_removed`) is
+   * written, which the next return turn narrates.
+   */
+  saveChoices(input: {
+    planId: string
+    caseId: string
+    plan: MarketPlan
+    event: { type: string; payload: Record<string, unknown> }
+  }): Promise<void>
+  /**
+   * What a chosen row is rebuilt on besides the plan and the holdings: the case's current facts
+   * (newest value per key) and the products cards it was shown (`products_shown`, newest first),
+   * so a row is found on the card the customer chose it from.
+   */
+  choiceInputs(caseId: string): Promise<ChoiceInputs>
 }
+
+export type ChoiceInputs = {
+  readonly facts: Readonly<Record<string, unknown>>
+  readonly shown: readonly ShowProductsRequest[]
+}
+
+/** The products cards shown on a case, as their requests, newest first. */
+export function shownRequests(payloads: readonly unknown[]): ShowProductsRequest[] {
+  return payloads.flatMap((payload): ShowProductsRequest[] => {
+    const parsed = shownPayload.safeParse(payload)
+    if (!parsed.success) return []
+    const { arrangement, category, sortBy, focus, filters } = parsed.data
+    return [
+      {
+        arrangement,
+        ...(category === undefined ? {} : { category }),
+        ...(sortBy === undefined ? {} : { sortBy }),
+        ...(focus === undefined ? {} : { focus }),
+        ...(filters === undefined ? {} : { filters }),
+      },
+    ]
+  })
+}
+
+const shownPayload = z.object({
+  arrangement: z.enum(MARKET_ARRANGEMENT_KINDS),
+  category: z.enum(['savings', 'deposits', 'mortgages']).optional(),
+  sortBy: z.enum(['five_year_cost', 'keys_date', 'monthly_repayment']).optional(),
+  focus: z.enum(['lump', 'monthly']).optional(),
+  filters: z
+    .object({
+      stayWithBank: z.boolean().optional(),
+      rateType: z.enum(['fixed', 'variable', 'either']).optional(),
+      green: z.boolean().optional(),
+    })
+    .optional(),
+})
+
+/** How many `products_shown` cards a choice is looked for on, newest first. */
+const SHOWN_CARDS = 12
 
 type Row = Database['public']['Tables']['saved_plans']['Row']
 
@@ -200,6 +260,42 @@ export function supabasePlanStore(db: Db): PlanStore {
           source: 'customer_stated',
         })
       }
+    },
+
+    async saveChoices({ planId, caseId, plan, event }) {
+      const result = await db
+        .from('saved_plans')
+        .update({ document: plan, title: plan.title })
+        .eq('id', planId)
+        .eq('case_id', caseId)
+        .select('id')
+      if (result.error) throw new Error(`Could not save the plan: ${result.error.message}`)
+      if ((result.data ?? []).length !== 1) throw new Error('Could not save the plan: no row')
+      await writeEvent(db, { caseId, type: event.type, actor: 'customer', payload: event.payload })
+    },
+
+    async choiceInputs(caseId) {
+      const [facts, shown] = await Promise.all([
+        db
+          .from('facts')
+          .select('key, value, captured_at')
+          .eq('case_id', caseId)
+          .is('superseded_by', null)
+          .order('captured_at', { ascending: true }),
+        db
+          .from('events')
+          .select('payload')
+          .eq('case_id', caseId)
+          .eq('type', 'products_shown')
+          .order('created_at', { ascending: false })
+          .limit(SHOWN_CARDS),
+      ])
+      if (facts.error) throw new Error(`Could not read the facts: ${facts.error.message}`)
+      if (shown.error) throw new Error(`Could not read the cards shown: ${shown.error.message}`)
+      // Ascending, so the newest value of a key is the one kept.
+      const byKey: Record<string, unknown> = {}
+      for (const row of facts.data) byKey[String(row.key)] = row.value
+      return { facts: byKey, shown: shownRequests(shown.data.map((row) => row.payload)) }
     },
 
     async recordClaim({ planId, caseId, participantId, plan, client, savedAt }) {

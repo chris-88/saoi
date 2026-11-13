@@ -211,9 +211,30 @@ export function supabaseAlertStore(db: Db): AlertStore {
         if (row.case_id === null) return []
         const plan = marketPlanSchema.safeParse(upgradeStoredPlan(row.document))
         if (!plan.success) return []
+        const caseId = row.case_id
+        // The products the customer chose on the cards (2026-11-13) are watched too, from when
+        // each was chosen: a change before then was already in what the card showed.
+        const chosen = Object.values(plan.data.choices ?? {}).flatMap((choice) =>
+          choice?.watches === undefined || choice.watches.length === 0
+            ? []
+            : [
+                {
+                  caseId,
+                  builtAt: iso(choice.chosenAt),
+                  products: choice.watches.map((watch) => ({
+                    provider: watch.provider,
+                    source: watch.source,
+                    productId: watch.productId,
+                    providerName: choice.lead,
+                    productName: choice.lead,
+                    ratePct: watch.ratePct,
+                  })),
+                },
+              ],
+        )
         return [
           {
-            caseId: row.case_id,
+            caseId,
             builtAt: iso(plan.data.createdAt),
             products: plan.data.combination.products.map((product) => ({
               provider: product.provider,
@@ -224,6 +245,7 @@ export function supabaseAlertStore(db: Db): AlertStore {
               ratePct: product.ratePct,
             })),
           },
+          ...chosen,
         ]
       })
     },
