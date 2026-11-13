@@ -469,7 +469,11 @@ function accessOf(view: ProductView): string {
   }
 }
 
-function conditionsOf(market: Market, view: ProductView): string[] {
+/**
+ * What the source states about a product, in Saoi's words: limits, the rate for new accounts, a
+ * bonus with its conditions, DIRT, when interest is paid, cashback, fees and who can open it.
+ */
+export function statedConditions(view: ProductView): string[] {
   const lines: string[] = []
   const terms = view.terms
   if (terms.kind === 'deposit') {
@@ -510,6 +514,11 @@ function conditionsOf(market: Market, view: ProductView): string[] {
     ].filter((part) => part !== null)
     if (who.length > 0) lines.push(`who can open it: ${who.join(', ')}`)
   }
+  return lines
+}
+
+function conditionsOf(market: Market, view: ProductView): string[] {
+  const lines = statedConditions(view)
   // The source's own words, once each, from the current rows the view is built from.
   const rows = new Set(view.provenance.rows.map((row) => `${row.source}|${row.productId}`))
   const prose = new Set(
@@ -529,7 +538,8 @@ function conditionsOf(market: Market, view: ProductView): string[] {
   return lines
 }
 
-function sourceOf(view: ProductView): string {
+/** "CCPC" or "Bank of Ireland’s own page". */
+export function sourceOf(view: ProductView): string {
   return view.provenance.source === 'ccpc' ? 'CCPC' : `${view.providerName}’s own page`
 }
 

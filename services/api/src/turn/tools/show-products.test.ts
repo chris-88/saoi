@@ -81,7 +81,7 @@ describe('show_products', () => {
     expect(card.basis.figures).toContain('a €400,000 home, €360,000 borrowed (90% of the price)')
     expect(card.basis.figures).toContain('€110,000 a year before tax')
     expect(card.basis.warnings).toEqual([...MORTGAGE_WARNINGS])
-    expect(card.arrangement.line).toMatch(/^Arranged by monthly repayment, lowest first\./)
+    expect(card.arrangement.line).toMatch(/^Arranged by monthly repayment, lowest first; /)
   })
 
   it('returns the questions, and no card, when the case has no figures', async () => {

@@ -410,6 +410,14 @@ export async function buildGeneration(
   const productsBasis = shownEvents.error === null ? productsBasisLines(shownEvents.data ?? []) : []
   const productsLookedUp =
     lookedUpEvents.error === null ? productsLookedUpLines(lookedUpEvents.data ?? []) : []
+  /*
+   * The must-knows of the products on a card they have since asked about by name (2026-11-13,
+   * progressive disclosure): the ids `lookup_products` found, the facts the newest card carried.
+   */
+  const productsMustKnow =
+    shownEvents.error === null && lookedUpEvents.error === null
+      ? productsMustKnowLines(shownEvents.data ?? [], lookedUpEvents.data ?? [])
+      : []
 
   const digest = buildCaseDigest(loaded, {
     ...(alerts === undefined ? {} : { alerts }),
@@ -417,6 +425,7 @@ export async function buildGeneration(
     ...(productsShown.length === 0 ? {} : { productsShown }),
     ...(productsBasis.length === 0 ? {} : { productsBasis }),
     ...(productsLookedUp.length === 0 ? {} : { productsLookedUp }),
+    ...(productsMustKnow.length === 0 ? {} : { productsMustKnow }),
     sensitiveDisclosure: gate.suppressHumour,
     stage,
     acting: turn.trigger === 'action',
@@ -621,6 +630,40 @@ export function productsLookedUpLines(events: readonly { readonly payload: unkno
   })
 }
 
+/**
+ * The must-knows of the products the customer has asked about by name, one line a product,
+ * newest card first: the ids `products_looked_up` found, matched to the rows' `mustKnow` that
+ * `products_shown` recorded (2026-11-13). A product on no card, or with nothing to know, has no
+ * line. Pure.
+ */
+export function productsMustKnowLines(
+  shown: readonly { readonly payload: unknown }[],
+  lookedUp: readonly { readonly payload: unknown }[],
+): string[] {
+  const asked = new Set(
+    lookedUp.flatMap(({ payload }) => {
+      if (typeof payload !== 'object' || payload === null) return []
+      const { ids } = payload as { ids?: unknown }
+      return Array.isArray(ids) ? (ids as unknown[]).filter((id) => typeof id === 'string') : []
+    }),
+  )
+  const lines = new Map<string, string>()
+  for (const { payload } of shown) {
+    if (typeof payload !== 'object' || payload === null) continue
+    const { mustKnow } = payload as { mustKnow?: unknown }
+    if (!Array.isArray(mustKnow)) continue
+    for (const row of mustKnow as unknown[]) {
+      if (typeof row !== 'object' || row === null) continue
+      const { id, lead, facts } = row as { id?: unknown; lead?: unknown; facts?: unknown }
+      if (typeof id !== 'string' || typeof lead !== 'string' || !Array.isArray(facts)) continue
+      if (!asked.has(id) || lines.has(id)) continue
+      const said = (facts as unknown[]).filter((fact) => typeof fact === 'string')
+      if (said.length > 0) lines.set(id, `${lead} [${id}]: ${said.join('; ')}`)
+    }
+  }
+  return [...lines.values()]
+}
+
 /** The most recent cards whose rows' figure basis goes in the digest: one per arrangement. */
 export const PRODUCTS_BASIS_CARDS = 2
 
@@ -654,7 +697,7 @@ export function productsBasisLines(events: readonly { readonly payload: unknown 
 
 /**
  * The products cards shown so far, newest last, at most three: "Your account against the market
- * (held_vs_market), your last reply". Pure.
+ * (held_vs_market; in groups: Yours, The market), your last reply". Pure.
  */
 export function productsShownLines(messages: readonly LoadedMessage[]): string[] {
   const replies = messages.filter((message) => message.role === 'assistant')
@@ -662,7 +705,11 @@ export function productsShownLines(messages: readonly LoadedMessage[]): string[]
     .flatMap((message, index) =>
       (message.productsShown ?? []).map((shown) => {
         const ago = replies.length - index
-        return `${shown.title} (${shown.kind}), ${ago === 1 ? 'your last reply' : `${String(ago)} replies ago`}`
+        const groups =
+          shown.groups === undefined || shown.groups.length === 0
+            ? ''
+            : `; in groups: ${shown.groups.join(', ')}`
+        return `${shown.title} (${shown.kind}${groups}), ${ago === 1 ? 'your last reply' : `${String(ago)} replies ago`}`
       }),
     )
     .slice(-3)

@@ -5,6 +5,7 @@ import {
   PROVIDER_DOMAINS,
   PROVIDER_NAMES,
   providerDomainOf,
+  providerIdOf,
   providerNameOf,
 } from '../supabase/functions/_shared/market/provider-names.ts'
 
@@ -40,5 +41,16 @@ describe('provider names', () => {
     expect(providerDomainOf('raisin_bank')).toBe('raisin.ie')
     expect(providerDomainOf('credit_union')).toBeNull()
     expect(providerDomainOf('new_bank')).toBeNull()
+  })
+
+  it('reads a provider id out of the name a customer or a plan gives', () => {
+    expect(providerIdOf('AIB')).toBe('aib')
+    expect(providerIdOf('Bank of Ireland')).toBe('boi')
+    expect(providerIdOf('BoI')).toBe('boi')
+    expect(providerIdOf('bunq')).toBe('bunq')
+    expect(providerIdOf('Permanent TSB')).toBe('ptsb')
+    expect(providerIdOf('My credit union down the road')).toBeNull()
+    expect(providerIdOf(null)).toBeNull()
+    expect(providerIdOf('toString')).toBeNull()
   })
 })

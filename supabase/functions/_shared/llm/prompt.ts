@@ -566,6 +566,13 @@ export type CaseDigest = {
    */
   readonly productsLookedUp?: readonly string[]
   /**
+   * The facts to know before choosing (`mustKnow`) of the products on a card that they have
+   * asked about by name, one line a product: "bunq Savings Account [bunq:savings.bunq_savings]:
+   * Rate ends 1 Jan, then 1.61% to €10,000 and 1.51% above; Deposit guarantee: Netherlands, not
+   * Ireland". Stated once, when they ask about one again or say they will go with it.
+   */
+  readonly productsMustKnow?: readonly string[]
+  /**
    * Whether what they asked for is what suits them, worked out from what they have said about
    * the amount and how soon they mean to repay it. Already decided; the figures are not yours.
    */
@@ -1103,6 +1110,11 @@ function digestSection(digest: CaseDigest, marketConversation: boolean): string 
       'is the fact to relay.',
       'When they name a product, a provider or a rate, call `lookup_products` with their words',
       'before answering, and answer from what it returns, with the source and the day checked.',
+      'Each row carries `mustKnow`, the facts to know before choosing it (in the tool result, and',
+      'below for a product they have asked about by name). When they ask about one product a',
+      'second time, or say they will go with it, state its must-knows once, unprompted, as facts',
+      'in a sentence or two, and do not repeat them after that. Never as a steer or a warning:',
+      'no "but", "be aware", "make sure" or "worth checking"; the facts, and they decide.',
       ...(digest.productsLookedUp === undefined || digest.productsLookedUp.length === 0
         ? []
         : [
@@ -1114,6 +1126,13 @@ function digestSection(digest: CaseDigest, marketConversation: boolean): string 
         : [
             'Already shown (for another arrangement or order, call `show_products` again):',
             ...digest.productsShown.map((line) => `- ${line}`),
+          ]),
+      ...(digest.productsMustKnow === undefined || digest.productsMustKnow.length === 0
+        ? []
+        : [
+            'Must-knows of the products on those cards they have asked about by name (state them',
+            'once, as above, if not already said):',
+            ...digest.productsMustKnow.map((line) => `- ${line}`),
           ]),
       ...(digest.productsBasis === undefined || digest.productsBasis.length === 0
         ? []

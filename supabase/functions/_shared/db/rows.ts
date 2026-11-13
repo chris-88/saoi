@@ -105,8 +105,23 @@ export const messageRow = z
         arrangement === null
       )
         return []
-      const { kind, title } = arrangement as { kind?: unknown; title?: unknown }
-      return typeof kind === 'string' && typeof title === 'string' ? [{ kind, title }] : []
+      const { kind, title, groups } = arrangement as {
+        kind?: unknown
+        title?: unknown
+        groups?: unknown
+      }
+      if (typeof kind !== 'string' || typeof title !== 'string') return []
+      // The groups' labels ("Instant access", "Fixed term"), so the next turn can name them.
+      const labels = Array.isArray(groups)
+        ? (groups as unknown[]).flatMap((group) => {
+            const label =
+              typeof group === 'object' && group !== null
+                ? (group as { label?: unknown }).label
+                : undefined
+            return typeof label === 'string' ? [label] : []
+          })
+        : []
+      return [{ kind, title, ...(labels.length === 0 ? {} : { groups: labels }) }]
     }),
   }))
 
