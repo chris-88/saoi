@@ -736,7 +736,11 @@ Every tool input is Zod-validated before any effect. Invalid input returns a too
   fact ("18 months ends May 2028; with its interest the keys come in May 2028."), and in the
   shorter row's detail. `fits_date` rows read "keys Jul 2028, €627", their money runs to their
   own keys month, and they sort by it then money; the basis states the rule in one sentence
-  (`TERM_FIT_RULE`). The six-month rule is gone.
+  (`TERM_FIT_RULE`). The six-month rule is gone. `by_access`'s fixed-term side is `fits_date`'s
+  own (`savingsFits`, 2026-11-13): the same rows, figures and order under "Fixed term", and a
+  card narrowed to `savings` still reads the fixed terms there. A fixed term whose own keys month
+  is after the plan's (the money stops at the term's end) says so in its detail ("Interest stops
+  at Nov 2027, the end of the term; the keys then come in August 2028, a month after the plan's.").
   **Must-knows, once** (progressive disclosure): the tool result gives the model each row's
   `mustKnow`, `products_shown` records them, and the digest keeps those of the shown products the
   customer has asked about by name (`products_looked_up` ids, `productsMustKnowLines`). Asked
