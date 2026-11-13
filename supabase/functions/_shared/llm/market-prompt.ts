@@ -151,3 +151,9 @@ export function marketConversationSection(): string {
     '  the fact to relay.',
   ].join('\n')
 }
+
+/**
+ * The whole reply to a sign-in in a market conversation (2026-11-13: two greetings re-asked "a
+ * plan or the accounts?"): one line, no question, written by the server, not the model.
+ */
+export const MARKET_SIGNED_IN_LINE = 'Signed in; this conversation is kept.'

@@ -1,6 +1,7 @@
 import type { Db } from '@shared/db/case-repository.ts'
 import { loadHoldings } from '@shared/db/holdings.ts'
 import { loadClaimedPlans } from '@shared/db/saved-plans.ts'
+import { SIGNED_IN_ACTION, signInAnswered } from '@shared/llm/sign-in-prompt.ts'
 
 /** Reads of past cards and events that the turn decides things from. */
 
@@ -79,4 +80,39 @@ export async function holdsMarketFigures(admin: Db, caseId: string): Promise<boo
     loadHoldings(admin, caseId).catch(() => []),
   ])
   return claimed.length > 0 || held.length > 0
+}
+
+/**
+ * The "Signed in." message that already answered this case's sign-in, or null (`signInAnswered`).
+ * A read that fails counts as not answered: a second greeting is a smaller harm than none.
+ */
+export async function signInAlreadyAnswered(admin: Db, caseId: string): Promise<string | null> {
+  const [signedIn, said] = await Promise.all([
+    admin
+      .from('events')
+      .select('created_at')
+      .eq('case_id', caseId)
+      .eq('type', 'customer_signed_in')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    admin
+      .from('messages')
+      .select('id, created_at')
+      .eq('case_id', caseId)
+      .eq('role', 'system')
+      .eq('content', SIGNED_IN_ACTION)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ])
+  if (said.error !== null) return null
+  const event = signedIn.data as { created_at?: unknown } | null
+  const message = said.data as { id?: unknown; created_at?: unknown } | null
+  return signInAnswered(
+    typeof event?.created_at === 'string' ? event.created_at : null,
+    typeof message?.id === 'string' && typeof message.created_at === 'string'
+      ? { id: message.id, createdAt: message.created_at }
+      : null,
+  )
 }
