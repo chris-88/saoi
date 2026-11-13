@@ -6,7 +6,10 @@ import { normaliseMarket } from './normalise.ts'
 import {
   bonusTiming,
   caseFigures,
+  type CaseFigures,
   groupsInWords,
+  heldIsRegularSaver,
+  isRegularSaver,
   productsCard,
   productsCardText,
   type ProductsResult,
@@ -99,9 +102,12 @@ describe('productsCard: arranged by the question asked', () => {
     const kinds = card.rows.map((row) => row.kind)
     expect(kinds).toContain('instant access')
     expect(kinds.some((kind) => /fixed$/.test(kind))).toBe(true)
-    // Instant first, then fixed: the two sides are not interleaved.
+    // Instant first, then fixed, then the regular savers on the monthly saving: never interleaved.
     const firstFixed = kinds.findIndex((kind) => kind.endsWith('fixed'))
-    expect(kinds.slice(firstFixed).every((kind) => kind.endsWith('fixed'))).toBe(true)
+    const firstRegular = kinds.indexOf('regular saver')
+    expect(kinds.slice(0, firstFixed).every((kind) => kind === 'instant access')).toBe(true)
+    expect(kinds.slice(firstFixed, firstRegular).every((kind) => kind.endsWith('fixed'))).toBe(true)
+    expect(kinds.slice(firstRegular).every((kind) => kind === 'regular saver')).toBe(true)
     expect(card.basis.objective).toMatch(/price of access|access costs nothing here/)
     expect(card.arrangement.line).not.toMatch(/price of access/)
   })
@@ -676,8 +682,13 @@ describe('productsCard: the rows in groups (2026-11-13)', () => {
     const groups = groupsOf(
       cardOf(productsCard(MARKET, FIGURES, { arrangement: 'by_access' }, PRODUCTS_AS_OF)),
     )
-    expect(groups.map((group) => group.label)).toEqual(['Instant access', 'Fixed term'])
+    expect(groups.map((group) => group.label)).toEqual([
+      'Instant access',
+      'Fixed term',
+      'Regular saver',
+    ])
     expect(groups[0]?.rows.every((row) => row?.kind === 'instant access')).toBe(true)
+    expect(groups[2]?.rows.every((row) => row?.kind === 'regular saver')).toBe(true)
     expect(groups[1]?.rows.every((row) => row?.kind.endsWith('fixed'))).toBe(true)
     const rates = (groups[0]?.rows ?? []).map((row) => Number(row?.value.replace(/%.*/, '')))
     expect(rates).toEqual([...rates].sort((a, b) => b - a))
@@ -687,19 +698,34 @@ describe('productsCard: the rows in groups (2026-11-13)', () => {
     expect(keys).toEqual([...keys].sort((a, b) => a - b))
   })
 
-  it('fits_date: fixed terms that end in time, then instant access, then notice', () => {
+  it('fits_date: fixed terms that end in time, then regular savers, then instant access and notice', () => {
     const groups = groupsOf(
       cardOf(productsCard(MARKET, FIGURES, { arrangement: 'fits_date' }, PRODUCTS_AS_OF)),
     )
-    expect(groups.map((group) => group.label)).toEqual(['Fixed term', 'Instant access', 'Notice'])
-    expect(groups[2]?.rows.every((row) => row?.kind.endsWith('notice'))).toBe(true)
+    expect(groups.map((group) => group.label)).toEqual([
+      'Fixed term',
+      'Regular saver',
+      'Instant access',
+    ])
+    expect(groups[1]?.rows.every((row) => row?.kind === 'regular saver')).toBe(true)
     expect(
       groupsInWords(
         cardOf(productsCard(MARKET, FIGURES, { arrangement: 'fits_date' }, PRODUCTS_AS_OF)),
       ),
-    ).toMatch(
-      /^“Fixed term” \(\d rows?\), “Instant access” \(\d rows?\) and “Notice” \(\d rows?\)$/,
+    ).toBe('“Fixed term” (3 rows), “Regular saver” (3 rows) and “Instant access” (2 rows)')
+    // With no monthly saving there is no regular saver group, and notice keeps its place.
+    const lump = groupsOf(
+      cardOf(
+        productsCard(
+          MARKET,
+          { ...FIGURES, monthlySavingEur: null },
+          { arrangement: 'fits_date' },
+          PRODUCTS_AS_OF,
+        ),
+      ),
     )
+    expect(lump.map((group) => group.label)).toEqual(['Fixed term', 'Instant access', 'Notice'])
+    expect(lump[2]?.rows.every((row) => row?.kind.endsWith('notice'))).toBe(true)
   })
 
   it('mortgage_by_sort: one comparison, no groups', () => {
@@ -831,6 +857,7 @@ describe('productsCard: by_access shows fits_date’s fixed terms (2026-11-13)',
     expect(byAccess.arrangement.groups?.map((group) => group.label)).toEqual([
       'Instant access',
       'Fixed term',
+      'Regular saver',
     ])
     const rows = fixedOf(byAccess)
     expect(rows.find((row) => row.id === 'boi:savings.advantage_fixed')).toMatchObject({
@@ -871,4 +898,347 @@ describe('productsCard: by_access shows fits_date’s fixed terms (2026-11-13)',
       expect(boi?.detail?.some((line) => line.startsWith('Interest stops'))).toBe(false)
     }
   })
+})
+
+describe('productsCard: the regular savers in their own group (2026-11-13)', () => {
+  /**
+   * The live case Chris saw (2026-11-13 16:00): €32,000 held, €1,000 a month, keys July 2028.
+   * Bank of Ireland's SuperSaver and MortgageSaver were not on the card, and nothing said why.
+   */
+  const LIVE = {
+    ...FIGURES,
+    held: [
+      {
+        label: 'Savings',
+        provider: null,
+        balance: 32_000,
+        ratePct: null,
+        kind: 'savings' as const,
+      },
+    ],
+    monthlySavingEur: 1_000,
+    neededAtKeysEur: 52_500,
+    keysMonth: '2028-07',
+  }
+  const LIVE_AS_OF = '2026-11-13'
+  /** The fixture with the regular savers on CCPC's figure alone left out: Bank of Ireland's three. */
+  const BOI_SAVERS: Market = {
+    ...MARKET,
+    products: MARKET.products.filter(
+      (product) => !(isRegularSaver(product) && !product.rateConfirmed),
+    ),
+  }
+  const card = (
+    market: Market,
+    arrangement: 'held_vs_market' | 'by_access' | 'fits_date',
+    focus?: 'lump' | 'monthly',
+    figures: CaseFigures = LIVE,
+  ) =>
+    cardOf(
+      productsCard(
+        market,
+        figures,
+        { arrangement, ...(focus === undefined ? {} : { focus }) },
+        LIVE_AS_OF,
+      ),
+    )
+  const group = (shown: MarketProductsCard, label: string) =>
+    (shown.arrangement.groups?.find((item) => item.label === label)?.rowIds ?? []).map((id) =>
+      shown.rows.find((row) => row.id === id),
+    )
+  const money = (figure: string | undefined) =>
+    Number(/€([\d,]+)/.exec(figure ?? '')?.[1]?.replace(/,/g, '') ?? Number.NaN)
+  const regularIds = new Set(MARKET.products.filter(isRegularSaver).map((product) => product.id))
+
+  it('isRegularSaver: the accounts built for monthly saving, not those that take any lump sum', () => {
+    const ids = MARKET.products.filter(isRegularSaver).map((product) => product.id)
+    for (const id of [
+      'boi:savings.supersaver',
+      'boi:savings.goalsaver',
+      'boi:savings.mortgagesaver',
+      'aib:savings.c396',
+      'ebs:savings.c122',
+      'ptsb:savings.c39',
+    ]) {
+      expect(ids, id).toContain(id)
+    }
+    for (const id of [
+      'bunq:savings.bunq_savings',
+      'moco:savings.moco_easysaver',
+      'boi:savings.instant_access',
+      'boi:savings.advantage_fixed',
+    ]) {
+      expect(ids, id).not.toContain(id)
+    }
+  })
+
+  it('a regular saver appears once, under “Regular saver”, by money, on both arrangements', () => {
+    for (const figures of [FIGURES, LIVE]) {
+      for (const arrangement of ['by_access', 'fits_date'] as const) {
+        const shown = card(MARKET, arrangement, undefined, figures)
+        const ids = shown.rows.map((row) => row.id)
+        expect(new Set(ids).size, arrangement).toBe(ids.length)
+        const regular = group(shown, 'Regular saver')
+        expect(regular.length, arrangement).toBeGreaterThan(0)
+        for (const row of shown.rows) {
+          // In the regular saver group if and only if it is a regular saver.
+          expect(row.kind === 'regular saver', row.id).toBe(regularIds.has(row.id))
+        }
+        const amounts = regular.map((row) => money(row?.figure))
+        expect(amounts).toEqual([...amounts].sort((a, b) => b - a))
+      }
+    }
+    expect(card(MARKET, 'by_access').arrangement.groups?.map((item) => item.label)).toEqual([
+      'Instant access',
+      'Fixed term',
+      'Regular saver',
+    ])
+    expect(card(MARKET, 'fits_date').arrangement.groups?.map((item) => item.label)).toEqual([
+      'Fixed term',
+      'Regular saver',
+      'Instant access',
+    ])
+  })
+
+  it('the live figures: the regular savers judged on the €1,000 a month, and the card says what it set aside', () => {
+    const byAccess = card(MARKET, 'by_access')
+    expect(group(byAccess, 'Regular saver').map((row) => [row?.id, row?.figure])).toEqual([
+      ['ebs:savings.c122', '€354 by Jul 2028'],
+      ['aib:savings.c396', '€297 by Jul 2028'],
+    ])
+    expect(byAccess.basis.coverage).toContain(
+      '6 regular savers are judged on the €1,000 a month alone and shown in their own group, 4 of them not on the card for room: Bank of Ireland SuperSaver Account, ptsb Online Regular Saver Account (Variable), Bank of Ireland GoalSaver Account and Bank of Ireland MortgageSaver account; ',
+    )
+    expect(byAccess.basis.coverage).toContain(
+      '1 account takes under half of the €32,000 and is left out: Bankinter Deposit Plus 12 Month Fixed Term Account 25% Access',
+    )
+    expect(byAccess.basis.objective).toContain(
+      'Regular savers last, by interest after DIRT on the €1,000 a month alone, highest first.',
+    )
+    // `more` stays card-level: every account compared, less the rows shown.
+    expect(byAccess.more).toBe(6)
+
+    const fits = card(MARKET, 'fits_date')
+    expect(group(fits, 'Regular saver').map((row) => [row?.id, row?.figure])).toEqual([
+      ['ebs:savings.c122', 'keys Jul 2028, €354'],
+      ['aib:savings.c396', 'keys Jul 2028, €297'],
+      ['boi:savings.supersaver', 'keys Jul 2028, €279'],
+    ])
+    expect(fits.basis.coverage).toContain(
+      '6 regular savers are judged on the €1,000 a month alone and shown in their own group, 3 of them not on the card for room: ptsb Online Regular Saver Account (Variable), Bank of Ireland GoalSaver Account and Bank of Ireland MortgageSaver account',
+    )
+    for (const shown of [byAccess, fits]) {
+      expect(adviceWordsIn(productsCardText(shown))).toEqual([])
+    }
+  })
+
+  /** SuperSaver's row: the rate's period and what follows, the money on the monthly saving alone. */
+  const SUPERSAVER = {
+    id: 'boi:savings.supersaver',
+    lead: 'Bank of Ireland SuperSaver Account',
+    kind: 'regular saver',
+    value: '3.00% to Nov 2027',
+    note: 'then 2.00%; the money counts both',
+    mustKnow: [
+      'Rate ends Nov 2027, then 2.00%',
+      'Monthly payments only; the €32,000 needs another account',
+    ],
+  }
+  const MORTGAGESAVER = {
+    id: 'boi:savings.mortgagesaver',
+    lead: 'Bank of Ireland MortgageSaver account',
+    kind: 'regular saver',
+    value: '2.00%',
+    note: 'bonus paid after drawdown, not counted',
+    mustKnow: [
+      'Also takes up to €20,000 as a lump sum, at 0.50%; not counted here',
+      'Bonus paid after the mortgage is drawn down; not counted',
+    ],
+  }
+
+  it('SuperSaver and MortgageSaver: their rows in the group, with the figures and the must-knows', () => {
+    const cases = [
+      { shown: card(BOI_SAVERS, 'fits_date'), keys: true },
+      { shown: card(BOI_SAVERS, 'fits_date', 'monthly'), keys: true },
+      { shown: card(BOI_SAVERS, 'by_access', 'monthly'), keys: false },
+    ]
+    for (const { shown, keys } of cases) {
+      const regular = group(shown, 'Regular saver')
+      expect(regular.map((row) => row?.id)).toEqual([
+        'boi:savings.supersaver',
+        'boi:savings.goalsaver',
+        'boi:savings.mortgagesaver',
+      ])
+      const superSaver = regular[0]
+      const mortgageSaver = regular[2]
+      expect(superSaver).toMatchObject({
+        ...SUPERSAVER,
+        figure: keys ? 'keys Jul 2028, €279' : '€279 by Jul 2028',
+      })
+      expect(superSaver?.detail?.slice(0, 2)).toEqual([
+        '€279 counts 3.00% to November 2027, then 2.00%. It counts the €1,000 a month alone, not the €32,000 held.',
+        'Monthly saving from €5 up to €2,500.',
+      ])
+      expect(mortgageSaver).toMatchObject({
+        ...MORTGAGESAVER,
+        figure: keys ? 'keys Jul 2028, €222' : '€222 by Jul 2028',
+      })
+      expect(mortgageSaver?.detail?.[0]).toBe(
+        '€222 counts its balance-band rates, up to 2.00%, to July 2028. The €1,340 bonus is paid after drawdown and is not counted. It counts the €1,000 a month alone, not the €32,000 held.',
+      )
+      expect(mortgageSaver?.detail?.[1]).toMatch(
+        /^Monthly saving from €200 up to €2,500; lump sum up to €20,000;/,
+      )
+    }
+    // Not in the lump-sum groups: on by_access, the room goes to the top two by money, and
+    // MortgageSaver is named in the coverage.
+    const byAccess = card(BOI_SAVERS, 'by_access')
+    for (const label of ['Instant access', 'Fixed term']) {
+      const ids = group(byAccess, label).map((row) => row?.id)
+      expect(ids).not.toContain('boi:savings.supersaver')
+      expect(ids).not.toContain('boi:savings.mortgagesaver')
+    }
+    expect(group(byAccess, 'Regular saver')[0]).toMatchObject({
+      ...SUPERSAVER,
+      figure: '€279 by Jul 2028',
+    })
+    expect(byAccess.basis.coverage).toContain(
+      '3 regular savers are judged on the €1,000 a month alone and shown in their own group, 1 of them not on the card for room: Bank of Ireland MortgageSaver account',
+    )
+  })
+
+  it('without a monthly saving, no group: a regular saver stays under the lump-sum rule', () => {
+    const shown = card(MARKET, 'by_access', undefined, { ...LIVE, monthlySavingEur: null })
+    expect(shown.arrangement.groups?.map((item) => item.label)).toEqual([
+      'Instant access',
+      'Fixed term',
+    ])
+    // MortgageSaver takes €20,000 of the sum, so it is set against it as before; SuperSaver
+    // takes no lump sum.
+    expect(shown.rows.some((row) => row.kind === 'regular saver')).toBe(false)
+    expect(shown.rows.find((row) => row.id === 'boi:savings.mortgagesaver')?.kind).toBe(
+      'instant access',
+    )
+    expect(shown.rows.map((row) => row.id)).not.toContain('boi:savings.supersaver')
+    expect(shown.basis.coverage).not.toMatch(/regular saver/)
+    expect(shown.basis.coverage).toContain(
+      '1 account takes under half of the €32,000 and is left out: Bankinter Deposit Plus 12 Month Fixed Term Account 25% Access',
+    )
+  })
+
+  it('held_vs_market: their own regular saver brings the market’s regular savers beside it', () => {
+    const own = {
+      ...LIVE,
+      held: [
+        {
+          label: 'BoI SuperSaver',
+          provider: 'Bank of Ireland',
+          balance: 6_000,
+          ratePct: 3,
+          kind: 'savings' as const,
+        },
+        ...LIVE.held,
+      ],
+    }
+    expect(heldIsRegularSaver(MARKET, own.held[0]!)).toBe(true)
+    expect(heldIsRegularSaver(MARKET, LIVE.held[0]!)).toBe(false)
+    const shown = card(MARKET, 'held_vs_market', undefined, own)
+    expect(shown.arrangement.groups?.map((item) => item.label)).toEqual([
+      'Yours',
+      'Regular saver',
+      'The market',
+    ])
+    expect(group(shown, 'The market').some((row) => regularIds.has(row?.id ?? ''))).toBe(false)
+    expect(shown.basis.coverage).toMatch(/regular savers are judged on the €1,000 a month alone/)
+    // Their account a plain savings account: as before.
+    expect(card(MARKET, 'held_vs_market').arrangement.groups?.map((item) => item.label)).toEqual([
+      'Yours',
+      'The market',
+    ])
+  })
+})
+
+describe('productsCard: a card on the monthly saving (focus “monthly”, 2026-11-13)', () => {
+  const LIVE = {
+    ...FIGURES,
+    held: [
+      {
+        label: 'Savings',
+        provider: null,
+        balance: 32_000,
+        ratePct: null,
+        kind: 'savings' as const,
+      },
+    ],
+    monthlySavingEur: 1_000,
+    neededAtKeysEur: 52_500,
+    keysMonth: '2028-07',
+  }
+  const monthly = (arrangement: 'by_access' | 'fits_date', figures: CaseFigures = LIVE) =>
+    productsCard(MARKET, figures, { arrangement, focus: 'monthly' }, '2026-11-13')
+
+  it('the accounts for the monthly saving, regular savers first, fixed terms left out, on both arrangements', () => {
+    const fits = cardOf(monthly('fits_date'))
+    const byAccess = cardOf(monthly('by_access'))
+    for (const shown of [fits, byAccess]) {
+      expect(shown.arrangement.title).toBe('Accounts for your €1,000 a month')
+      expect(shown.arrangement.line).toBe(
+        'By what each account earns on the €1,000 a month to the keys in July 2028, regular savers first; ask about the sum held, by access or by the date, instead.',
+      )
+      expect(shown.question).toBe('Where can the €1,000 a month go until the keys in July 2028?')
+      expect(shown.arrangement.groups?.map((item) => item.label)).toEqual([
+        'Regular saver',
+        'Instant access',
+        'Notice',
+      ])
+      expect(shown.rows.some((row) => row.kind.endsWith('fixed'))).toBe(false)
+      expect(shown.rows.map((row) => row.id)).toEqual([
+        'ebs:savings.c122',
+        'aib:savings.c396',
+        'boi:savings.supersaver',
+        'ptsb:savings.c39',
+        'moco:savings.moco_easysaver',
+        'bunq:savings.bunq_savings',
+        'ptsb:deposit.c6017',
+        'boi:deposit.c505',
+      ])
+      expect(shown.basis.figures).toContain('€32,000 held, not counted on this card')
+      expect(shown.basis.coverage).toBe(
+        "13 savings accounts on the Irish market take the €1,000 a month, from CCPC's comparison tables and the providers' own pages, the oldest figure checked 2026-11-09; 6 regular savers are shown in their own group, 2 of them not on the card for room: Bank of Ireland GoalSaver Account and Bank of Ireland MortgageSaver account; 6 fixed terms take lump sums only and are left out; 1 more left out (the most for: for children or students).",
+      )
+      expect(shown.more).toBe(5)
+      expect(shown.arrangement.line.split(/\.\s/)).toHaveLength(1)
+      expect(shown.arrangement.line.length).toBeLessThanOrEqual(170)
+      for (const row of shown.rows) {
+        expect(row.mustKnow?.length ?? 0, row.id).toBeLessThanOrEqual(3)
+        expect(row.detail?.length ?? 0, row.id).toBeLessThanOrEqual(6)
+      }
+      expect(adviceWordsIn(productsCardText(shown))).toEqual([])
+    }
+    // The same rows and money on both; only the figure's form differs.
+    expect(fits.rows.map((row) => money(row.figure))).toEqual(
+      byAccess.rows.map((row) => money(row.figure)),
+    )
+    expect(fits.rows[0]?.figure).toBe('keys Jul 2028, €354')
+    expect(byAccess.rows[0]?.figure).toBe('€354 by Jul 2028')
+    // Instant access judged on the monthly saving alone: MoCo's €247, not its €1,002 on both.
+    expect(fits.rows.find((row) => row.id === 'moco:savings.moco_easysaver')?.figure).toBe(
+      'keys Jul 2028, €247',
+    )
+    const result = monthly('fits_date')
+    if (result.kind === 'card') {
+      for (const row of result.figureBasis) expect(adviceWordsIn(row.line), row.line).toEqual([])
+      expect(result.figureBasis.map((row) => row.id)).toEqual(result.card.rows.map((row) => row.id))
+    }
+  })
+
+  it('asks for the monthly saving when there is none', () => {
+    expect(monthly('fits_date', { ...LIVE, monthlySavingEur: null })).toEqual({
+      kind: 'questions',
+      questions: ['How much goes aside each month?'],
+    })
+  })
+
+  const money = (figure: string | undefined) =>
+    Number(/€([\d,]+)/.exec(figure ?? '')?.[1]?.replace(/,/g, '') ?? Number.NaN)
 })
