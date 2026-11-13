@@ -90,7 +90,9 @@ saoi-api, services/api (Node, Hono; service role; holds ANTHROPIC_API_KEY, VAPID
                 against the claimed plan
   partner       join via invite, scoped DTO reads, partner task submission
   admin         simulate events, send notification, reset, persona/domain
-                config, case inspection, metrics
+                config, case inspection, metrics; market data: raw rows with
+                history (GET /api/admin/market-products) and one entry per
+                product as the engine folds them (GET /api/admin/market/views)
 
 Postgres
   38 tables. Core: cases, participants, participant_sessions, customers
@@ -275,7 +277,12 @@ line in the refresh output. Shapes in `_shared/market/schema.ts`: `rates` is a u
   figure from them. Other providers and every CCPC row stay out of the Demo Bank catalogue and
   every Demo Bank tool; `show_products`, `lookup_products` and a market conversation's
   catalogue section read the whole market (the comparison API's store, passed to the turn as
-  `market`). The console's Market data screen shows all of it.
+  `market`). The console's Market data screen shows all of it: `GET /api/admin/market/views`
+  is the engine's views over every current row (Raisin's platform banks included), one entry
+  per product, with the readable name from `_shared/market/provider-names.ts` (every provider
+  id; an unnamed one falls back to the id), the categories as Savings (regular savers),
+  Deposits, Mortgages, Loans, Credit cards and Current accounts, and a term to filter on
+  (`domain/market/admin-views.ts`); `GET /api/admin/market-products` the raw rows and history.
 - **Compared** by the public comparison API (below), which reads every row.
 
 ### The comparison engine and its public API

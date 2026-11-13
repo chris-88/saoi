@@ -32,6 +32,7 @@ function fake() {
       calls.push(filter)
       return Promise.resolve({ items: [version], skipped: 0 })
     },
+    views: () => Promise.reject(new Error('views not faked')),
   }
   return { store, calls }
 }

@@ -386,6 +386,9 @@ const MONTH_NAMES = [
   'December',
 ]
 
+/** A view's rates in one line, as a lookup words them (every rung of a ladder). */
+export const rateLineOf = (view: ProductView): string => rateOf(view, null)
+
 function rateOf(view: ProductView, term: number | null): string {
   const terms = view.terms
   switch (terms.kind) {
