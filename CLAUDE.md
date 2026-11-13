@@ -85,7 +85,9 @@ saoi-api, services/api (Node, Hono; service role; holds ANTHROPIC_API_KEY, VAPID
   plans         POST /api/plans (public: the MCP saves a plan, gets a one-time link);
                 POST /api/plans/claim (the app opens it into a conversation);
                 GET and PATCH /api/cases/{id}/plan (the profile: read the claimed
-                plan, change a figure, the plan is rebuilt and the chat told)
+                plan, change a figure, the plan is rebuilt and the chat told);
+                POST and DELETE /api/cases/{id}/plan/choices (a product chosen on a
+                card for the lump sum, the monthly saving or the mortgage)
   holdings      /api/cases/{id}/holdings: accounts and debts by hand, progress
                 against the claimed plan
   partner       join via invite, scoped DTO reads, partner task submission
@@ -541,6 +543,37 @@ amounts, projections and unknowns, the payoff order, the ranking basis, assumpti
   only (`returnsAfterPlanEdit`: `tool_choice: none` with the tools still sent, so the cached
   prefix holds, and any call refused unrun), so products wait for the customer's own message;
   the digest lists the edits; a reload shows the plan card from the stored plan.
+- **Choices** (2026-11-13, Chris: "the goal is to get the customer to pick products from the
+  product lists we're presenting, so that we have a goal in mind of what they're going to do"):
+  three parts on the claimed plan, `PLAN_CHOICE_SLOTS` (`lump_sum`, `monthly_saving`,
+  `mortgage`), stored as `MarketPlan.choices` and returned as `CasePlan.choices` (each part a
+  `planChoiceSchema` or null) on `GET`, `PATCH` and the choice routes, and on the `saved_plan`
+  card (`choices`). A choice is the customer's: the model has no tool that makes one (Invariant
+  1). `POST /api/cases/{id}/plan/choices` takes `{ slot, rowId }` only; `resolveChoice`
+  (`domain/market/choices.ts`) rebuilds the row's `lead`, `kind`, `value` and `figure` from the
+  market on the products card's rules (the cards the case was shown first, from `products_shown`,
+  then `show_products`' defaults; a row on no card from the comparison's rules), a mortgage from
+  the plan's comparison options (`comparison.options[].rowId`, the lender's market product id,
+  the same id a mortgage products card's row carries; `mortgageOptionRowId` makes a stable one
+  for older plans) or a mortgage card's row. Refused with a sentence of fact the app shows inline
+  (400): a mortgage for a savings part, a savings product for the mortgage, a regular saver or an
+  account that takes no lump sum for the lump sum, a fixed term for the monthly saving; a row on
+  no card and not in the comparison is 404. A rate or term with an end (a bonus's reset, an
+  introductory period, a fixed term's maturity from the day chosen, a mortgage's fixed period
+  from the keys month) keeps a staged reminder dated to it (`endsOn`, `reminderId` on the stored
+  choice); replacing or removing the choice deletes it, and a plan edit never moves it. The
+  market rows behind a choice (`watches`) are watched by the alerts run from when it was chosen.
+  `DELETE …/plan/choices/{slot}` opens the part again. Each commit writes `product_chosen`
+  (`{ slot, rowId, lead, replaced?, replacedLead?, reminder?, next, allChosenLine? }`) and a
+  removal `product_choice_removed`; both are narratable, so the app's return turn says it in a
+  line as a fact, then `next.question` (the next open part's deciding question, naming no
+  product: "Which account is the one for your €1,500 a month?"), or, when that choice completed
+  the plan, `allChosenLine` (the reminders, the alerts, the return) once and nothing asked; that
+  turn is text only, like the return after a plan edit (`returnsAfterPlanEdit`). An edit keeps
+  the choices. The digest's plan lines carry "Choices, theirs, made on the cards: lump sum: …;
+  monthly saving: open; mortgage: open." and the next open part with its question
+  (`choicesDigestLines`, newest claimed plan only). `show_products` rows and `compare_products`
+  columns that are a current choice carry `chosen: slot`, and the tool result names them.
 - `npm run plan:sample` saves the worked example against the live API and prints a link.
 
 ### Plan alerts and reminders
@@ -554,7 +587,8 @@ nudge: no "switch", "should", "better" or "recommended" (`alerts.test.ts` holds 
   with its successor (none: withdrawn by the refresh's retire path), and raises one
   `rate_change` or `product_withdrawn` alert per case and version for claimed plans
   (`saved_plans.case_id` set) built before the change whose `combination.products` hold that
-  provider, source and product id, when the headline rate moved
+  provider, source and product id (or a product the customer chose on a card, from when it was
+  chosen), when the headline rate moved
   (`_shared/domain/market/alerts.ts`). Reminders (`reminders`, set by `set_reminder` or
   `POST /api/cases/{id}/reminders`) raise a `reminder` alert at 90, 60, 30 and 7 days before
   and on the day, the latest stage reached once, with today's fixed mortgage rates (lenders
@@ -835,8 +869,13 @@ computed but says nothing: the digest's stage section is replaced by "How this c
 runs" (`marketConversationSection`): the plan is the one they saved, and asked for "a plan"
 Saoirse says so in a line and carries on; its figures are held and change under Your plan or
 with `record_holding`; a reply ends on the one question a tool result carries (`nextQuestion`,
-`decides`) or on nothing, never on a choice of what to do next; nothing is started or applied
-for here; nothing is to be checked with the provider. The tool guidance is
+`decides`) or else the next open part's deciding question (Choices, under Plans), never on a
+choice of what to do next; the aim is a choice for each part of the plan, made by the customer
+on a card, and every reply moves towards the next open part with facts; a question names a
+product only when they named, selected or compared it ("Is bunq the one for your €32,000?");
+a choice is never made, called good or claimed by Saoirse, and once every part is chosen she
+says what the plan now does once and asks nothing more about products; nothing is started or
+applied for here; nothing is to be checked with the provider. The tool guidance is
 `MARKET_TOOL_GUIDANCE`, naming only the tools offered. The digest leaves out what fed the arc:
 the needs, the goals and what they lack (the plan card's gating), suitability, prospect,
 revived needs, the check-in, the POC's kept plans, plan and arrangement, and the empty
