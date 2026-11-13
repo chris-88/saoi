@@ -85,6 +85,7 @@ export const showProductsTool: ToolModule<'show_products'> = {
         arrangement: input.arrangement,
         category: input.category,
         sortBy: input.sortBy,
+        focus: input.focus,
         filters: input.filters,
       },
       dublinToday(),
@@ -116,6 +117,7 @@ export const showProductsTool: ToolModule<'show_products'> = {
         arrangement: card.arrangement.kind,
         ...(input.category === undefined ? {} : { category: input.category }),
         ...(input.sortBy === undefined ? {} : { sortBy: input.sortBy }),
+        ...(input.focus === undefined ? {} : { focus: input.focus }),
         ...(input.filters === undefined ? {} : { filters: input.filters }),
         rows: card.rows.length,
         more: card.more,
@@ -144,9 +146,14 @@ export const showProductsTool: ToolModule<'show_products'> = {
         (groupsInWords(card) === null
           ? ''
           : ` It is in groups: ${groupsInWords(card) ?? ''}; refer to a group by its label.`) +
+        ` What it compares and what it set aside: ${card.basis.coverage}` +
         ' Say one line about what it shows, in their terms, and ask ' +
         'nothing else. Do not read the rows or figures out, do not rank them in words, and ' +
-        'never say which one to take: it is a comparison, and they decide.' +
+        'never say which one to take: it is a comparison, and they decide. Asked which is ' +
+        "best, the answer is the card's order and the rule it is in (" +
+        `${card.basis.objective.split('. ')[0] ?? ''}), never a pick. Asked about a product ` +
+        'by name that is not on the card, call `lookup_products` and answer from what it ' +
+        'returns and from what the card set aside; never say it did not make the cut.' +
         figureBasisText(outcome.figureBasis) +
         mustKnowText(card.rows),
       card,

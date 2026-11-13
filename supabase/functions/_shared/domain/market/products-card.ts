@@ -69,10 +69,20 @@ import type { AsOf, Market } from './types.ts'
 
 export type ProductsCategory = 'savings' | 'deposits' | 'mortgages'
 
+/**
+ * What a savings card is about (Chris, 2026-11-13): `lump`, the sum held (the default), or
+ * `monthly`, the monthly saving: "Accounts for your €1,000 a month", the regular savers first,
+ * then the instant-access and notice accounts that take monthly payments, each judged on the
+ * monthly saving alone; fixed terms take lump sums only and are left out.
+ */
+export type ProductsFocus = 'lump' | 'monthly'
+
 export type ShowProductsRequest = {
   readonly arrangement: ProductsArrangement
   readonly category?: ProductsCategory | undefined
   readonly sortBy?: HomeSort | undefined
+  /** `by_access` and `fits_date` only; `lump` by default. */
+  readonly focus?: ProductsFocus | undefined
   readonly filters?:
     | {
         readonly stayWithBank?: boolean | undefined
@@ -557,6 +567,10 @@ function savingsFacts(input: {
   readonly bonus?: 'by_keys' | 'after_drawdown' | 'not_stated' | null | undefined
   /** A fixed term whose own keys month is later than the plan's: why, in one line. */
   readonly keysLine?: string | null | undefined
+  /** An account judged on the monthly saving alone: what it does with the sum held. */
+  readonly lumpLine?: string | null | undefined
+  /** An account judged on the monthly saving alone: what it takes a month ("Takes up to €2,500 a month."). */
+  readonly capLine?: string | null | undefined
 }): RowFacts {
   const { product, terms, figures, words, asOf } = input
   const termMonths = terms.access === 'fixed_term' ? figures.termMonths : null
@@ -597,6 +611,7 @@ function savingsFacts(input: {
         : someMonthly
           ? `Takes ${whole(takesMonthly)} of the ${whole(input.monthly)} a month`
           : null,
+      input.lumpLine ?? null,
       figures.notPlaced.lumpSum > 0
         ? `${whole(figures.notPlaced.lumpSum)} of the sum is above what it takes`
         : null,
@@ -615,6 +630,7 @@ function savingsFacts(input: {
     [
       input.figureBasis,
       input.keysLine ?? null,
+      input.capLine ?? null,
       conditions.length === 0 ? null : sentence(conditions.join('; ')),
       who === undefined ? null : sentence(who),
       sourceLine(product),
@@ -677,12 +693,17 @@ function marketRow(
   }
 }
 
+/** The reason an account that takes under half of the sum held is left out. */
+const UNDER_HALF = 'Takes under half of the sum held'
+
 type SavingsSearch = {
   readonly rows: MarketRow[]
   readonly matched: number
   readonly assumptions: string[]
   readonly excluded: { reason: string; count: number }[]
   readonly products: ProductView[]
+  /** The accounts that take under half of the sum, by name: left out, and named in the coverage. */
+  readonly partial: string[]
 }
 
 /** The engine's search over savings and deposits for a lump sum (and monthly saving). */
@@ -697,6 +718,8 @@ function searchSavings(
     readonly asOf: AsOf
     /** The monthly saving the case has, for the rows' facts; `monthly` by default. */
     readonly factsMonthly?: number | undefined
+    /** Accounts shown in a group of their own (the regular savers): not set against the sum. */
+    readonly setAside?: ((product: ProductView) => boolean) | undefined
   },
 ): SavingsSearch {
   const categories =
@@ -727,7 +750,8 @@ function searchSavings(
   const products: ProductView[] = []
   const excluded = new Map<string, number>()
   let duplicates = 0
-  let partial = 0
+  let setAside = 0
+  const partial: string[] = []
   for (const response of responses) {
     for (const result of response.results) {
       const row = marketRow(
@@ -746,13 +770,17 @@ function searchSavings(
         continue
       }
       for (const key of keys) seen.add(key)
+      if (options.setAside?.(result.product) === true) {
+        setAside += 1
+        continue
+      }
       // An account that takes under half of the money compared is not set against the rest.
       if (
         result.figures.kind === 'savings' &&
         options.amount > 0 &&
         result.figures.notPlaced.lumpSum > options.amount / 2
       ) {
-        partial += 1
+        partial.push(row.row.lead)
         continue
       }
       rows.push(row)
@@ -764,18 +792,22 @@ function searchSavings(
       excluded.set(item.reason, (excluded.get(item.reason) ?? 0) + item.count)
     }
   }
-  if (partial > 0) excluded.set('Takes under half of the sum held', partial)
+  if (partial.length > 0) excluded.set(UNDER_HALF, partial.length)
   return {
     rows,
     matched: Math.max(
       rows.length,
-      responses.reduce((sum, response) => sum + response.matched, 0) - duplicates - partial,
+      responses.reduce((sum, response) => sum + response.matched, 0) -
+        duplicates -
+        setAside -
+        partial.length,
     ),
     assumptions: [...new Set(responses.flatMap((response) => response.assumptions))].filter(
       (line) => !line.startsWith('No horizon given') && !line.startsWith('No amount given'),
     ),
     excluded: [...excluded].map(([reason, count]) => ({ reason, count })),
     products,
+    partial,
   }
 }
 
@@ -819,21 +851,73 @@ const ownLabel = (account: HeldAccount): string => {
   return `Your ${read}`
 }
 
+/** "A, B and C", or "A, B, C and 2 more" past `max`. */
+function namesInWords(names: readonly string[], max = 5): string {
+  const shown = names.slice(0, max)
+  const rest = names.length - shown.length
+  const parts = rest > 0 ? [...shown, `${String(rest)} more`] : shown
+  return parts.length <= 1
+    ? (parts[0] ?? '')
+    : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1) ?? ''}`
+}
+
+/** What a card set aside, beyond the accounts it compares (Chris, 2026-11-13: "why did SuperSaver not make the cut"). */
+type SetAside = {
+  /** The regular savers in their own group, judged on the monthly saving alone. */
+  readonly regular?: {
+    readonly count: number
+    readonly monthly: number
+    /** False on a card that judges every account on the monthly saving: no need to say so. */
+    readonly judged?: boolean
+    /** Those in the group that the card has no room for, by name. */
+    readonly notShown: readonly string[]
+  }
+  /** The accounts that take under half of the sum held, by name. */
+  readonly partial?: { readonly names: readonly string[]; readonly amount: number }
+  /** Fixed terms left out of a card on the monthly saving. */
+  readonly lumpOnly?: number
+}
+
+/**
+ * The card's coverage in plain words: how many accounts it compares, where the figures come
+ * from, and what it set aside and why, by name where a customer could ask about one.
+ */
 function coverageLine(
   matched: number,
   products: readonly ProductView[],
   excluded: readonly { reason: string; count: number }[],
   what: string,
+  setAside: SetAside = {},
+  takes = 'take this money',
 ): string {
   const checked = oldestCheck(products)
-  const left = excluded.reduce((sum, item) => sum + item.count, 0)
-  const top = [...excluded].sort((a, b) => b.count - a.count)[0]
+  const { regular, partial, lumpOnly } = setAside
+  const named = partial !== undefined && partial.names.length > 0
+  const rest = excluded.filter((item) => !(named && item.reason === UNDER_HALF))
+  const left = rest.reduce((sum, item) => sum + item.count, 0)
+  const top = [...rest].sort((a, b) => b.count - a.count)[0]
+  const plural = (count: number, one: string, many: string) => (count === 1 ? one : many)
+  const parts = [
+    regular === undefined || regular.count === 0
+      ? null
+      : `${String(regular.count)} ${plural(regular.count, 'regular saver is', 'regular savers are')}${regular.judged === false ? '' : ` judged on the ${whole(regular.monthly)} a month alone and`} shown in ${plural(regular.count, 'its', 'their')} own group` +
+        (regular.notShown.length === 0
+          ? ''
+          : `, ${String(regular.notShown.length)} of them not on the card for room: ${namesInWords(regular.notShown, 8)}`),
+    lumpOnly === undefined || lumpOnly === 0
+      ? null
+      : `${String(lumpOnly)} fixed ${plural(lumpOnly, 'term takes a lump sum only and is', 'terms take lump sums only and are')} left out`,
+    !named || partial === undefined
+      ? null
+      : `${String(partial.names.length)} ${plural(partial.names.length, 'account takes', 'accounts take')} under half of the ${whole(partial.amount)} and ${plural(partial.names.length, 'is', 'are')} left out: ${namesInWords(partial.names)}`,
+    left === 0 || top === undefined
+      ? null
+      : `${String(left)} ${named || regular !== undefined || lumpOnly !== undefined ? 'more ' : ''}left out (the most for: ${top.reason.toLowerCase()})`,
+  ].filter((part): part is string => part !== null)
   return (
-    `${String(matched)} ${what} on the Irish market take this money, from CCPC's comparison tables and the providers' own pages` +
+    `${String(matched)} ${what} on the Irish market ${takes}, from CCPC's comparison tables and the providers' own pages` +
     (checked === null ? '' : `, the oldest figure checked ${checked.slice(0, 10)}`) +
-    (left === 0 || top === undefined
-      ? '.'
-      : `; ${String(left)} left out (the most for: ${top.reason.toLowerCase()}).`)
+    (parts.length === 0 ? '.' : `; ${parts.join('; ')}.`)
   )
 }
 
@@ -863,6 +947,26 @@ function heldFacts(account: HeldAccount, line: string): RowFacts {
     mustKnow: [],
     detail: keep([line], PRODUCTS_ROW_MAX_DETAIL),
   }
+}
+
+/**
+ * Whether an account they hold is a regular saver: named one ("regular saver"), or named as a
+ * regular saver the market holds from that provider ("BoI SuperSaver"). Pure.
+ */
+export function heldIsRegularSaver(market: Market, account: HeldAccount): boolean {
+  if (account.kind !== 'savings') return false
+  const label = account.label.toLowerCase()
+  if (/\bregular\b/.test(label)) return true
+  const provider = providerIdOf(account.provider)
+  return market.products.some((product) => {
+    if (!isRegularSaver(product)) return false
+    if (provider !== null && product.provider !== provider) return false
+    const name = product.name
+      .toLowerCase()
+      .replace(/\(.*?\)|\baccount\b/g, '')
+      .trim()
+    return name.length >= 6 && label.includes(name)
+  })
 }
 
 function heldVsMarket(
@@ -896,13 +1000,32 @@ function heldVsMarket(
     return { account, rate }
   })
   const amount = figures.held.reduce((sum, account) => sum + account.balance, 0)
+  // Their own account is a regular saver and they save each month: the market's regular savers
+  // are judged on the monthly saving alone, in a group of their own (2026-11-13).
+  const monthly = figures.monthlySavingEur ?? 0
+  const withRegular =
+    monthly > 0 &&
+    request.category !== 'deposits' &&
+    figures.held.some((account) => heldIsRegularSaver(market, account))
   const found = searchSavings(market, {
     category: request.category,
     amount,
     monthly: 0,
     horizon,
     asOf,
+    setAside: withRegular ? isRegularSaver : undefined,
   })
+  const regular = withRegular
+    ? monthlyRows(market, {
+        which: 'regular',
+        categories: categoriesOf(request.category),
+        monthly,
+        held: amount,
+        horizon,
+        asOf,
+        style: 'by',
+      })
+    : { rows: [], excluded: new Map<string, number>() }
   const ranked = [...found.rows].sort(byRate)
   const heldLine = ({ account, rate }: (typeof held)[number]): string =>
     rate === null
@@ -941,7 +1064,8 @@ function heldVsMarket(
     line: heldLine(item),
   }))
   const room = Math.max(0, PRODUCTS_CARD_MAX_ROWS - baseline.length)
-  const shown = ranked.slice(0, room)
+  const [marketShown = [], regularShown = []] = share<MarketRow>([ranked, regular.rows], room)
+  const shown = [...regularShown, ...marketShown]
   const top = ranked[0]
   const ownRate = held.find((item) => item.rate !== null)?.rate ?? null
   return {
@@ -955,7 +1079,7 @@ function heldVsMarket(
         line: 'By rate, your own account first; ask for them by access, or by the date, instead.',
       },
       rows: [...baseline.slice(0, PRODUCTS_CARD_MAX_ROWS), ...shown.map((item) => item.row)],
-      more: Math.max(0, found.matched - shown.length),
+      more: Math.max(0, found.matched + regular.rows.length - shown.length),
       basis: {
         figures: savingsFiguresUsed(figures, amount, horizon),
         objective:
@@ -963,30 +1087,37 @@ function heldVsMarket(
           moneyColumnLine(horizon) +
           (top === undefined || ownRate === null
             ? ''
-            : ` The highest shown is ${pct(top.rate)} against ${pct(ownRate)} on your own account.`),
+            : ` The highest shown is ${pct(top.rate)} against ${pct(ownRate)} on your own account.`) +
+          (regular.rows.length === 0
+            ? ''
+            : ` Regular savers by interest after DIRT on the ${whole(monthly)} a month alone, highest first.`),
         assumptions: [...resolved.basis, ...found.assumptions],
         coverage: coverageLine(
           found.matched,
-          found.products,
+          [...found.products, ...regular.rows.map((item) => item.product)],
           found.excluded,
           'savings and deposit accounts',
+          {
+            ...(withRegular
+              ? {
+                  regular: {
+                    count: regular.rows.length,
+                    monthly,
+                    notShown: notShownOf(regular.rows, regularShown),
+                  },
+                }
+              : {}),
+            partial: { names: found.partial, amount },
+          },
         ),
         warnings: warningsOf(
           shown.map((item) => item.row),
-          found.products,
+          [...found.products, ...regular.rows.map((item) => item.product)],
         ),
       },
       statement: RESULT_STATEMENT,
     },
-    figureBasis: [
-      ...heldBasis.slice(0, PRODUCTS_CARD_MAX_ROWS),
-      ...shown.map((item) => ({
-        id: item.row.id,
-        lead: item.row.lead,
-        value: item.row.value,
-        line: item.figureBasis,
-      })),
-    ],
+    figureBasis: [...heldBasis.slice(0, PRODUCTS_CARD_MAX_ROWS), ...basisOf(shown)],
   }
 }
 
@@ -1029,6 +1160,9 @@ const categoriesOf = (category: ProductsCategory | undefined): ReadonlySet<strin
       ? new Set(['deposit'])
       : new Set(['savings', 'deposit'])
 
+/** Accounts for children or students: not compared for a home. */
+const CHILD = /child|kid|junior|teen|student|third level/i
+
 /** Soonest keys first, then what it adds by them. */
 const byKeys = (a: Fit, b: Fit): number =>
   a.keysOn.localeCompare(b.keysOn) || b.money - a.money || b.rate - a.rate
@@ -1064,22 +1198,28 @@ function savingsFits(
     readonly horizon: Horizon
     readonly asOf: AsOf
     readonly fixedOnly: boolean
+    /** Accounts shown in a group of their own (the regular savers): left out here. */
+    readonly setAside?: ((product: ProductView) => boolean) | undefined
   },
 ): {
   readonly fits: Fit[]
   readonly excluded: ReadonlyMap<string, number>
   readonly notFitting: { product: ProductView; pushedOut: readonly JudgedTerm[] }[]
+  /** The accounts that take under half of the sum, by name. */
+  readonly partial: readonly string[]
 } {
   const { categories, saved, monthly, run, horizon, asOf, fixedOnly } = options
   const excluded = new Map<string, number>()
   const exclude = (reason: string) => excluded.set(reason, (excluded.get(reason) ?? 0) + 1)
+  const partial: string[] = []
   const notFitting: { product: ProductView; pushedOut: readonly JudgedTerm[] }[] = []
   const seen = new Set<string>()
   const fits: Fit[] = market.products.flatMap((product): Fit[] => {
     const terms = product.terms
     if (terms.kind !== 'deposit' || !categories.has(product.category)) return []
     if (fixedOnly && terms.access !== 'fixed_term') return []
-    if (/child|kid|junior|teen|student|third level/i.test(product.name)) return []
+    if (CHILD.test(product.name)) return []
+    if (options.setAside?.(product) === true) return []
     let termMonths: number | null = null
     let keysOn: string
     let fitWords = ''
@@ -1130,7 +1270,8 @@ function savingsFits(
     seen.add(key)
     seen.add(named)
     if (saved > 0 && result.notPlaced.lumpSum > saved / 2 && result.notPlaced.monthly >= monthly) {
-      exclude('Takes under half of the sum held')
+      exclude(UNDER_HALF)
+      partial.push(displayName(product))
       return []
     }
     // A bonus is not interest. It counts in the total by the date only when it is paid by then
@@ -1211,7 +1352,234 @@ function savingsFits(
       },
     ]
   })
-  return { fits, excluded, notFitting }
+  return { fits, excluded, notFitting, partial }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Regular savers (Chris, 2026-11-13: "why did SuperSaver and MortgageSaver not make the cut")
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * An account built for monthly saving: a savings account (CCPC's regular savings table, a
+ * bank's regular-savings pages), not a fixed term, that takes monthly payments and either takes
+ * no lump sum or caps what goes in each month. bunq's and MoCo's accounts take any lump sum with
+ * no monthly cap, so they are not. Pure.
+ */
+export function isRegularSaver(product: ProductView): boolean {
+  const terms = product.terms
+  return (
+    terms.kind === 'deposit' &&
+    product.category === 'savings' &&
+    terms.access !== 'fixed_term' &&
+    terms.takesMonthly === true &&
+    (terms.takesLumpSum !== true || terms.maxMonthlyEur !== null)
+  )
+}
+
+/** A regular saver's kind on the card; its group is "Regular saver". */
+export const REGULAR_SAVER_KIND = 'regular saver'
+
+/** A row judged on the monthly saving alone, with its product. */
+type MonthlyRow = MarketRow & { readonly product: ProductView }
+
+/** Most money first, then the higher rate. */
+const byMoney = (a: MarketRow, b: MarketRow): number => b.money - a.money || b.rate - a.rate
+
+/**
+ * Accounts judged on the monthly saving alone: `regular`, the regular savers; `open`, the other
+ * instant-access and notice accounts that take monthly payments. The money is interest after
+ * DIRT on the monthly payments to the horizon (`simulateDeposit`, the card's money rule: each
+ * rate for as long as it is stated, the rate after where stated), within the account's monthly
+ * cap, plus a bonus only when it is paid by then (`bonusTiming`). `style` is the figure's form:
+ * "€279 by Jul 2028" (`by`) or "keys Jul 2028, €279" (`keys`).
+ */
+function monthlyRows(
+  market: Market,
+  options: {
+    readonly which: 'regular' | 'open'
+    readonly categories: ReadonlySet<string>
+    readonly monthly: number
+    /** The sum held, for what a regular saver does with it. */
+    readonly held: number
+    readonly horizon: Horizon
+    readonly asOf: AsOf
+    readonly style: 'by' | 'keys'
+  },
+): { readonly rows: MonthlyRow[]; readonly excluded: ReadonlyMap<string, number> } {
+  const { which, categories, monthly, held, horizon, asOf, style } = options
+  const excluded = new Map<string, number>()
+  const exclude = (reason: string) => excluded.set(reason, (excluded.get(reason) ?? 0) + 1)
+  const seen = new Set<string>()
+  const rows = market.products.flatMap((product): MonthlyRow[] => {
+    const terms = product.terms
+    if (terms.kind !== 'deposit' || !categories.has(product.category)) return []
+    if (terms.access === 'fixed_term' || terms.takesMonthly !== true) return []
+    if (isRegularSaver(product) !== (which === 'regular')) return []
+    if (CHILD.test(product.name)) {
+      exclude('For children or students')
+      return []
+    }
+    if (
+      terms.access === 'notice' &&
+      horizon.dated &&
+      (terms.noticeDays ?? 0) > monthsUntil(asOf, horizon.by) * 30
+    ) {
+      exclude(`Notice longer than the time to ${monthName(horizon.by)}`)
+      return []
+    }
+    const rate = headlineRate(terms, null)
+    if (rate === null) return []
+    const key = accountOf(product)
+    const named = `${displayName(product)}|${String(rate)}`
+    if (seen.has(key) || seen.has(named)) return []
+    seen.add(key)
+    seen.add(named)
+    const result = simulateDeposit(terms, {
+      lumpSum: 0,
+      monthly,
+      horizonMonths: horizon.months,
+      asOf,
+    }).figures
+    if (result.paidIn === 0) {
+      exclude('Does not take this monthly saving')
+      return []
+    }
+    const statedBonus = round2(
+      (terms.bonus?.amountEur ?? 0) * (terms.dirtApplies ? 1 - DIRT_RATE : 1),
+    )
+    const timing = statedBonus > 0 ? bonusTiming(product, terms, horizon.months) : null
+    const bonus = timing === 'by_keys' ? statedBonus : 0
+    const total = round2(result.netInterest + bonus)
+    const words = savingsWords(product, terms, result, {
+      rate,
+      money: total,
+      horizon,
+      asOf,
+      lump: 0,
+      monthly,
+    })
+    const taken = placement(terms, 0, monthly).monthly
+    const bonusNote =
+      timing === 'by_keys'
+        ? `includes a ${whole(bonus)} bonus${terms.dirtApplies ? ' after DIRT' : ''}, on its conditions`
+        : timing === 'after_drawdown'
+          ? 'bonus paid after drawdown, not counted'
+          : timing === 'not_stated'
+            ? `${whole(statedBonus)} bonus, not counted: when it is paid is not stated`
+            : null
+    const bonusBasis =
+      timing === 'by_keys'
+        ? ` It includes a ${whole(bonus)} bonus${terms.dirtApplies ? ' after DIRT' : ''}, on its conditions.`
+        : timing === 'after_drawdown'
+          ? ` The ${whole(statedBonus)} bonus is paid after drawdown and is not counted.`
+          : timing === 'not_stated'
+            ? ` The ${whole(statedBonus)} bonus is not counted: when it is paid is not stated.`
+            : ''
+    const figureBasis =
+      words.figureBasis +
+      bonusBasis +
+      ` It counts the ${whole(taken)} a month alone` +
+      (taken < monthly ? `, all it takes of the ${whole(monthly)}` : '') +
+      (held > 0 ? `, not the ${whole(held)} held.` : '.')
+    // What a regular saver does with the sum held: nothing, or a capped part not counted here.
+    const lumpLine =
+      which !== 'regular'
+        ? null
+        : terms.takesLumpSum !== true
+          ? held > 0
+            ? `Monthly payments only; the ${whole(held)} needs another account`
+            : 'Monthly payments only'
+          : `Also takes ${terms.maxLumpSumEur === null ? 'a lump sum' : `up to ${whole(terms.maxLumpSumEur)} as a lump sum`}` +
+            (terms.lumpSumAerPct === null ? '' : `, at ${pct(terms.lumpSumAerPct)}`)
+    // The monthly cap in the detail, unless the source's conditions already state it.
+    const capStated =
+      terms.maxMonthlyEur !== null &&
+      statedConditions(product).some((line) => line.includes(whole(terms.maxMonthlyEur ?? 0)))
+    const capLine =
+      terms.maxMonthlyEur === null || capStated
+        ? null
+        : `Takes up to ${whole(terms.maxMonthlyEur)} a month` +
+          ((terms.minMonthlyEur ?? 0) > 1 ? `, at least ${whole(terms.minMonthlyEur ?? 0)}.` : '.')
+    return [
+      {
+        product,
+        rate,
+        money: total,
+        figureBasis,
+        row: {
+          id: product.id,
+          lead: displayName(product),
+          kind: which === 'regular' ? REGULAR_SAVER_KIND : accessKind(terms, null),
+          value: words.value,
+          figure:
+            style === 'keys'
+              ? `keys ${shortMonth(horizon.by)}, ${whole(total)}`
+              : `${whole(total)} ${byWhen(horizon, result.knownMonths, asOf)}`,
+          note: words.period ? words.note : (bonusNote ?? words.note),
+          held: false,
+          confirmed: product.rateConfirmed,
+          ...savingsFacts({
+            product,
+            terms,
+            figures: result,
+            words,
+            figureBasis,
+            asOf,
+            monthly,
+            bonus: timing,
+            lumpLine,
+            capLine,
+          }),
+        },
+      },
+    ]
+  })
+  return { rows: rows.sort(byMoney), excluded }
+}
+
+/**
+ * The card's rows shared between its groups: one at a time to each group that has more, in the
+ * groups' order, until the card is full. Two full groups get four each; a short one gives its
+ * room to the others.
+ */
+function share<T>(lists: readonly (readonly T[])[], max: number): T[][] {
+  const taken = lists.map(() => 0)
+  let total = 0
+  let moved = true
+  while (moved && total < max) {
+    moved = false
+    for (const [index, list] of lists.entries()) {
+      const count = taken[index] ?? 0
+      if (total < max && count < list.length) {
+        taken[index] = count + 1
+        total += 1
+        moved = true
+      }
+    }
+  }
+  return lists.map((list, index) => list.slice(0, taken[index] ?? 0))
+}
+
+/** The figure basis of rows, for the model beside the card. */
+const basisOf = (rows: readonly MarketRow[]): RowBasis[] =>
+  rows.map((item) => ({
+    id: item.row.id,
+    lead: item.row.lead,
+    value: item.row.value,
+    line: item.figureBasis,
+  }))
+
+/** The rows of a group the card has no room for, by name. */
+const notShownOf = (all: readonly MarketRow[], shown: readonly MarketRow[]): string[] =>
+  all.filter((item) => !shown.includes(item)).map((item) => item.row.lead)
+
+/** The map of reasons as the coverage takes them. */
+const reasonsOf = (...maps: readonly ReadonlyMap<string, number>[]) => {
+  const merged = new Map<string, number>()
+  for (const map of maps) {
+    for (const [reason, count] of map) merged.set(reason, (merged.get(reason) ?? 0) + count)
+  }
+  return [...merged].map(([reason, count]) => ({ reason, count }))
 }
 
 function byAccess(
@@ -1226,6 +1594,10 @@ function byAccess(
   }
   const horizon = horizonOf(figures, asOf)
   const monthly = figures.monthlySavingEur ?? 0
+  // With a monthly saving, the regular savers are judged on it alone, in a group of their own
+  // (2026-11-13), and not set against the sum held: an account appears once.
+  const withRegular = monthly > 0 && request.category !== 'deposits'
+  const setAside = withRegular ? isRegularSaver : undefined
   const common = {
     category: request.category,
     amount,
@@ -1233,6 +1605,7 @@ function byAccess(
     horizon,
     asOf,
     factsMonthly: monthly,
+    setAside,
   }
   const instant = searchSavings(market, { ...common, access: 'instant' })
   // With a keys month, the fixed terms are fits_date's own (`savingsFits`): the same rule, the
@@ -1244,6 +1617,7 @@ function byAccess(
   let fixedMatched: number
   let fixedExcluded: { reason: string; count: number }[]
   let fixedAssumptions: string[]
+  let fixedPartial: readonly string[]
   if (horizon.dated) {
     const judged = savingsFits(market, {
       categories: categoriesOf(request.category === 'deposits' ? 'deposits' : undefined),
@@ -1260,6 +1634,7 @@ function byAccess(
     fixedMatched = fits.length
     fixedExcluded = [...judged.excluded].map(([reason, count]) => ({ reason, count }))
     fixedAssumptions = notFittingLines(judged.notFitting)
+    fixedPartial = judged.partial
   } else {
     const fixed = searchSavings(market, { ...common, access: 'fixed_term' })
     fixedRows = [...fixed.rows].sort(byRate)
@@ -1267,14 +1642,24 @@ function byAccess(
     fixedMatched = fixed.matched
     fixedExcluded = fixed.excluded
     fixedAssumptions = fixed.assumptions
+    fixedPartial = fixed.partial
   }
-  const half = PRODUCTS_CARD_MAX_ROWS / 2
+  const regular = withRegular
+    ? monthlyRows(market, {
+        which: 'regular',
+        categories: categoriesOf(request.category),
+        monthly,
+        held: amount,
+        horizon,
+        asOf,
+        style: 'by',
+      })
+    : { rows: [], excluded: new Map<string, number>() }
   const instantRows = [...instant.rows].sort(byRate)
-  const instantShown = instantRows.slice(
-    0,
-    Math.max(half, PRODUCTS_CARD_MAX_ROWS - Math.min(half, fixedRows.length)),
+  const [instantShown = [], fixedShown = [], regularShown = []] = share(
+    [instantRows, fixedRows, regular.rows],
+    PRODUCTS_CARD_MAX_ROWS,
   )
-  const fixedShown = fixedRows.slice(0, PRODUCTS_CARD_MAX_ROWS - instantShown.length)
   // The price of access: what the fixed term that adds most adds over the instant-access
   // account that adds most, in euro on the sum held, with the two rates.
   const mostOf = (rows: readonly MarketRow[]) =>
@@ -1287,9 +1672,18 @@ function byAccess(
       : topFixed.money - topInstant.money >= 1
         ? ` The fixed term that adds most (${topFixed.row.value}) adds ${whole(topFixed.money - topInstant.money)} more on ${whole(amount)} than the instant-access account that adds most (${topInstant.row.value}): that is the price of access.`
         : ` The instant-access account that adds most (${topInstant.row.value}) adds as much as any fixed term that ends in time, so access costs nothing here.`
-  const products = [...instant.products, ...fixedProducts]
+  const regularLine =
+    regular.rows.length === 0
+      ? ''
+      : ` Regular savers last, by interest after DIRT on the ${whole(monthly)} a month alone, highest first.`
+  const products = [
+    ...instant.products,
+    ...fixedProducts,
+    ...regular.rows.map((item) => item.product),
+  ]
   const matched = instant.matched + fixedMatched
-  const shown = [...instantShown, ...fixedShown]
+  const shown = [...instantShown, ...fixedShown, ...regularShown]
+  const partial = [...instant.partial, ...fixedPartial]
   return {
     kind: 'card',
     card: {
@@ -1303,19 +1697,31 @@ function byAccess(
           : `Instant access beside fixed terms that end in time for ${String(horizon.months)} months, each by rate; ask for them against your own account, or by the date, instead.`,
       },
       rows: shown.map((item) => item.row),
-      more: Math.max(0, matched - shown.length),
+      more: Math.max(0, matched + regular.rows.length - shown.length),
       basis: {
         figures: savingsFiguresUsed(figures, amount, horizon),
         objective: horizon.dated
-          ? `Instant access first, by AER, highest first; then fixed terms, by the keys month each gives with its own interest, soonest first, then by interest after DIRT.${priceLine} ` +
+          ? `Instant access first, by AER, highest first; then fixed terms, by the keys month each gives with its own interest, soonest first, then by interest after DIRT.${regularLine}${priceLine} ` +
             `${moneyColumnLine(horizon)} A fixed term's money runs to the keys month that term gives, as it does by the date. ${TERM_FIT_RULE}`
-          : `Instant access first, then fixed term; each by AER, highest first.${priceLine} ${moneyColumnLine(horizon)}`,
+          : `Instant access first, then fixed term; each by AER, highest first.${regularLine}${priceLine} ${moneyColumnLine(horizon)}`,
         assumptions: [...new Set([...instant.assumptions, ...fixedAssumptions])],
         coverage: coverageLine(
           matched,
           products,
           [...instant.excluded, ...fixedExcluded],
           'instant-access and fixed-term accounts',
+          {
+            ...(withRegular
+              ? {
+                  regular: {
+                    count: regular.rows.length,
+                    monthly,
+                    notShown: notShownOf(regular.rows, regularShown),
+                  },
+                }
+              : {}),
+            partial: { names: partial, amount },
+          },
         ),
         warnings: warningsOf(
           shown.map((item) => item.row),
@@ -1324,12 +1730,113 @@ function byAccess(
       },
       statement: RESULT_STATEMENT,
     },
-    figureBasis: shown.map((item) => ({
-      id: item.row.id,
-      lead: item.row.lead,
-      value: item.row.value,
-      line: item.figureBasis,
-    })),
+    figureBasis: basisOf(shown),
+  }
+}
+
+/**
+ * A card on the monthly saving (`focus: 'monthly'`, Chris 2026-11-13: "what product is best for
+ * my monthly savings then?" answered in prose): the regular savers first, then the instant-access
+ * and notice accounts that also take monthly payments, each judged on the monthly saving alone
+ * to the keys month and sorted by money; fixed terms take lump sums only and are left out, and
+ * the coverage says so. The same rows for `by_access` and `fits_date`, in each one's figure form.
+ */
+function monthlyCard(
+  market: Market,
+  figures: CaseFigures,
+  request: ShowProductsRequest & { readonly arrangement: 'by_access' | 'fits_date' },
+  asOf: AsOf,
+): ProductsResult {
+  const monthly = figures.monthlySavingEur ?? 0
+  if (monthly <= 0) {
+    return { kind: 'questions', questions: ['How much goes aside each month?'] }
+  }
+  if (request.arrangement === 'fits_date' && figures.keysMonth === null) {
+    return {
+      kind: 'questions',
+      questions: ['When would you like to have the keys? The month is enough.'],
+    }
+  }
+  const horizon = horizonOf(figures, asOf)
+  const held = figures.held.reduce((sum, account) => sum + account.balance, 0)
+  const categories = categoriesOf(request.category === 'deposits' ? undefined : request.category)
+  const style = request.arrangement === 'fits_date' ? 'keys' : 'by'
+  const common = { categories, monthly, held, horizon, asOf, style } as const
+  const regular = monthlyRows(market, { ...common, which: 'regular' })
+  const open = monthlyRows(market, { ...common, which: 'open' })
+  const lumpOnly = new Set(
+    market.products
+      .filter(
+        (product) =>
+          product.terms.kind === 'deposit' &&
+          product.terms.access === 'fixed_term' &&
+          categories.has(product.category),
+      )
+      .map((product) => accountOf(product)),
+  ).size
+  const [regularShown = [], openShown = []] = share(
+    [regular.rows, open.rows],
+    PRODUCTS_CARD_MAX_ROWS,
+  )
+  const shown = [...regularShown, ...openShown]
+  const all = [...regular.rows, ...open.rows]
+  const products = all.map((item) => item.product)
+  const to = horizon.dated
+    ? `the keys in ${monthName(horizon.by)}`
+    : `${String(horizon.months)} months`
+  return {
+    kind: 'card',
+    card: {
+      type: 'market_products',
+      question: horizon.dated
+        ? `Where can the ${whole(monthly)} a month go until the keys in ${monthName(horizon.by)}?`
+        : `Where can the ${whole(monthly)} a month go?`,
+      arrangement: {
+        kind: request.arrangement,
+        title: `Accounts for your ${whole(monthly)} a month`,
+        line: `By what each account earns on the ${whole(monthly)} a month to ${to}, regular savers first; ask about the sum held, by access or by the date, instead.`,
+      },
+      rows: shown.map((item) => item.row),
+      more: Math.max(0, all.length - shown.length),
+      basis: {
+        figures: [
+          `${whole(monthly)} a month saved, placed in each account up to what it takes`,
+          ...(held > 0 ? [`${whole(held)} held, not counted on this card`] : []),
+          horizon.dated
+            ? `${monthName(horizon.by)}, ${figures.keysFrom === 'plan' ? 'the month the money for the keys is there in your plan' : 'the date you gave'}`
+            : `${String(NO_DATE_HORIZON)} months, as no date is known`,
+        ],
+        objective:
+          'Regular savers first, then instant access and notice; each by interest after DIRT on the monthly saving alone, highest first, plus any bonus paid by then. ' +
+          moneyColumnLine(horizon),
+        assumptions: [
+          ...SAVINGS_ASSUMPTIONS.filter((line) => !line.startsWith('Bonuses')),
+          'A bonus is counted in the total by the date only when it is paid by then; one paid after the mortgage is drawn down, or whose payment date is not stated, is noted and not counted.',
+        ],
+        coverage: coverageLine(
+          all.length,
+          products,
+          reasonsOf(regular.excluded, open.excluded),
+          'savings accounts',
+          {
+            regular: {
+              count: regular.rows.length,
+              monthly,
+              judged: false,
+              notShown: notShownOf(regular.rows, regularShown),
+            },
+            lumpOnly,
+          },
+          `take the ${whole(monthly)} a month`,
+        ),
+        warnings: warningsOf(
+          shown.map((item) => item.row),
+          products,
+        ),
+      },
+      statement: RESULT_STATEMENT,
+    },
+    figureBasis: basisOf(shown),
   }
 }
 
@@ -1386,7 +1893,10 @@ function fitsDate(
   // Each account's keys month is the one the plan reaches with its own interest; a fixed term
   // is the longest that ends at least the buffer before it (`term-fit.ts`).
   const run = keysRunOf(figures, saved, horizon, asOf)
-  const { fits, excluded, notFitting } = savingsFits(market, {
+  // With a monthly saving, the regular savers are judged on it alone, in a group of their own
+  // (2026-11-13), and not set against the sum held: an account appears once.
+  const withRegular = monthly > 0 && request.category !== 'deposits'
+  const { fits, excluded, notFitting, partial } = savingsFits(market, {
     categories: categoriesOf(request.category),
     saved,
     monthly,
@@ -1394,17 +1904,27 @@ function fitsDate(
     horizon,
     asOf,
     fixedOnly: false,
+    setAside: withRegular ? isRegularSaver : undefined,
   })
+  const regular = withRegular
+    ? monthlyRows(market, {
+        which: 'regular',
+        categories: categoriesOf(request.category),
+        monthly,
+        held: saved,
+        horizon,
+        asOf,
+        style: 'keys',
+      })
+    : { rows: [], excluded: new Map<string, number>() }
   const fixed = fits.filter((fit) => fit.fixed).sort(byKeys)
   const open = fits.filter((fit) => !fit.fixed).sort(byKeys)
-  const half = PRODUCTS_CARD_MAX_ROWS / 2
-  const fixedShown = fixed.slice(
-    0,
-    Math.max(half, PRODUCTS_CARD_MAX_ROWS - Math.min(half, open.length)),
+  const [fixedShown = [], regularShown = [], openShown = []] = share<MarketRow>(
+    [fixed, regular.rows, open],
+    PRODUCTS_CARD_MAX_ROWS,
   )
-  const openShown = open.slice(0, PRODUCTS_CARD_MAX_ROWS - fixedShown.length)
-  const shown = [...fixedShown, ...openShown]
-  const products = fits.map((fit) => fit.product)
+  const shown = [...fixedShown, ...regularShown, ...openShown]
+  const products = [...fits.map((fit) => fit.product), ...regular.rows.map((item) => item.product)]
   return {
     kind: 'card',
     card: {
@@ -1413,10 +1933,13 @@ function fitsDate(
       arrangement: {
         kind: 'fits_date',
         title: `Accounts that fit ${monthName(horizon.by)}`,
-        line: 'Fixed terms that end a month before the keys, then instant access and notice, each by its keys month; ask for them by access, or against your own account, instead.',
+        line:
+          regular.rows.length === 0
+            ? 'Fixed terms that end a month before the keys, then instant access and notice, each by its keys month; ask for them by access, or against your own account, instead.'
+            : 'Fixed terms that end before the keys, then regular savers on the monthly saving, then instant access and notice; ask for them by access, or against your account, instead.',
       },
       rows: shown.map((fit) => fit.row),
-      more: Math.max(0, fits.length - shown.length),
+      more: Math.max(0, fits.length + regular.rows.length - shown.length),
       basis: {
         figures: [
           ...savingsFiguresUsed(figures, saved, horizon).filter(
@@ -1429,6 +1952,9 @@ function fitsDate(
         ],
         objective:
           'By the keys month each account gives with its own interest, soonest first, then by interest after DIRT plus any bonus by then. ' +
+          (regular.rows.length === 0
+            ? ''
+            : `Regular savers by interest after DIRT on the ${whole(monthly)} a month alone to ${monthName(horizon.by)}, highest first. `) +
           `${moneyColumnLine(horizon, 'own_keys')} ${TERM_FIT_RULE}`,
         assumptions: [
           ...SAVINGS_ASSUMPTIONS.filter((line) => !line.startsWith('Bonuses')),
@@ -1445,6 +1971,18 @@ function fitsDate(
           products,
           [...excluded].map(([reason, count]) => ({ reason, count })),
           'savings and deposit accounts',
+          {
+            ...(withRegular
+              ? {
+                  regular: {
+                    count: regular.rows.length,
+                    monthly,
+                    notShown: notShownOf(regular.rows, regularShown),
+                  },
+                }
+              : {}),
+            partial: { names: partial, amount: saved },
+          },
         ),
         warnings: warningsOf(
           shown.map((fit) => fit.row),
@@ -1453,12 +1991,7 @@ function fitsDate(
       },
       statement: RESULT_STATEMENT,
     },
-    figureBasis: shown.map((fit) => ({
-      id: fit.row.id,
-      lead: fit.row.lead,
-      value: fit.row.value,
-      line: fit.figureBasis,
-    })),
+    figureBasis: basisOf(shown),
   }
 }
 
@@ -1685,9 +2218,15 @@ function mortgageBySort(
 
 type Group = NonNullable<MarketProductsCard['arrangement']['groups']>[number]
 
-/** "Instant access", "Notice" or "Fixed term", from a savings row's kind. */
+/** "Instant access", "Notice", "Fixed term" or "Regular saver", from a savings row's kind. */
 const accessGroup = (row: Row): string =>
-  row.kind.endsWith('notice') ? 'Notice' : /fixed/.test(row.kind) ? 'Fixed term' : 'Instant access'
+  row.kind === REGULAR_SAVER_KIND
+    ? 'Regular saver'
+    : row.kind.endsWith('notice')
+      ? 'Notice'
+      : /fixed/.test(row.kind)
+        ? 'Fixed term'
+        : 'Instant access'
 
 /**
  * How each arrangement divides its rows, and the order of the groups; null: one list (a
@@ -1700,21 +2239,34 @@ const GROUPING: Readonly<
   >
 > = {
   held_vs_market: {
-    labelOf: (row) => (row.held ? 'Yours' : 'The market'),
-    order: ['Yours', 'The market'],
+    labelOf: (row) =>
+      row.held ? 'Yours' : row.kind === REGULAR_SAVER_KIND ? 'Regular saver' : 'The market',
+    order: ['Yours', 'Regular saver', 'The market'],
   },
-  by_access: { labelOf: accessGroup, order: ['Instant access', 'Notice', 'Fixed term'] },
-  fits_date: { labelOf: accessGroup, order: ['Fixed term', 'Instant access', 'Notice'] },
+  by_access: {
+    labelOf: accessGroup,
+    order: ['Instant access', 'Notice', 'Fixed term', 'Regular saver'],
+  },
+  fits_date: {
+    labelOf: accessGroup,
+    order: ['Fixed term', 'Regular saver', 'Instant access', 'Notice'],
+  },
   mortgage_by_sort: null,
 }
+
+/** A card on the monthly saving: the regular savers first, then the accounts that also take it. */
+const MONTHLY_GROUPING = {
+  labelOf: accessGroup,
+  order: ['Regular saver', 'Instant access', 'Notice'],
+} as const
 
 /**
  * The card's rows in groups: each group together, in the arrangement's order, the card's order
  * kept within it; a group with no rows is left out. The figure basis follows the rows' order.
  */
-function withGroups(result: ProductsResult): ProductsResult {
+function withGroups(result: ProductsResult, focus: ProductsFocus = 'lump'): ProductsResult {
   if (result.kind !== 'card') return result
-  const grouping = GROUPING[result.card.arrangement.kind]
+  const grouping = focus === 'monthly' ? MONTHLY_GROUPING : GROUPING[result.card.arrangement.kind]
   if (grouping === null) return result
   const rank = (row: Row): number => {
     const index = grouping.order.indexOf(grouping.labelOf(row))
@@ -1786,9 +2338,18 @@ export function productsCard(
     case 'held_vs_market':
       return withGroups(heldVsMarket(market, figures, request, asOf))
     case 'by_access':
-      return withGroups(byAccess(market, figures, request, asOf))
     case 'fits_date':
-      return withGroups(fitsDate(market, figures, request, asOf))
+      if (request.focus === 'monthly') {
+        return withGroups(
+          monthlyCard(market, figures, { ...request, arrangement: request.arrangement }, asOf),
+          'monthly',
+        )
+      }
+      return withGroups(
+        request.arrangement === 'by_access'
+          ? byAccess(market, figures, request, asOf)
+          : fitsDate(market, figures, request, asOf),
+      )
   }
 }
 

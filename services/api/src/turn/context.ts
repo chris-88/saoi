@@ -749,14 +749,18 @@ export function productsMustKnowLines(
   return [...lines.values()]
 }
 
-/** The most recent cards whose rows' figure basis goes in the digest: one per arrangement. */
+/**
+ * The most recent cards whose rows' figure basis goes in the digest: one per arrangement and
+ * focus (a card on the monthly saving is another card from one on the sum held).
+ */
 export const PRODUCTS_BASIS_CARDS = 2
 
 /**
  * What each row's money figure counts on the most recent products cards, one line a row, read
- * from `products_shown` payloads (newest first): the newest card of each arrangement, at most
- * `PRODUCTS_BASIS_CARDS` of them, so the digest stays short. Rows recorded without a lead or a
- * line are left out. Pure.
+ * from `products_shown` payloads (newest first): the newest card of each arrangement and focus,
+ * at most `PRODUCTS_BASIS_CARDS` of them, so the digest stays short; a card on the monthly saving
+ * says so ("fits_date, monthly saving"). Rows recorded without a lead or a line are left out.
+ * Pure.
  */
 export function productsBasisLines(events: readonly { readonly payload: unknown }[]): string[] {
   const seen = new Set<string>()
@@ -764,17 +768,20 @@ export function productsBasisLines(events: readonly { readonly payload: unknown 
   for (const { payload } of events) {
     if (seen.size >= PRODUCTS_BASIS_CARDS) break
     if (typeof payload !== 'object' || payload === null) continue
-    const { arrangement, figureBasis } = payload as { arrangement?: unknown; figureBasis?: unknown }
-    if (typeof arrangement !== 'string' || seen.has(arrangement)) continue
-    if (!Array.isArray(figureBasis)) continue
-    seen.add(arrangement)
+    const { arrangement, figureBasis, focus } = payload as {
+      arrangement?: unknown
+      figureBasis?: unknown
+      focus?: unknown
+    }
+    if (typeof arrangement !== 'string') continue
+    const card = focus === 'monthly' ? `${arrangement}, monthly saving` : arrangement
+    if (seen.has(card) || !Array.isArray(figureBasis)) continue
+    seen.add(card)
     for (const row of figureBasis as unknown[]) {
       if (typeof row !== 'object' || row === null) continue
       const { lead, value, line } = row as { lead?: unknown; value?: unknown; line?: unknown }
       if (typeof lead !== 'string' || typeof line !== 'string') continue
-      lines.push(
-        `${lead}${typeof value === 'string' ? `, ${value}` : ''} (${arrangement}): ${line}`,
-      )
+      lines.push(`${lead}${typeof value === 'string' ? `, ${value}` : ''} (${card}): ${line}`)
     }
   }
   return lines

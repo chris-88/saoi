@@ -725,7 +725,16 @@ Every tool input is Zod-validated before any effect. Invalid input returns a too
   `arrangement.groups` (optional, at most 4, `{ label, rowIds }`) divides the rows, each keeping
   the card's order: `held_vs_market` "Yours" and "The market", `by_access` "Instant access",
   "Notice" and "Fixed term", `fits_date` "Fixed term", "Instant access" and "Notice", none for a
-  mortgage card; the tool result and the digest name them.
+  mortgage card; the tool result and the digest name them. With a monthly saving, the regular
+  savers (`isRegularSaver`: a savings account that takes monthly payments and no lump sum or a
+  monthly cap) are a "Regular saver" group of their own (last on `by_access`, second on
+  `fits_date`, beside "Yours" when theirs is one), judged on the monthly saving alone and kept out
+  of the lump-sum groups; rows are shared between groups one at a time, and `basis.coverage`
+  names what was set aside (regular savers not on the card for room, accounts taking under half
+  of the sum) so a product asked about by name is looked up, never "did not make the cut".
+  `focus: 'monthly'` on `by_access` or `fits_date` (2026-11-13) is "Accounts for your €1,000 a
+  month": regular savers first, then instant access and notice on the monthly saving alone, fixed
+  terms left out; `products_shown` records the focus and the digest names it.
   **The term clamp** (`domain/market/term-fit.ts`, Chris 2026-11-13): in `fits_date` and the
   fixed-term side of `by_access`, a fixed term fits when it ends at least `KEYS_BUFFER_MONTHS` (1,
   beside `BUYING_COSTS`) before the keys month the plan reaches with that product's own interest

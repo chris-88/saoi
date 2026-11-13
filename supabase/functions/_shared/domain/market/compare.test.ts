@@ -190,6 +190,15 @@ describe('compareProducts: bunq against SuperSaver (instant access against a reg
       expect.objectContaining({ rowId: SUPERSAVER }),
     ])
     expect(card.mustKnow[0]?.facts).toContain('Deposit guarantee: Netherlands, not Ireland')
+    // A regular saver's must-knows are its Regular saver row's own (2026-11-13), never the
+    // lump-sum wording.
+    const superRow = fits.card.rows.find((row) => row.id === SUPERSAVER)
+    expect(superRow?.kind).toBe('regular saver')
+    expect(card.mustKnow[1]?.facts).toEqual(superRow?.mustKnow)
+    expect(card.mustKnow[1]?.facts).toContain(
+      'Monthly payments only; the €25,000 needs another account',
+    )
+    expect(card.mustKnow[1]?.facts.join(' ')).not.toMatch(/above what it takes/)
     // The detail is the row's own, beside its facts, its money sentence restated on the
     // comparison's figures.
     const bunqDetail = card.mustKnow[0]?.detail ?? []
