@@ -536,7 +536,8 @@ amounts, projections and unknowns, the payoff order, the ranking basis, assumpti
   the keys, which is there in July 2028; …"); at or after it, nothing extra. Date reminders
   (`other`, not a holding's) in the month the goal date or keys month was move to the same day
   of the new month. `plan_edited` is narratable, so the app's return turn opens on it
-  (`returnInstruction`: no greeting, not the reading again word for word); that turn is text
+  (`returnInstruction`: no greeting, not the reading again word for word, what now fits and
+  no longer fits, and nothing asked after it, 2026-11-13); that turn is text
   only (`returnsAfterPlanEdit`: `tool_choice: none` with the tools still sent, so the cached
   prefix holds, and any call refused unrun), so products wait for the customer's own message;
   the digest lists the edits; a reload shows the plan card from the stored plan.
@@ -840,7 +841,7 @@ for here; nothing is to be checked with the provider. The tool guidance is
 the needs, the goals and what they lack (the plan card's gating), suitability, prospect,
 revived needs, the check-in, the POC's kept plans, plan and arrangement, and the empty
 applications. A return turn names what changed and asks nothing (`returnInstruction` with
-`market`). The saved plan's card needs no tool: the claim writes it as the first message (and
+`market`; the return after a plan edit ends on nothing too). The saved plan's card needs no tool: the claim writes it as the first message (and
 older claims are shown it on the first turn after), so it is always in the transcript.
 
 **Signing in** writes one "Signed in." and one reply per case (2026-11-13): the app sends a

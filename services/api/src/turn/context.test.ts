@@ -143,6 +143,13 @@ describe('the return turn after a plan edit', () => {
     expect(instruction).not.toContain('Then name the other things')
   })
 
+  it('ends on nothing: no question about what to look at next (2026-11-13)', () => {
+    const instruction = returnInstruction([edited])
+    expect(instruction).toContain('End there: ask nothing after it')
+    expect(instruction).not.toContain('End by asking')
+    expect(instruction).not.toMatch(/asking what they would like/)
+  })
+
   it('is text only: no show_products or other card unless they ask', () => {
     const instruction = returnInstruction([edited])
     expect(instruction).toContain(
