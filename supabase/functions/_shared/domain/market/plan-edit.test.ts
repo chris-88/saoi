@@ -253,11 +253,15 @@ describe('the profile’s view', () => {
     })
     expect(view.watched).toHaveLength(3)
     expect(view.watched[0]).toEqual({
+      // The lender's market product id: a mortgage products card's row carries the same.
+      rowId: PLAN.comparison?.options[0]?.rowId,
       lead: PLAN.comparison?.options[0]?.lender,
       kind: PLAN.comparison?.options[0]?.kind,
       value: expect.stringMatching(/^\d+(\.\d+)?%$/) as unknown,
       figure: expect.stringMatching(/^€[\d,]+\/mo$/) as unknown,
     })
+    expect(view.watched[0]?.rowId).toMatch(/^[a-z0-9_]+:mortgage\./)
+    expect(view.choices).toEqual({ lump_sum: null, monthly_saving: null, mortgage: null })
     expect(view.updatedAt).toBe(CREATED)
   })
 })

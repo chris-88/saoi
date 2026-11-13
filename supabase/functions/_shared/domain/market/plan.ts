@@ -10,7 +10,12 @@ import {
   type ProductView,
   type Situation,
 } from '../../contracts/market-tools.ts'
-import type { MarketPlan, PlanInputs, PlanProduct } from '../../contracts/market-plan.ts'
+import {
+  type MarketPlan,
+  PLAN_ROW_ID_PATTERN,
+  type PlanInputs,
+  type PlanProduct,
+} from '../../contracts/market-plan.ts'
 import { allocatable, allocate, type AllocationLine } from './allocate.ts'
 import { arrivalFor } from './arrival.ts'
 import { debtMonthlyRate, payoffOrder, repaymentOf } from './debt.ts'
@@ -271,6 +276,12 @@ function withComparison(
       sortedBy: clip(home.sortedBy, 200),
       filters: home.filters.slice(0, 6).map((filter) => clip(filter, 200)),
       options: home.pathways.slice(0, 80).map((option, index) => ({
+        // The lender's market product id, which a mortgage products card's row carries too, so
+        // the mortgage can be chosen from either (2026-11-13).
+        ...(option.mortgage.productId.length <= 160 &&
+        PLAN_ROW_ID_PATTERN.test(option.mortgage.productId)
+          ? { rowId: option.mortgage.productId }
+          : {}),
         lender: clip(option.lenderName, 80),
         kind:
           option.mortgage.rateType === 'fixed' && option.mortgage.fixedYears !== null

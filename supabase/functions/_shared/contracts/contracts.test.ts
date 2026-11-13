@@ -1,12 +1,15 @@
 import {
   PLAN_ACCESS_KINDS,
+  PLAN_CHOICE_SLOTS,
   PLAN_HOME_SORTS,
   PLAN_PROPERTY_KINDS,
   PLAN_PRODUCT_CATEGORIES,
   PLAN_PRODUCT_SOURCES,
   PLAN_ROUTE_IDS,
   PLAN_ROUTE_STATUSES,
+  PLAN_ROW_ID_PATTERN,
   marketPlanSchema,
+  planChoiceSchema,
   upgradeStoredPlan,
 } from './market-plan.ts'
 import { exampleMarketPlan } from './market-plan.example.ts'
@@ -21,7 +24,15 @@ import {
 } from './market-tools.ts'
 import { MARKET_CATEGORIES, MARKET_SOURCES } from '../market/schema.ts'
 import { describe, expect, it } from 'vitest'
-import { awaitsCustomer, CARD_TYPES, cardSchema } from './cards.ts'
+import {
+  awaitsCustomer,
+  CARD_TYPES,
+  cardSchema,
+  marketProductsCardSchema,
+  PRODUCT_ROW_ID_PATTERN,
+  savedPlanCardSchema,
+} from './cards.ts'
+import { casePlanChoiceBodySchema, casePlanChoicesSchema } from './case-plan.ts'
 import { ERROR_CODES, fail, ok, statusFor } from './common.ts'
 import { parseStreamEvent, streamEventSchema, toSseFrame, withdraw } from './stream.ts'
 import { saoirseTurnRequestSchema } from './saoirse-turn.ts'
@@ -349,5 +360,85 @@ describe('a plan stored before 2026-11-10', () => {
     expect(upgraded.combination).toEqual(combination)
     const current = exampleMarketPlan()
     expect(upgradeStoredPlan(current)).toBe(current)
+  })
+})
+
+describe('the plan’s choices (2026-11-13)', () => {
+  const choice = {
+    slot: 'lump_sum',
+    rowId: 'bunq:savings.bunq_savings',
+    lead: 'bunq Savings Account',
+    providerId: 'bunq',
+    kind: 'instant access',
+    value: '3.11% to 1 Jan',
+    figure: '€815 by Jul 2028',
+    chosenAt: '2026-11-13T10:00:00.000Z',
+    endsOn: '2027-01-01',
+  } as const
+
+  it('has the three parts, and the row id pattern the cards carry', () => {
+    expect([...PLAN_CHOICE_SLOTS]).toEqual(['lump_sum', 'monthly_saving', 'mortgage'])
+    expect(PLAN_ROW_ID_PATTERN.source).toBe(PRODUCT_ROW_ID_PATTERN.source)
+  })
+
+  it('stores them on the plan document, optional, and plans without them still parse', () => {
+    const plan = marketPlanSchema.parse({
+      ...exampleMarketPlan(),
+      choices: { lump_sum: { ...choice, reminderId: '00000000-0000-4000-8000-0000000000c1' } },
+    })
+    expect(plan.choices?.lump_sum?.lead).toBe('bunq Savings Account')
+    expect(marketPlanSchema.parse(exampleMarketPlan()).choices).toBeUndefined()
+    expect(
+      marketPlanSchema.safeParse({
+        ...exampleMarketPlan(),
+        choices: { lump_sum: { ...choice, rowId: 'bunq savings <b>' } },
+      }).success,
+    ).toBe(false)
+  })
+
+  it('returns each part on the case plan, null when open', () => {
+    expect(
+      casePlanChoicesSchema.parse({ lump_sum: choice, monthly_saving: null, mortgage: null }),
+    ).toEqual({ lump_sum: choice, monthly_saving: null, mortgage: null })
+    expect(planChoiceSchema.safeParse({ ...choice, slot: 'pension' }).success).toBe(false)
+  })
+
+  it('takes a part and a row id, and nothing else, to commit one', () => {
+    expect(
+      casePlanChoiceBodySchema.parse({ slot: 'mortgage', rowId: 'aib:mortgage.c2039' }),
+    ).toEqual({ slot: 'mortgage', rowId: 'aib:mortgage.c2039' })
+    for (const body of [
+      { slot: 'pension', rowId: 'aib:mortgage.c2039' },
+      { slot: 'lump_sum', rowId: 'bunq savings' },
+      { slot: 'lump_sum', rowId: '' },
+      { slot: 'lump_sum', rowId: 'bunq:savings.bunq_savings', lead: 'Pick me' },
+      { slot: 'lump_sum' },
+    ]) {
+      expect(casePlanChoiceBodySchema.safeParse(body).success, JSON.stringify(body)).toBe(false)
+    }
+  })
+
+  it('marks a chosen row, column or option on the cards, optional', () => {
+    const row = marketProductsCardSchema.shape.rows.element
+    const base = {
+      id: 'bunq:savings.bunq_savings',
+      lead: 'bunq Savings Account',
+      kind: 'instant access',
+      value: '3.11%',
+      figure: '€815 by Jul 2028',
+      note: null,
+      held: false,
+      confirmed: true,
+    }
+    expect(row.parse({ ...base, chosen: 'lump_sum' }).chosen).toBe('lump_sum')
+    expect(row.parse(base).chosen).toBeUndefined()
+    expect(row.safeParse({ ...base, chosen: 'yes' }).success).toBe(false)
+    expect(
+      savedPlanCardSchema.shape.choices.unwrap().parse({
+        lump_sum: choice,
+        monthly_saving: null,
+        mortgage: null,
+      }).lump_sum?.slot,
+    ).toBe('lump_sum')
   })
 })

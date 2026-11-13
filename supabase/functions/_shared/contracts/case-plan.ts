@@ -1,5 +1,10 @@
 import { z } from 'zod'
-import { PLAN_PROPERTY_KINDS } from './market-plan.ts'
+import {
+  PLAN_CHOICE_SLOTS,
+  PLAN_PROPERTY_KINDS,
+  PLAN_ROW_ID_PATTERN,
+  planChoiceSchema,
+} from './market-plan.ts'
 
 /**
  * The plan in the app's profile (2026-11-12, the first-home experience, "6. The saving months"):
@@ -42,6 +47,22 @@ export const planEditableSchema = z
   .describe('The figures the profile can change in place.')
 export type PlanEditable = z.infer<typeof planEditableSchema>
 
+/**
+ * What the customer chose for each part of the plan (2026-11-13), from the cards: the sum held,
+ * the monthly saving and the mortgage. Null: open. A choice is the customer's; the model never
+ * makes one.
+ */
+export const casePlanChoicesSchema = z
+  .object({
+    lump_sum: planChoiceSchema.nullable().describe('The account for the sum held. Null: open.'),
+    monthly_saving: planChoiceSchema
+      .nullable()
+      .describe('The account for the monthly saving. Null: open.'),
+    mortgage: planChoiceSchema.nullable().describe('The mortgage option. Null: open.'),
+  })
+  .describe('The products chosen for each part of the plan.')
+export type CasePlanChoices = z.infer<typeof casePlanChoicesSchema>
+
 export const casePlanSchema = z
   .object({
     planId: z.string().describe('The claimed plan.'),
@@ -73,6 +94,12 @@ export const casePlanSchema = z
     watched: z
       .array(
         z.object({
+          rowId: z
+            .string()
+            .optional()
+            .describe(
+              'For a mortgage option: its row id, to choose it with `POST …/plan/choices` (slot `mortgage`).',
+            ),
           lead: z.string().describe('The lender, or the provider for a savings plan.'),
           kind: z
             .string()
@@ -85,9 +112,10 @@ export const casePlanSchema = z
       )
       .max(3)
       .describe('The plan’s first three options in the customer’s order. Never a pick.'),
+    choices: casePlanChoicesSchema,
     updatedAt: z
       .string()
-      .describe('When the plan last changed: its last edit, else when it was made.'),
+      .describe('When the plan last changed: its last edit or choice, else when it was made.'),
   })
   .describe('The claimed plan, as the profile shows it.')
 export type CasePlan = z.infer<typeof casePlanSchema>
@@ -118,3 +146,28 @@ export const casePlanEditedSchema = casePlanSchema
   })
   .describe('The rebuilt plan, and what the change does.')
 export type CasePlanEdited = z.infer<typeof casePlanEditedSchema>
+
+export const casePlanChoiceSlotSchema = z
+  .enum(PLAN_CHOICE_SLOTS)
+  .describe(
+    '`lump_sum`: the sum held. `monthly_saving`: the monthly saving. `mortgage`: the mortgage.',
+  )
+
+export const casePlanChoiceBodySchema = z
+  .object({
+    slot: casePlanChoiceSlotSchema,
+    rowId: z
+      .string()
+      .trim()
+      .min(1)
+      .max(160)
+      .regex(PLAN_ROW_ID_PATTERN)
+      .describe(
+        'The row id the card carried: a products row’s `id` (`bunq:savings.bunq_savings`, a ladder rung’s, `held:<n>`), a comparison column’s `rowId`, or a mortgage option’s `rowId`.',
+      ),
+  })
+  .strict()
+  .describe(
+    'A product the customer chose on a card for one part of the plan. Only the row id is sent: its figures are rebuilt from the market.',
+  )
+export type CasePlanChoiceBody = z.infer<typeof casePlanChoiceBodySchema>

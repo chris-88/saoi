@@ -39,7 +39,13 @@ import { loadCaseAlerts, loadOpenReminders } from '@shared/db/alerts.ts'
 import { shortDate } from '@shared/domain/market/alerts.ts'
 import { loadHoldings } from '@shared/db/holdings.ts'
 import { holdingLine, planProgress } from '@shared/domain/market/holdings.ts'
-import { isNarratable, PLAN_EDITED_EVENT } from '@shared/domain/narration.ts'
+import {
+  describeEvent,
+  isNarratable,
+  PLAN_EDITED_EVENT,
+  PRODUCT_CHOICE_REMOVED_EVENT,
+  PRODUCT_CHOSEN_EVENT,
+} from '@shared/domain/narration.ts'
 import { participantFor, type LoadedCase, type LoadedMessage } from '@shared/db/loaded-case.ts'
 
 /** The case and the catalogue Saoirse speaks from this turn. */
@@ -330,10 +336,15 @@ export async function buildGeneration(
    * question for next week too.
    */
   const claimedPlans = await loadClaimedPlans(admin, turn.caseId)
-  const broughtPlans = claimedPlans.map((claimed) => ({
+  const broughtPlans = claimedPlans.map((claimed, index) => ({
     title: claimed.plan.title,
-    // The claim's first message (the card and the question) is in the transcript: say so.
-    lines: savedPlanDigestLines(claimed, arrivedWith(claimed, loaded.messages)),
+    // The claim's first message (the card and the question) is in the transcript: say so. The
+    // newest plan carries the choices (the choice route keeps them on it).
+    lines: savedPlanDigestLines(
+      claimed,
+      arrivedWith(claimed, loaded.messages),
+      index === claimedPlans.length - 1,
+    ),
   }))
 
   /*
@@ -825,17 +836,72 @@ export const ARRIVAL_ANSWER_INSTRUCTION =
   'another question in this reply. It is a comparison, not advice: never pick a product, ' +
   'lender or option for them.'
 
+/** What the customer did to the plan in the app: a figure edited, a product chosen or removed. */
+const PLAN_CHANGES: ReadonlySet<string> = new Set([
+  PLAN_EDITED_EVENT,
+  PRODUCT_CHOSEN_EVENT,
+  PRODUCT_CHOICE_REMOVED_EVENT,
+])
+const CHOICE_EVENTS: ReadonlySet<string> = new Set([
+  PRODUCT_CHOSEN_EVENT,
+  PRODUCT_CHOICE_REMOVED_EVENT,
+])
+
 /**
- * The return turn that follows a plan edit in the profile (2026-11-12, "6. The saving months"):
- * the customer typed nothing, and the reply is text only. After the live run of PR #74, where
- * it called `show_products` unasked and put a card under its reply, the turn is offered no tool
- * at all; products are shown when their own next message asks for them.
+ * The return turn that follows a change to the plan in the app (2026-11-12, "6. The saving
+ * months"; a product chosen or removed on a card, 2026-11-13): the customer typed nothing, and
+ * the reply is text only. After the live run of PR #74, where it called `show_products` unasked
+ * and put a card under its reply, the turn is offered no tool at all; products are shown when
+ * their own next message asks for them.
  */
 export function returnsAfterPlanEdit(
   trigger: string,
   events: readonly { readonly type: string }[],
 ): boolean {
-  return trigger === 'return' && events.some((event) => event.type === PLAN_EDITED_EVENT)
+  return trigger === 'return' && events.some((event) => PLAN_CHANGES.has(event.type))
+}
+
+/**
+ * The return after a product was chosen or taken off the plan on a card (2026-11-13): one line
+ * of fact in their name, then the next open part's deciding question, or, with every part
+ * chosen, what the plan now does, once, and nothing asked. Text only. The question and the line
+ * were worked out by the choice route from the stored plan (`next`, `allChosenLine`).
+ */
+export function choiceReturnInstruction(
+  latest: { readonly type: string; readonly payload: Record<string, unknown> },
+  others: boolean,
+): string {
+  const said = describeEvent(latest)
+  const next = latest.payload['next']
+  const question =
+    typeof next === 'object' &&
+    next !== null &&
+    typeof (next as Record<string, unknown>)['question'] === 'string'
+      ? String((next as Record<string, unknown>)['question'])
+      : null
+  const allChosen =
+    typeof latest.payload['allChosenLine'] === 'string' ? latest.payload['allChosenLine'] : null
+  const close =
+    allChosen !== null
+      ? `Then say once, in a sentence or two of your own, what the plan now does: "${allChosen}" ` +
+        'Ask nothing after it.'
+      : question !== null
+        ? 'Then ask the next open part’s question, in these words or close to them, and ' +
+          `nothing else: "${question}" It names no product: do not name one in it.`
+        : 'Ask nothing after it.'
+  return (
+    '(The customer has just ' +
+    (latest.type === PRODUCT_CHOSEN_EVENT ? 'chosen a product on a card' : 'taken a choice off') +
+    ' for their plan, in the app, and come back to the conversation. ' +
+    (said === null ? '' : `What they did: "${said}" `) +
+    'Do not greet them or welcome them back, and do not call show_status. Say what they did in ' +
+    'one line, as a fact in their name ("The €32,000 is down for the bunq Savings Account."). ' +
+    'Never call the choice good, right, sensible or better than another, never say you chose ' +
+    'it, and never pick anything for them. ' +
+    (others ? 'Then name the other things under "Changed since they were last here". ' : '') +
+    close +
+    ' This reply is text only: do not call show_products or any other tool that shows a card.)'
+  )
 }
 
 /**
@@ -858,6 +924,14 @@ export function returnInstruction(
     readonly market?: boolean
   } = {},
 ): string {
+  const changes = events.filter((event) => PLAN_CHANGES.has(event.type))
+  const lastChange = changes.at(-1)
+  if (lastChange !== undefined && CHOICE_EVENTS.has(lastChange.type)) {
+    return choiceReturnInstruction(
+      lastChange,
+      events.some((event) => !CHOICE_EVENTS.has(event.type) && isNarratable(event.type)),
+    )
+  }
   const edits = events.filter((event) => event.type === PLAN_EDITED_EVENT)
   const latest = edits.at(-1)
   if (latest === undefined && options.market === true) {

@@ -23,10 +23,25 @@ export const NARRATABLE_EVENTS = [
   'transfer_settled',
   'plan_claimed',
   'plan_edited',
+  'product_chosen',
+  'product_choice_removed',
 ] as const
 
 /** A claimed plan changed in the app's profile and rebuilt (`PATCH /api/cases/{id}/plan`). */
 export const PLAN_EDITED_EVENT = 'plan_edited' as const
+
+/** A product chosen on a card for a part of the plan (`POST /api/cases/{id}/plan/choices`). */
+export const PRODUCT_CHOSEN_EVENT = 'product_chosen' as const
+
+/** A choice taken off the plan (`DELETE /api/cases/{id}/plan/choices/{slot}`). */
+export const PRODUCT_CHOICE_REMOVED_EVENT = 'product_choice_removed' as const
+
+/** How each part of the plan reads in a sentence (`PLAN_CHOICE_SLOTS`). */
+const SLOT_PHRASES: Readonly<Record<string, string>> = {
+  lump_sum: 'the lump sum',
+  monthly_saving: 'the monthly saving',
+  mortgage: 'the mortgage',
+}
 
 export type NarratableEvent = (typeof NARRATABLE_EVENTS)[number]
 
@@ -157,6 +172,27 @@ export function describeEvent(event: {
         ...(reading === null ? [] : [reading]),
         ...full,
       ].join(' ')
+    }
+    /*
+     * A product the customer chose on a card for a part of their plan (2026-11-13), or took off
+     * it. A fact of what they did, in their name; it never says the choice is a good one.
+     */
+    case 'product_chosen': {
+      const lead = typeof event.payload['lead'] === 'string' ? event.payload['lead'] : null
+      const slot = SLOT_PHRASES[String(event.payload['slot'])] ?? 'a part of the plan'
+      const replaced =
+        typeof event.payload['replacedLead'] === 'string' ? event.payload['replacedLead'] : null
+      if (lead === null) return `You chose a product for ${slot}.`
+      return replaced === null
+        ? `You chose ${lead} for ${slot}.`
+        : `You chose ${lead} for ${slot}, in place of ${replaced}.`
+    }
+    case 'product_choice_removed': {
+      const lead = typeof event.payload['lead'] === 'string' ? event.payload['lead'] : null
+      const slot = SLOT_PHRASES[String(event.payload['slot'])] ?? 'a part of the plan'
+      return lead === null
+        ? `You took the choice for ${slot} off the plan; it is open again.`
+        : `You took ${lead} off the plan as the choice for ${slot}; it is open again.`
     }
     default:
       return null
