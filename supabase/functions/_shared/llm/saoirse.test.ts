@@ -82,7 +82,7 @@ function options(rounds: readonly Round[], withCard = false): SaoirseTurnOptions
           ? { result: 'Status shown.', card: { type: 'status', applications: [] } as never }
           : { result: 'Options shown.' },
       ),
-    enabledTools: ['show_product_options'],
+    enabledTools: ['show_product_options', 'record_facts'],
   }
 }
 
@@ -450,6 +450,26 @@ describe('a round whose tool was refused', () => {
     expect(retractLengths(turn.events)).toEqual(['Here they are.'.length])
     expect(turn.text).toBe('I could not bring those up. Tell me a little more first.')
     expect(turn.results).toEqual([`products: unavailable ${WITHDRAWAL_NOTE}`])
+  })
+
+  /**
+   * Withholding a tool is the enforcement the stages and a market conversation rest on
+   * (2026-11-13), so a call to one the turn does not offer is refused and withdrawn, never run,
+   * whatever the provider sends.
+   */
+  it('refuses and withdraws a call to a tool the turn does not offer', async () => {
+    const turn = await run(
+      [
+        { text: 'Plan it is.', tool: 'propose_plan', input: {} },
+        { text: 'The plan is the one you saved.' },
+      ],
+      [new Error('propose_plan ran')],
+    )
+
+    expect(retractLengths(turn.events)).toEqual(['Plan it is.'.length])
+    expect(turn.text).toBe('The plan is the one you saved.')
+    expect(turn.results[0]).toContain('propose_plan is not offered in this conversation.')
+    expect(turn.events.some((event) => event.type === 'card')).toBe(false)
   })
 
   /**

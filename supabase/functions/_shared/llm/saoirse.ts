@@ -316,6 +316,15 @@ export async function* runSaoirseTurn(options: SaoirseTurnOptions): AsyncGenerat
 
     for (const toolUse of toolUses) {
       options.onToolCalled?.(toolUse.name)
+      /*
+       * A tool this turn does not offer is refused, never run. The API only lets the model call
+       * the tools it was sent, but a provider is a seam (the fixture replays whatever a script
+       * says), and withholding is the enforcement the stages and the market conversation rest
+       * on, so it is checked here too rather than trusted.
+       */
+      const offered =
+        options.enabledTools === undefined ||
+        (options.enabledTools as readonly string[]).includes(toolUse.name)
       const validation: ToolValidation =
         options.textOnly === true
           ? {
@@ -323,7 +332,13 @@ export async function* runSaoirseTurn(options: SaoirseTurnOptions): AsyncGenerat
               name: toolUse.name,
               error: 'This reply is text only: no tool is offered on this turn. Answer in words.',
             }
-          : validateToolCall(toolUse.name, toolUse.input)
+          : !offered
+            ? {
+                ok: false,
+                name: toolUse.name,
+                error: `${toolUse.name} is not offered in this conversation. Answer without it.`,
+              }
+            : validateToolCall(toolUse.name, toolUse.input)
 
       if (!validation.ok) {
         /*
