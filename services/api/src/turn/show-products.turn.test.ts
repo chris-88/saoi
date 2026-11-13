@@ -498,3 +498,126 @@ describe('a product’s must-knows, once it is asked about by name (2026-11-13)'
     expect(productsMustKnowLines([card(['Newest'])], [])).toEqual([])
   })
 })
+
+describe('a question about the monthly saving is a card (2026-11-13)', () => {
+  it('“what product is best for my monthly savings then?”: the card on the monthly saving, one line, the focus recorded', async () => {
+    const provider = fixtureProvider(
+      fixtureTurnSchema.parse({
+        rounds: [
+          {
+            deltas: [],
+            toolUses: [
+              { name: 'show_products', input: { arrangement: 'fits_date', focus: 'monthly' } },
+            ],
+          },
+          {
+            deltas: [
+              'Here are the accounts for your €1,100 a month, regular savers first, in order of what each earns on it by July 2028.',
+            ],
+          },
+        ],
+      }),
+    )
+    const inner = createToolExecutor(toolContext({ market: () => Promise.resolve(MARKET) }))
+    const results: string[] = []
+    const executeTool: typeof inner = async (name, input) => {
+      const outcome = await inner(name, input)
+      results.push(outcome.result)
+      return outcome
+    }
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(`${PRODUCTS_AS_OF}T12:00:00Z`))
+    const events: StreamEvent[] = []
+    try {
+      for await (const event of runSaoirseTurn({
+        provider,
+        model: 'test-model',
+        prompt: {
+          domainConfig: demoDomainConfig,
+          productCatalogue: knowledgeBaseSection(),
+          sliders: slidersFor('default'),
+          digest: {
+            customerName: null,
+            authLevel: 'anonymous',
+            facts: [],
+            applications: [],
+            declinedProducts: [],
+            advisories: [],
+            partner: null,
+            eventsSinceLastSeen: [],
+          } as never,
+        },
+        history: [{ role: 'user', content: 'What product is best for my monthly savings then?' }],
+        executeTool,
+        enabledTools: toolsForTurn('opening', false, true),
+      })) {
+        events.push(event)
+      }
+    } finally {
+      vi.useRealTimers()
+    }
+
+    // A card, not prose: the accounts for the monthly saving, regular savers first.
+    const cards = events.flatMap((event) => (event.type === 'card' ? [event.card] : []))
+    expect(cards).toHaveLength(1)
+    const card = marketProductsCardSchema.parse(cards[0])
+    expect(card.arrangement.kind).toBe('fits_date')
+    expect(card.arrangement.title).toBe('Accounts for your €1,100 a month')
+    expect(card.arrangement.groups?.[0]?.label).toBe('Regular saver')
+    expect(card.rows.some((row) => row.kind.endsWith('fixed'))).toBe(false)
+    expect(card.rows.map((row) => row.id)).toContain('boi:savings.supersaver')
+    const text = events
+      .flatMap((event) => (event.type === 'text_delta' ? [event.text] : []))
+      .join('')
+    expect(text.split(/\.\s/)).toHaveLength(1)
+
+    // The tool result names the groups with their counts, what the card set aside, the rule
+    // "best" is answered with, and that a product by name off the card is looked up.
+    const result = results[0] ?? ''
+    expect(result).toMatch(
+      /It is in groups: “Regular saver” \(4 rows\), “Instant access” \(\d rows?\)/,
+    )
+    expect(result).toContain('fixed terms take lump sums only and are left out')
+    expect(result).toContain(
+      "Asked which is best, the answer is the card's order and the rule it is in (Regular savers first, then instant access and notice; each by interest after DIRT on the monthly saving alone, highest first, plus any bonus paid by then), never a pick.",
+    )
+    expect(result).toContain('call `lookup_products`')
+    expect(result).toContain('never say it did not make the cut')
+    expect(adviceWordsIn(result)).toEqual([])
+
+    // The event records the focus, and the next turn's digest names it with the card.
+    const recorded = vi
+      .mocked(writeEvent)
+      .mock.calls.flatMap((call) => (call[1].type === 'products_shown' ? [call[1]] : []))
+    expect(recorded).toHaveLength(1)
+    expect(recorded[0]?.payload).toMatchObject({ arrangement: 'fits_date', focus: 'monthly' })
+    const basis = productsBasisLines(recorded.map((event) => ({ payload: event.payload })))
+    expect(basis.find((line) => line.startsWith('Bank of Ireland SuperSaver Account'))).toMatch(
+      /^Bank of Ireland SuperSaver Account, 3\.00% to Nov 2027 \(fits_date, monthly saving\): €\d+ counts 3\.00% to November 2027, then 2\.00%\. It counts the €1,100 a month alone, not the €25,000 held\.$/,
+    )
+    const row = messageRow.parse({
+      role: 'assistant',
+      content: text,
+      created_at: '2026-11-13T16:04:00Z',
+      cards: [card],
+    })
+    expect(productsShownLines([{ ...row, cards: row.cards, timing: null } as never])).toEqual([
+      'Accounts for your €1,100 a month (fits_date; in groups: Regular saver, Instant access, Notice), your last reply',
+    ])
+  })
+
+  it('the prompt maps a question about the monthly saving to the card, and a product off the card to a lookup', () => {
+    const digest = buildCaseDigest(loadedCase(CASE, {}), {
+      holdings: { lines: [], progress: null },
+    })
+    const prompt = composeSystemPrompt({
+      domainConfig: demoDomainConfig,
+      productCatalogue: knowledgeBaseSection(),
+      sliders: slidersFor('default'),
+      digest,
+    })
+    expect(prompt).toContain('is `show_products` with `focus: "monthly"`, never an')
+    expect(prompt).toContain("give the card's order and the rule it is in")
+    expect(prompt).toContain('never that it "did not make the cut"')
+  })
+})

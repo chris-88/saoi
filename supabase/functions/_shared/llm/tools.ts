@@ -317,6 +317,11 @@ export const showProductsInput = z.object({
   category: z.enum(['savings', 'deposits', 'mortgages']).optional(),
   /** Mortgages: the order the customer asked for. Default: the order their plan uses. */
   sortBy: z.enum(HOME_SORTS).optional(),
+  /**
+   * by_access and fits_date: what the card is about. `monthly`: the monthly saving (regular
+   * savers first, each account judged on the monthly saving alone). Default `lump`, the sum held.
+   */
+  focus: z.enum(['lump', 'monthly']).optional(),
   /** Mortgages: only filters the customer asked for. */
   filters: z
     .object({
@@ -403,11 +408,16 @@ export const TOOLS: readonly ToolDefinition[] = [
       'is fits_date; "what would the mortgage cost", "show me the mortgages", "which lenders", ' +
       '"lowest monthly" is mortgage_by_sort (pass sortBy when they name an order: ' +
       'five_year_cost, keys_date or monthly_repayment; filters only when they asked for one: ' +
-      'stay with their bank, fixed or variable, green). A follow-up such as "by access instead" ' +
+      'stay with their bank, fixed or variable, green). A question about the monthly saving ' +
+      '("where should my €1,000 a month go", "best for my monthly savings", "regular saving", ' +
+      '"a regular saver") is fits_date with focus "monthly" (by_access with focus "monthly" when ' +
+      'they asked about access): the card is then the accounts for the monthly saving, regular ' +
+      'savers first, each on the monthly saving alone. A follow-up such as "by access instead" ' +
       'calls it again with that arrangement. The server reads their figures from the case and ' +
       'builds every row; you pass no figures and name no product. Say one line about the card ' +
-      'and ask nothing else; do not read the rows out, and never call one the pick for them. If ' +
-      'it returns questions instead of a card, ask the first one.',
+      'and ask nothing else; do not read the rows out, and never call one the pick for them: ' +
+      '"best" is answered as the card\'s order with its rule named. If it returns questions ' +
+      'instead of a card, ask the first one.',
     schema: showProductsInput,
   },
   {
