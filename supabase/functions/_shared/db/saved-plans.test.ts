@@ -148,6 +148,74 @@ describe('what the model is told', () => {
     expect(card.type === 'saved_plan' && card.figures).toMatch(/ · €350k$/)
   })
 
+  it('carries the choices (2026-11-13): on the card, its options, and the digest', () => {
+    const base = plan()
+    const option = (rowId: string, lender: string) => ({
+      rowId,
+      lender,
+      kind: '4-year fixed',
+      productName: '4 Year Fixed',
+      ratePct: 3.2,
+      monthlyEur: 1362.27,
+      fiveYearCostEur: 49338.1,
+      keysOn: '2028-07',
+      confirmed: true,
+      conditions: [],
+    })
+    const choice = {
+      slot: 'mortgage' as const,
+      rowId: 'aib:mortgage.c2039',
+      lead: 'AIB 4 Year Fixed',
+      providerId: 'aib',
+      kind: '4-year fixed at 3.20%',
+      value: '€1,362/mo',
+      figure: '€49,338 over 5 years',
+      chosenAt: '2026-11-13T10:00:00.000Z',
+      reminderId: '00000000-0000-4000-8000-0000000000c1',
+    }
+    const claimed = {
+      id: PLAN_ID,
+      plan: marketPlanSchema.parse({
+        ...base,
+        comparison: {
+          kind: 'home' as const,
+          headline: 'At these figures, the keys come around July 2028.',
+          priceEur: 350_000,
+          sortBy: 'five_year_cost' as const,
+          sortedBy: '2 options that fit.',
+          filters: [],
+          options: [
+            option('boi:mortgage.c6175', 'Bank of Ireland'),
+            option('aib:mortgage.c2039', 'AIB'),
+          ],
+          routes: [],
+        },
+        choices: { mortgage: choice },
+      }),
+    }
+    const card = savedPlanCard(claimed)
+    expect(cardSchema.parse(card)).toEqual(card)
+    if (card.type !== 'saved_plan') throw new Error('wrong card')
+    expect(card.comparison?.options.map((item) => [item.rowId, item.chosen])).toEqual([
+      ['boi:mortgage.c6175', undefined],
+      ['aib:mortgage.c2039', 'mortgage'],
+    ])
+    // What the app sees of a choice: no reminder id, no market rows.
+    const { reminderId: _kept, ...shown } = choice
+    expect(card.choices).toEqual({ lump_sum: null, monthly_saving: null, mortgage: shown })
+
+    const lines = savedPlanDigestLines(claimed)
+    expect(lines).toContain(
+      'Choices, theirs, made on the cards (never made for them): lump sum: open; monthly saving: open; mortgage: AIB 4 Year Fixed, 4-year fixed at 3.20% (€1,362/mo, €49,338 over 5 years).',
+    )
+    expect(lines.join('\n')).toContain(
+      'Next open part: the lump sum. Its deciding question, in their figures: "Which account is the one for your',
+    )
+    expect(lines.at(-1)).toMatch(/^Next: whatever they ask about it/)
+    // An older plan in the same case carries no choices lines.
+    expect(savedPlanDigestLines(claimed, false, false).join('\n')).not.toContain('Choices')
+  })
+
   it('falls back to the first debt step when there are no products', () => {
     const base = plan()
     const lines = savedPlanDigestLines({

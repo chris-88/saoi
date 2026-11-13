@@ -10,6 +10,12 @@ import {
 } from '../contracts/market-plan.ts'
 import { factCatalogue, type FactKey } from '../domain/facts.ts'
 import { arrivalOpening } from '../domain/market/arrival.ts'
+import {
+  choicesDigestLines,
+  choicesOf,
+  chosenSlotOf,
+  mortgageOptionRowId,
+} from '../domain/market/choices.ts'
 import { editableOf } from '../domain/market/plan-edit.ts'
 import type { Db } from './case-repository.ts'
 
@@ -183,9 +189,12 @@ export function savedPlanCard(claimed: ClaimedPlan): Card {
       ),
     ].slice(0, 4),
     figures: figuresLine(plan),
-    ...(plan.comparison === undefined ? {} : { comparison: comparisonCard(plan.comparison) }),
+    ...(plan.comparison === undefined
+      ? {}
+      : { comparison: comparisonCard(plan.comparison, plan.choices) }),
     routes: routesOf(plan),
     ...(plan.arrival === undefined ? {} : { arrival: plan.arrival }),
+    choices: choicesOf(plan),
     createdAt: plan.createdAt,
     dataCheckedAt: plan.dataCheckedAt,
   }
@@ -283,6 +292,8 @@ function routeDigestLines(routes: readonly PlanRoute[]): string[] {
 /** The comparison's first three options, as the card and the app's welcome show them. */
 export function comparisonCard(
   comparison: NonNullable<MarketPlan['comparison']>,
+  /** The plan's choices, so the mortgage chosen is marked. */
+  choices?: MarketPlan['choices'],
 ): NonNullable<Extract<Card, { type: typeof SAVED_PLAN_CARD }>['comparison']> {
   return {
     headline: comparison.headline,
@@ -290,23 +301,29 @@ export function comparisonCard(
     sortBy: comparison.sortBy,
     filters: [...comparison.filters],
     total: comparison.options.length,
-    options: comparison.options.slice(0, 3).map((option) => ({
-      lender: option.lender,
-      kind: option.kind,
-      rate: `${String(Math.round(option.ratePct * 100) / 100)}%`,
-      monthly: `${euroWhole(option.monthlyEur)}/mo`,
-      fiveYear: `${euroWhole(option.fiveYearCostEur)} over 5 years`,
-      keys: option.keysOn === null ? null : monthOf(option.keysOn),
-      confirmed: option.confirmed,
-      lead:
-        comparison.sortBy === 'monthly_repayment'
-          ? `${euroWhole(option.monthlyEur)}/mo`
-          : comparison.sortBy === 'keys_date'
-            ? option.keysOn === null
-              ? 'not reached'
-              : monthOf(option.keysOn)
-            : `${euroWhole(option.fiveYearCostEur)} / 5 yrs`,
-    })),
+    options: comparison.options.slice(0, 3).map((option) => {
+      const rowId = mortgageOptionRowId(option)
+      const chosen = chosenSlotOf(choices, rowId)
+      return {
+        lender: option.lender,
+        kind: option.kind,
+        rate: `${String(Math.round(option.ratePct * 100) / 100)}%`,
+        monthly: `${euroWhole(option.monthlyEur)}/mo`,
+        fiveYear: `${euroWhole(option.fiveYearCostEur)} over 5 years`,
+        keys: option.keysOn === null ? null : monthOf(option.keysOn),
+        confirmed: option.confirmed,
+        lead:
+          comparison.sortBy === 'monthly_repayment'
+            ? `${euroWhole(option.monthlyEur)}/mo`
+            : comparison.sortBy === 'keys_date'
+              ? option.keysOn === null
+                ? 'not reached'
+                : monthOf(option.keysOn)
+              : `${euroWhole(option.fiveYearCostEur)} / 5 yrs`,
+        rowId,
+        ...(chosen === undefined ? {} : { chosen }),
+      }
+    }),
   }
 }
 
@@ -320,6 +337,11 @@ export function savedPlanDigestLines(
   claimed: ClaimedPlan,
   /** True when the transcript holds the arrival message: the card, then Saoirse's first line. */
   arrived = false,
+  /**
+   * The newest claimed plan, whose choices the choice route keeps (2026-11-13): its lines carry
+   * what is chosen and the next open part. Older plans in the same case carry none.
+   */
+  current = true,
 ): string[] {
   const { plan } = claimed
   const first = plan.combination.products[0]
@@ -358,6 +380,7 @@ export function savedPlanDigestLines(
           ),
           ...routeDigestLines(plan.comparison.routes),
         ]),
+    ...(current ? choicesDigestLines(plan) : []),
     ...(arrived
       ? [
           `Already shown when they opened it in the app: this card, then your first line, word for word: "${planOpening(plan)}" Do not show the card again, welcome them or repeat that line.`,

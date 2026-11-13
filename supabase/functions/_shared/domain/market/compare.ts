@@ -247,7 +247,7 @@ function cardRowsFor(
 // ---------------------------------------------------------------------------------------------
 
 /** The view a row id names, and the rung when it is one of a ladder's own rows. */
-function resolve(
+export function resolve(
   market: Market,
   rowId: string,
 ): { readonly product: ProductView; readonly rungMonths: number | null } | null {
@@ -1056,5 +1056,51 @@ export function compareProducts(
     kind: 'card',
     card,
     figureBasis: columns.map((column) => ({ rowId: column.rowId, line: column.moneyLine })),
+  }
+}
+
+/** A savings row's key facts, rebuilt by id when it is on no card (`domain/market/choices.ts`). */
+export type RowFacts = {
+  readonly lead: string
+  readonly providerId: string
+  readonly kind: string
+  readonly value: string
+  readonly figure: string
+}
+
+/**
+ * The key facts of a savings or deposit row the products card would show, worked out on the
+ * comparison's money rules for a row that is on no card the case would build (the case moved on
+ * since it was shown). Null for an id the market does not hold, or a product that is not a
+ * savings or deposit account.
+ */
+export function rowFacts(
+  market: Market,
+  figures: CaseFigures,
+  rowId: string,
+  asOf: AsOf,
+): RowFacts | null {
+  const found = resolve(market, rowId)
+  if (found === null || found.product.terms.kind !== 'deposit') return null
+  const horizon = horizonOf(figures, asOf)
+  const column = marketColumn({
+    rowId,
+    product: found.product,
+    terms: found.product.terms,
+    rungMonths: found.rungMonths,
+    figures,
+    horizon,
+    asOf,
+    cardRow: undefined,
+  })
+  return {
+    lead: column.lead,
+    providerId: found.product.provider,
+    kind: column.kind,
+    value: column.values.rate,
+    figure:
+      column.money === null
+        ? column.values.money
+        : `${whole(column.money)} by ${shortMonth(horizon.by)}`,
   }
 }

@@ -1,3 +1,4 @@
+import { choicesOf, mortgageOptionRowId } from './choices.ts'
 import type { CasePlan, CasePlanEdit, PlanEditable } from '../../contracts/case-plan.ts'
 import type { PlanProgress } from '../../contracts/holdings.ts'
 import {
@@ -283,6 +284,8 @@ export function applyPlanEdit(
     ...built,
     openedWith: plan.openedWith ?? arrivalOpening(plan.arrival),
     edits: [...(plan.edits ?? []), ...recorded].slice(-MAX_EDITS),
+    // The customer's choices are theirs: an edit to a figure keeps them (2026-11-13).
+    ...(plan.choices === undefined ? {} : { choices: plan.choices }),
   }
 
   // Which options came in and went out: fixed terms by the goal's date, lenders by the comparison.
@@ -513,6 +516,7 @@ export function watchedOf(plan: MarketPlan): CasePlan['watched'] {
   const comparison = plan.comparison
   if (comparison !== undefined && comparison.options.length > 0) {
     return comparison.options.slice(0, 3).map((option) => ({
+      rowId: mortgageOptionRowId(option),
       lead: option.lender,
       kind: option.kind,
       value: `${String(Math.round(option.ratePct * 100) / 100)}%`,
@@ -539,6 +543,18 @@ export function watchedOf(plan: MarketPlan): CasePlan['watched'] {
   }))
 }
 
+/** When the plan last changed: its newest edit or choice, else when it was made. */
+function updatedAtOf(plan: MarketPlan): string {
+  const times = [
+    plan.edits?.at(-1)?.at,
+    ...Object.values(plan.choices ?? {}).map((choice) => choice?.chosenAt),
+  ].filter((time): time is string => time !== undefined)
+  return times.reduce(
+    (latest, time) => (Date.parse(time) > Date.parse(latest) ? time : latest),
+    times[0] ?? plan.createdAt,
+  )
+}
+
 /** The profile's view of a claimed plan, with progress over the holdings. */
 export function casePlanOf(
   claimed: { readonly id: string; readonly plan: MarketPlan },
@@ -559,7 +575,8 @@ export function casePlanOf(
       progressLine: progress?.line ?? null,
     },
     watched: watchedOf(plan),
-    updatedAt: plan.edits?.at(-1)?.at ?? plan.createdAt,
+    choices: choicesOf(plan),
+    updatedAt: updatedAtOf(plan),
   }
 }
 
