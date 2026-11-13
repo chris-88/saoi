@@ -5,7 +5,9 @@ import { exampleMarketPlan } from '../../contracts/market-plan.example.ts'
 /**
  * The first-home case the products card is tested on: a claimed home plan (€400,000 second-hand,
  * €110,000 joint income, keys July 2028, sorted by five-year cost) and what they hold now, a
- * Bank of Ireland savings account at 0.5% and an AIB current account. Shared by the domain test
+ * Bank of Ireland savings account at 0.5% and an AIB current account, with €1,100 a month saved
+ * (€25,000 held and twenty months of saving reach the €47,000 needed at the keys in July 2028,
+ * before interest). Shared by the domain test
  * and the turn tool's tests.
  */
 export const PRODUCTS_AS_OF = '2026-11-12'
@@ -18,7 +20,7 @@ export function productsPlan(): MarketPlan {
     situation: {
       ...base.situation,
       income: { annualGross: 110_000, netMonthly: 6_200 },
-      monthlySaving: 1_000,
+      monthlySaving: 1_100,
       savings: [
         { label: 'BoI savings', balance: 20_000, provider: 'Bank of Ireland', aerPct: 0.5 },
         { label: 'Current account', balance: 5_000, provider: 'AIB' },
@@ -54,7 +56,7 @@ export function productsPlan(): MarketPlan {
       readyLine: 'July 2028',
       readyNote: 'Before interest',
       factParts: ['€40,000 deposit', '€4,000 stamp duty', '€3,000 legal and survey'],
-      progress: { savedEur: 25_000, neededEur: 47_000, monthlySavingEur: 1_000 },
+      progress: { savedEur: 25_000, neededEur: 47_000, monthlySavingEur: 1_100 },
       tiles: [],
       assumptions: ['First-time buyer, assumed', 'Second-hand', 'Rent not given'],
       hookQuestion: null,

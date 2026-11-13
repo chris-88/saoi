@@ -602,8 +602,9 @@ export const savedPlanCardSchema = z.object({
  * - `held_vs_market`: their own account on top as the baseline, the market under it, by rate.
  * - `by_access`: instant access beside fixed term, the rate difference stated as the price of
  *   access.
- * - `fits_date`: the accounts that take this saving by the keys month, by the term that fits
- *   (more than six months away: the six-month terms), any bonus counted by the date.
+ * - `fits_date`: the accounts that take this saving by the keys month, each fixed term at the
+ *   longest that ends a month before the keys month its own interest gives
+ *   (`domain/market/term-fit.ts`), by that keys month; any bonus counted by the date.
  * - `mortgage_by_sort`: the lender options at their loan-to-value, by the sort they chose.
  */
 export const MARKET_ARRANGEMENT_KINDS = [

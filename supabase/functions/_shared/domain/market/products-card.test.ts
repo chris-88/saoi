@@ -11,6 +11,7 @@ import {
   type ProductsResult,
 } from './products-card.ts'
 import { PRODUCTS_AS_OF, productsHoldings, productsPlan } from './products-card.fixture.ts'
+import { endsInTime, keysMonthWith, TERM_FIT_RULE, termThatFits } from './term-fit.ts'
 import type { ProductView } from '../../contracts/market-tools.ts'
 import type { Market } from './types.ts'
 
@@ -29,9 +30,10 @@ function cardOf(result: ProductsResult): MarketProductsCard {
 describe('caseFigures: the plan, the holdings and the facts', () => {
   it('reads the claimed plan and prefers holdings for what is held', () => {
     expect(FIGURES).toMatchObject({
-      monthlySavingEur: 1_000,
+      monthlySavingEur: 1_100,
       keysMonth: '2028-07',
       keysFrom: 'plan',
+      neededAtKeysEur: 47_000,
       priceEur: 400_000,
       incomeEur: 110_000,
       firstTimeBuyer: null,
@@ -97,28 +99,45 @@ describe('productsCard: arranged by the question asked', () => {
     // Instant first, then fixed: the two sides are not interleaved.
     const firstFixed = kinds.findIndex((kind) => kind.endsWith('fixed'))
     expect(kinds.slice(firstFixed).every((kind) => kind.endsWith('fixed'))).toBe(true)
-    expect(card.arrangement.line).toMatch(/price of access|access costs nothing here/)
+    expect(card.basis.objective).toMatch(/price of access|access costs nothing here/)
+    expect(card.arrangement.line).not.toMatch(/price of access/)
   })
 
-  it('fits_date: the six-month terms when the keys are more than six months away, bonus counted by the date', () => {
+  it('fits_date: each fixed term at the longest that ends a month before the keys, the rule in the basis', () => {
     const card = cardOf(productsCard(MARKET, FIGURES, { arrangement: 'fits_date' }, PRODUCTS_AS_OF))
     expect(card.question).toBe('Where can the deposit sit until the keys in July 2028?')
     expect(card.arrangement.title).toBe('Accounts that fit July 2028')
     const fixed = card.rows.filter((row) => row.kind.endsWith('fixed'))
     expect(fixed.length).toBeGreaterThan(0)
-    expect(fixed.every((row) => row.kind === '6-month fixed')).toBe(true)
-    expect(card.basis.objective).toMatch(/fixed terms are shown at six months/)
+    // Bank of Ireland's 18 months ends May 2028, two months before the keys in July 2028; AIB's
+    // 24 months would end November 2028, after them, so it is shown at one year.
+    expect(fixed.find((row) => row.id === 'boi:savings.advantage_fixed')?.kind).toBe(
+      '18-month fixed',
+    )
+    expect(
+      fixed.find((row) => row.id === 'aib:deposit.ladder_personal_fixed_term_deposit')?.kind,
+    ).toBe('1-year fixed')
+    for (const row of card.rows) expect(row.figure).toMatch(/^keys [A-Z][a-z]{2} \d{4}, €[\d,]+$/)
+    expect(card.basis.objective).toContain(TERM_FIT_RULE)
+    expect(card.basis.figures).toContain('€47,000 needed at the keys')
     expect(card.basis.assumptions.join(' ')).toMatch(/A bonus is counted in the total by the date/)
   })
 
   it('fits_date: the MortgageSaver bonus is paid after drawdown, so it is noted and not counted', () => {
-    const card = cardOf(productsCard(MARKET, FIGURES, { arrangement: 'fits_date' }, PRODUCTS_AS_OF))
+    const card = cardOf(
+      productsCard(
+        MARKET,
+        FIGURES,
+        { arrangement: 'fits_date', category: 'savings' },
+        PRODUCTS_AS_OF,
+      ),
+    )
     const saver = card.rows.find((row) => row.lead === 'Bank of Ireland MortgageSaver account')
     expect(saver).toBeDefined()
     expect(saver?.note).toBe('bonus paid after drawdown, not counted')
     // What it adds by July 2028 is its interest alone: the €2,000 bonus (€1,340 after DIRT) is not in it.
     const figure = Number(
-      /^€([\d,]+) by Jul 2028$/.exec(saver?.figure ?? '')?.[1]?.replace(',', ''),
+      /^keys [A-Z][a-z]{2} 2028, €([\d,]+)$/.exec(saver?.figure ?? '')?.[1]?.replace(',', ''),
     )
     expect(figure).toBeGreaterThan(0)
     expect(figure).toBeLessThan(1_340)
@@ -159,12 +178,21 @@ describe('productsCard: arranged by the question asked', () => {
     expect(lead('My rainy-day fund')).toBe('Your rainy-day fund')
   })
 
-  it('fits_date: within six months, the longest term that ends by the keys', () => {
-    const near = { ...FIGURES, keysMonth: '2027-03' }
-    const card = cardOf(productsCard(MARKET, near, { arrangement: 'fits_date' }, PRODUCTS_AS_OF))
-    for (const row of card.rows.filter((item) => item.kind.endsWith('fixed'))) {
-      expect(Number(/^(\d+)-month/.exec(row.kind)?.[1] ?? 99)).toBeLessThanOrEqual(4)
+  it('fits_date: with only a date given, the longest term that ends a month before it', () => {
+    const near = {
+      ...FIGURES,
+      keysMonth: '2027-06',
+      keysFrom: 'date_given' as const,
+      neededAtKeysEur: null,
     }
+    const card = cardOf(productsCard(MARKET, near, { arrangement: 'fits_date' }, PRODUCTS_AS_OF))
+    const fixed = card.rows.filter((item) => item.kind.endsWith('fixed'))
+    expect(fixed.length).toBeGreaterThan(0)
+    // Six months from November 2026 ends May 2027, a month before June.
+    expect(fixed.every((row) => row.kind === '6-month fixed')).toBe(true)
+    expect(card.basis.assumptions).toContain(
+      'The cash needed at the keys is not known, so every account is set against June 2027.',
+    )
   })
 
   it('mortgage_by_sort: the lender options at their LTV, in the sort they chose, with the warnings', () => {
@@ -363,12 +391,14 @@ describe('productsCard: a rate states its period (2026-11-12)', () => {
   })
 
   it('states once what the money column counts', () => {
-    const line =
-      'The money column is interest after DIRT to July 2028, counting each rate for as long as the product states it and the rate after where stated; where the rate after is not stated the money stops there.'
-    for (const arrangement of ['held_vs_market', 'by_access', 'fits_date'] as const) {
+    const line = (to: string) =>
+      `The money column is interest after DIRT ${to}, counting each rate for as long as the product states it and the rate after where stated; where the rate after is not stated the money stops there.`
+    for (const arrangement of ['held_vs_market', 'by_access'] as const) {
       const card = cardOf(productsCard(MARKET, FIGURES, { arrangement }, PRODUCTS_AS_OF))
-      expect(card.basis.objective, arrangement).toContain(line)
+      expect(card.basis.objective, arrangement).toContain(line('to July 2028'))
     }
+    const fits = cardOf(productsCard(MARKET, FIGURES, { arrangement: 'fits_date' }, PRODUCTS_AS_OF))
+    expect(fits.basis.objective).toContain(line('to the keys month each account gives'))
   })
 
   it('every new string is free of advice and instruction', () => {
@@ -400,5 +430,102 @@ describe('productsCard: a rate states its period (2026-11-12)', () => {
       PRODUCTS_AS_OF,
     )
     expect(result.kind === 'card' && result.figureBasis).toEqual([])
+  })
+})
+
+describe('productsCard: a fixed term fits the keys its own interest gives (2026-11-13)', () => {
+  /** The figure basis line for one row, by id. */
+  const basisOf = (result: ProductsResult, id: string): string =>
+    (result.kind === 'card' ? result.figureBasis : []).find((row) => row.id === id)?.line ?? ''
+
+  /** €25,000 held and €100 a month towards €27,400: interest moves the keys by months. */
+  const SLOW = { ...FIGURES, monthlySavingEur: 100, neededAtKeysEur: 27_400, keysMonth: '2028-10' }
+
+  it('keeps the buffer: a term ending the month before the keys fits, one ending in the keys month does not', () => {
+    // 19 months ends June 2028, 20 ends July 2028, and with either one's interest (about €700 on
+    // €25,000, less than a month's €1,100) the €47,000 is there in July 2028.
+    const base = MARKET.products.find((product) => product.id === 'boi:savings.advantage_fixed')
+    if (base === undefined || base.terms.kind !== 'deposit') throw new Error('no BoI ladder')
+    const ladder: ProductView = {
+      ...base,
+      id: 'test:deposit.ladder',
+      provenance: { ...base.provenance, sourceUrl: 'https://example.ie/ladder' },
+      name: 'Test Ladder',
+      terms: {
+        ...base.terms,
+        ladder: [
+          { months: 19, aerPct: 2.5, productId: 'deposit.ladder' },
+          { months: 20, aerPct: 2.5, productId: 'deposit.ladder' },
+        ],
+      },
+    }
+    const market = { ...MARKET, products: [...MARKET.products, ladder] }
+    const result = productsCard(market, FIGURES, { arrangement: 'fits_date' }, PRODUCTS_AS_OF)
+    const row = cardOf(result).rows.find((item) => item.id === 'test:deposit.ladder')
+    expect(row?.kind).toBe('19-month fixed')
+    expect(row?.figure).toMatch(/^keys Jul 2028, €[\d,]+$/)
+    expect(basisOf(result, 'test:deposit.ladder')).toContain(
+      'The 19-month term ends June 2028; with its interest the keys come in July 2028.',
+    )
+    expect(endsInTime('2028-06', '2028-07')).toBe(true)
+    expect(endsInTime('2028-07', '2028-07')).toBe(false)
+  })
+
+  it('a term its own interest pushes out is listed as not fitting, and the next shorter one is shown', () => {
+    const result = productsCard(MARKET, SLOW, { arrangement: 'fits_date' }, PRODUCTS_AS_OF)
+    const card = cardOf(result)
+    // Bank of Ireland's 18 months at 2.48% ends May 2028, and with its interest the €27,400 is
+    // there in May 2028: inside the term. Its 12 months is shown, with the keys in July 2028.
+    const boi = card.rows.find((row) => row.id === 'boi:savings.advantage_fixed')
+    expect(boi?.kind).toBe('1-year fixed')
+    expect(boi?.figure).toMatch(/^keys Jul 2028, €[\d,]+$/)
+    expect(basisOf(result, 'boi:savings.advantage_fixed')).toContain(
+      'The 12-month term ends November 2027; with its interest the keys come in July 2028. 18 months ends May 2028; with its interest the keys come in May 2028.',
+    )
+    expect(card.basis.assumptions).toContain(
+      'Bank of Ireland Advantage Fixed Term Deposit Account at 18 months does not fit: 18 months ends May 2028; with its interest the keys come in May 2028.',
+    )
+    // PTSB's 18 months at 2.00% brings the keys to June 2028: it ends a month before, and fits.
+    expect(card.rows.find((row) => row.id === 'ptsb:deposit.c485')?.kind).toBe('18-month fixed')
+  })
+
+  it('sorts the fixed terms by their own keys month, then by money', () => {
+    const card = cardOf(productsCard(MARKET, SLOW, { arrangement: 'fits_date' }, PRODUCTS_AS_OF))
+    const fixed = card.rows.filter((row) => row.kind.endsWith('fixed'))
+    const keys = fixed.map((row) => /^keys (\w{3} \d{4})/.exec(row.figure)?.[1] ?? '')
+    const asMonth = (text: string) => new Date(`1 ${text}`).getTime()
+    expect(keys.map(asMonth)).toEqual([...keys.map(asMonth)].sort((a, b) => a - b))
+    expect(fixed[0]?.id).toBe('ptsb:deposit.c485')
+  })
+
+  it('by_access judges its fixed terms by the same rule', () => {
+    const card = cardOf(productsCard(MARKET, SLOW, { arrangement: 'by_access' }, PRODUCTS_AS_OF))
+    expect(card.rows.find((row) => row.id === 'boi:savings.advantage_fixed')?.kind).toBe(
+      '1-year fixed',
+    )
+    expect(card.basis.objective).toContain(TERM_FIT_RULE)
+    expect(card.basis.assumptions.join(' ')).toMatch(
+      /at 18 months does not fit: 18 months ends May 2028; with its interest the keys come in May 2028\./,
+    )
+  })
+
+  it('works out the keys month with the product’s own interest, the rest before interest', () => {
+    const boi = MARKET.products.find((product) => product.id === 'boi:savings.advantage_fixed')
+    if (boi === undefined || boi.terms.kind !== 'deposit') throw new Error('no BoI ladder')
+    const run = {
+      savedEur: 25_000,
+      monthlyEur: 100,
+      neededEur: 27_400,
+      keysMonth: '2028-10',
+      asOf: PRODUCTS_AS_OF,
+    }
+    expect(keysMonthWith(boi.terms, run, 6)).toBe('2028-10')
+    expect(keysMonthWith(boi.terms, run, 18)).toBe('2028-05')
+    expect(keysMonthWith(boi.terms, { ...run, neededEur: null }, 18)).toBe('2028-10')
+    expect(keysMonthWith(boi.terms, { ...run, savedEur: 30_000 }, 18)).toBe('2026-11')
+    expect(termThatFits(boi.terms, run)).toEqual({
+      fit: { months: 12, endsOn: '2027-11', keysOn: '2028-07' },
+      pushedOut: [{ months: 18, endsOn: '2028-05', keysOn: '2028-05' }],
+    })
   })
 })

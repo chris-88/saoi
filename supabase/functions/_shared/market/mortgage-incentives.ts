@@ -166,3 +166,13 @@ export const BUYING_COSTS = {
   /** Legal fees and a survey, an estimate. */
   legalAndSurveyEur: 3_000,
 } as const
+
+/**
+ * Saoi's own rule, not a source's (Chris, 2026-11-13: "clamp the fixed term deposit options to
+ * the timeline it's actually going to take the user to save that amount, with a little bit of
+ * buffer"): a fixed term fits a home plan when it ends at least this many months before the keys
+ * month, the keys month being the one the plan reaches with that deposit's own interest
+ * (`domain/market/term-fit.ts`). One month leaves the money back in hand before the keys month
+ * itself, the month the deposit and buying costs are paid.
+ */
+export const KEYS_BUFFER_MONTHS = 1
