@@ -636,6 +636,12 @@ export type PromptInput = {
   readonly productCatalogue: string
   readonly sliders: PersonaSliders
   readonly digest: CaseDigest
+  /**
+   * A market conversation (the case holds a claimed plan or holdings): the catalogue is the
+   * market (`market-prompt.ts`) and the sections that describe applying to, and banking with,
+   * Demo Bank are left out. The persona and the policy are the same either way.
+   */
+  readonly marketConversation?: boolean
   /** §50, the gate marked this turn sensitive. */
   /** YYYY-MM-DD. Defaults to the server's today; passed explicitly so it can be tested. */
   readonly today?: string
@@ -726,7 +732,7 @@ function applicationLines(application: DigestApplication): readonly string[] {
   return lines
 }
 
-function digestSection(digest: CaseDigest): string {
+function digestSection(digest: CaseDigest, marketConversation: boolean): string {
   const lines: string[] = ['# Case', '']
 
   lines.push(
@@ -756,7 +762,10 @@ function digestSection(digest: CaseDigest): string {
    */
   if (digest.stage !== undefined) lines.push(stageSection(digest.stage), '')
   if (digest.awaiting !== undefined) lines.push(awaitingSection(digest.awaiting), '')
-  if (digest.banksHere !== undefined) lines.push(banksHereSection(digest.banksHere), '')
+  // Whether they bank "here" is Demo Bank's question; a market conversation has no "here".
+  if (digest.banksHere !== undefined && !marketConversation) {
+    lines.push(banksHereSection(digest.banksHere), '')
+  }
 
   lines.push('## What you already know')
   lines.push(
@@ -1177,8 +1186,7 @@ function cacheableSections(input: PromptInput): readonly string[] {
     VOICE,
     domainSection(input.domainConfig),
     TOOL_GUIDANCE,
-    HOW_APPLYING_WORKS,
-    WHAT_WE_CAN_DO,
+    ...(input.marketConversation === true ? [] : [HOW_APPLYING_WORKS, WHAT_WE_CAN_DO]),
     factReference(),
     input.productCatalogue,
     ...(input.rateGuidance === undefined || input.rateGuidance.length === 0
@@ -1203,9 +1211,11 @@ function cacheableSections(input: PromptInput): readonly string[] {
  */
 function volatileSections(input: PromptInput): readonly string[] {
   const sliders = applySensitivity(input.sliders, input.sensitive === true)
-  return [composePersona(sliders), digestSection(input.digest), turnSection(input)].filter(
-    (section) => section.length > 0,
-  )
+  return [
+    composePersona(sliders),
+    digestSection(input.digest, input.marketConversation === true),
+    turnSection(input),
+  ].filter((section) => section.length > 0)
 }
 
 function compose(input: PromptInput): string {

@@ -4,6 +4,9 @@ import { demoDomainConfig } from '../tenants/demo/domain-config.ts'
 import { demoProducts } from '../tenants/demo/products.ts'
 import { knowledgeBaseSection } from '../tenants/demo/kb-prompt.ts'
 import type { CaseDigest } from './prompt.ts'
+import { marketCatalogueSection, saoiDomainConfig } from './market-prompt.ts'
+import type { MarketSummary } from '../domain/market/lookup.ts'
+import { adviceWordsIn } from '../market/disclosures.ts'
 
 const SLIDERS = {
   length: 0.5,
@@ -275,5 +278,96 @@ describe('product rates', () => {
 
   it('no longer carries the rate that contradicted them', () => {
     expect(prompt).not.toContain('3.85%')
+  })
+})
+
+/**
+ * A market conversation (2026-11-13): the case holds a claimed plan or holdings, and Saoirse
+ * called Bank of Ireland's 18-month rate "Demo Bank's own deposit range". There the catalogue
+ * is the market and the scope is Saoi's; a Demo Bank case is told what it always was.
+ */
+describe('a market conversation', () => {
+  const summary = {
+    total: 741,
+    byCategory: [
+      { category: 'deposit', count: 300 },
+      { category: 'mortgage', count: 441 },
+    ],
+    byProvider: [
+      { name: 'AIB', count: 120 },
+      { name: 'Bank of Ireland', count: 150 },
+      { name: 'MoCo', count: 2 },
+    ],
+    checkedOn: '2026-11-09',
+  } as const satisfies MarketSummary
+
+  const market = (extra: Partial<CaseDigest> = {}): string =>
+    composeSystemPrompt({
+      domainConfig: saoiDomainConfig,
+      productCatalogue: marketCatalogueSection(summary),
+      sliders: SLIDERS,
+      digest: digest({ banksHere: null, holdings: { lines: [], progress: null }, ...extra }),
+      marketConversation: true,
+    }).replaceAll(/\s+/g, ' ')
+
+  it('never says Demo Bank, and names the market and Saoi’s scope', () => {
+    const prompt = market()
+    expect(prompt).not.toContain('Demo Bank')
+    expect(prompt).toContain('# The market')
+    expect(prompt).toContain('Saoi holds 741 products from 3 providers')
+    expect(prompt).toContain('last checked 9 November 2026')
+    expect(prompt).toContain('Bank of Ireland (150)')
+    expect(prompt).toContain(
+      'Irish savings, deposit, mortgage, loan, credit card and current account products compared on the customer’s figures',
+    )
+    expect(prompt).toContain("You are Saoirse, Saoi's banking assistant.")
+  })
+
+  it('tells Saoirse to look a named product up before saying it is not held', () => {
+    const prompt = market()
+    expect(prompt).toContain('call `lookup_products` with their words before you answer')
+    expect(prompt).toContain(
+      'Never say a figure is not held until `lookup_products` has found nothing for it',
+    )
+    expect(prompt).toContain('Never tell them to check with the provider or the bank')
+    expect(adviceWordsIn(marketCatalogueSection(summary))).toEqual([])
+  })
+
+  it('leaves out applying to, and banking with, Demo Bank', () => {
+    const prompt = market()
+    expect(prompt).not.toContain('# How applying works')
+    expect(prompt).not.toContain('# What the bank can do')
+    expect(prompt).not.toContain('## Banking here')
+  })
+
+  it('says so when the market could not be read, with no figure', () => {
+    const section = marketCatalogueSection(null)
+    expect(section).toContain('The market could not be read as this conversation started.')
+    expect(section).not.toMatch(/\d+ products/)
+  })
+
+  it('keeps a Demo Bank case’s prompt as it was', () => {
+    const poc = composeSystemPrompt({
+      domainConfig: demoDomainConfig,
+      productCatalogue: knowledgeBaseSection(),
+      sliders: SLIDERS,
+      digest: digest({ banksHere: null }),
+    })
+    expect(poc).toContain("You are Saoirse, Demo Bank's banking assistant.")
+    expect(poc).toContain('- Demo Bank products and services')
+    expect(poc).toContain(knowledgeBaseSection())
+    expect(poc).toContain('# How applying works')
+    expect(poc).toContain('# What the bank can do')
+    expect(poc).toContain('## Banking here')
+    expect(poc).not.toContain('# The market')
+    expect(
+      composeSystemPrompt({
+        domainConfig: demoDomainConfig,
+        productCatalogue: knowledgeBaseSection(),
+        sliders: SLIDERS,
+        digest: digest({ banksHere: null }),
+        marketConversation: false,
+      }),
+    ).toBe(poc)
   })
 })
