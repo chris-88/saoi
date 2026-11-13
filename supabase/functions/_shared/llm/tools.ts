@@ -4,7 +4,12 @@ import { FACT_KEYS, type FactKey } from '../domain/facts.ts'
 import { PRODUCTS } from '../domain/journey.ts'
 import { REMINDER_KINDS } from '../contracts/alerts.ts'
 import { HOLDING_KINDS } from '../contracts/holdings.ts'
-import { MARKET_ARRANGEMENT_KINDS } from '../contracts/cards.ts'
+import {
+  COMPARISON_MAX_COLUMNS,
+  COMPARISON_MIN_COLUMNS,
+  MARKET_ARRANGEMENT_KINDS,
+  PRODUCT_ROW_ID_PATTERN,
+} from '../contracts/cards.ts'
 import { HOME_SORTS } from '../contracts/market-tools.ts'
 import { MARKET_CATEGORIES } from '../market/schema.ts'
 import { LOOKUP_MAX_LIMIT } from '../domain/market/lookup.ts'
@@ -338,6 +343,17 @@ export const lookupProductsInput = z.object({
   limit: z.number().int().min(1).max(LOOKUP_MAX_LIMIT).optional(),
 })
 
+/**
+ * Two or three products the customer selected on the cards, set against each other: the row ids
+ * the selection carried, in the order selected. The server rebuilds every figure from the case.
+ */
+export const compareProductsInput = z.object({
+  rowIds: z
+    .array(z.string().trim().min(1).max(160).regex(PRODUCT_ROW_ID_PATTERN))
+    .min(COMPARISON_MIN_COLUMNS)
+    .max(COMPARISON_MAX_COLUMNS),
+})
+
 export const TOOL_INPUTS = {
   record_facts: recordFactsInput,
   set_reminder: setReminderInput,
@@ -362,6 +378,7 @@ export const TOOL_INPUTS = {
   show_transfer: showTransferInput,
   show_products: showProductsInput,
   lookup_products: lookupProductsInput,
+  compare_products: compareProductsInput,
 } as const
 
 export type ToolName = keyof typeof TOOL_INPUTS
@@ -409,6 +426,20 @@ export const TOOLS: readonly ToolDefinition[] = [
       'and ask nothing else; do not read the rows out, and never call one the pick for them. If ' +
       'it returns questions instead of a card, ask the first one.',
     schema: showProductsInput,
+  },
+  {
+    name: 'compare_products',
+    description:
+      'Set the two or three products the customer selected on the cards against each other. ' +
+      'Call it when their message carries a selection (listed under "Selected on the cards") ' +
+      'and asks to compare them, "compare these", or asks for help choosing between them. Pass ' +
+      'the selected row ids exactly, in the order selected. The server rebuilds every figure ' +
+      'from their case and puts the comparison on screen: the rows side by side, the facts that ' +
+      'separate them, the facts to know before choosing each, and `decides`, the one question ' +
+      'whose answer separates them. Say one line about the card, then ask that question and ' +
+      'nothing else. Asked for help choosing, give the differences as facts and that question; ' +
+      'never pick one, never say which is better or what you would do.',
+    schema: compareProductsInput,
   },
   {
     name: 'record_holding',

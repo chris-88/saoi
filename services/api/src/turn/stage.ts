@@ -24,8 +24,15 @@ export const DEMO_CATALOGUE_TOOLS: readonly ToolName[] = [
   'show_transfer',
 ]
 
-/** Offered in every stage of a market conversation: the card, and the lookup it answers from. */
-export const MARKET_TOOLS: readonly ToolName[] = ['show_products', 'lookup_products']
+/**
+ * Offered in every stage of a market conversation: the card, the lookup it answers from, and
+ * the comparison of the products selected on the cards.
+ */
+export const MARKET_TOOLS: readonly ToolName[] = [
+  'show_products',
+  'lookup_products',
+  'compare_products',
+]
 
 /**
  * Which tools a turn is offered, from the stage it is in.
