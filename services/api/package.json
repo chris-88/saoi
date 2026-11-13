@@ -17,12 +17,12 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^1.4.0",
+    "@anthropic-ai/sdk": "^1.8.0",
     "@hono/node-server": "^2.1.6",
     "@hono/zod-openapi": "^1.6.3",
     "@supabase/supabase-js": "^2.119.0",
-    "hono": "^4.13.16",
-    "jose": "^6.2.15",
+    "hono": "^4.13.17",
+    "jose": "^6.2.17",
     "zod": "^4.6.7"
   },
   "devDependencies": {
@@ -34,7 +34,7 @@
     "globals": "^17.12.0",
     "tsx": "^4.23.15",
     "typescript": "~6.0.2",
-    "typescript-eslint": "^8.71.0",
+    "typescript-eslint": "^8.72.2",
     "vitest": "^5.0.3"
   }
 }
