@@ -387,20 +387,36 @@ export async function buildGeneration(
    * events (2026-11-12: asked in the next turn whether bunq's €581 would be realised, Saoirse
    * had only the card's arrangement and said it would not). Unreadable, it is left out.
    */
-  const shownEvents = await admin
-    .from('events')
-    .select('payload')
-    .eq('case_id', turn.caseId)
-    .eq('type', 'products_shown')
-    .order('created_at', { ascending: false })
-    .limit(PRODUCTS_BASIS_EVENTS)
+  const [shownEvents, lookedUpEvents] = await Promise.all([
+    admin
+      .from('events')
+      .select('payload')
+      .eq('case_id', turn.caseId)
+      .eq('type', 'products_shown')
+      .order('created_at', { ascending: false })
+      .limit(PRODUCTS_BASIS_EVENTS),
+    /*
+     * What `lookup_products` was asked in earlier turns (2026-11-13), so a follow-up ("and the
+     * AIB one?") knows what was found. The ids, never the figures: those are looked up again.
+     */
+    admin
+      .from('events')
+      .select('payload')
+      .eq('case_id', turn.caseId)
+      .eq('type', 'products_looked_up')
+      .order('created_at', { ascending: false })
+      .limit(PRODUCTS_LOOKED_UP_EVENTS),
+  ])
   const productsBasis = shownEvents.error === null ? productsBasisLines(shownEvents.data ?? []) : []
+  const productsLookedUp =
+    lookedUpEvents.error === null ? productsLookedUpLines(lookedUpEvents.data ?? []) : []
 
   const digest = buildCaseDigest(loaded, {
     ...(alerts === undefined ? {} : { alerts }),
     ...(holdings === undefined ? {} : { holdings }),
     ...(productsShown.length === 0 ? {} : { productsShown }),
     ...(productsBasis.length === 0 ? {} : { productsBasis }),
+    ...(productsLookedUp.length === 0 ? {} : { productsLookedUp }),
     sensitiveDisclosure: gate.suppressHumour,
     stage,
     acting: turn.trigger === 'action',
@@ -582,6 +598,28 @@ export type Generation = Awaited<ReturnType<typeof buildGeneration>>
 
 /** How many `products_shown` events are read for the figure basis, newest first. */
 export const PRODUCTS_BASIS_EVENTS = 10
+
+/** How many `products_looked_up` events the digest lists, newest first. */
+export const PRODUCTS_LOOKED_UP_EVENTS = 4
+
+/**
+ * What `lookup_products` was asked in earlier turns, newest first, one line each: the query and
+ * what it found by name and id ("“AIB 24 month fixed”: AIB Personal Fixed Term Deposit
+ * [aib:deposit.ladder_personal_fixed_term_deposit]"), or that it found nothing. No figures. Pure.
+ */
+export function productsLookedUpLines(events: readonly { readonly payload: unknown }[]): string[] {
+  return events.flatMap(({ payload }) => {
+    if (typeof payload !== 'object' || payload === null) return []
+    const { query, ids, names } = payload as { query?: unknown; ids?: unknown; names?: unknown }
+    if (typeof query !== 'string' || !Array.isArray(ids)) return []
+    const found = (ids as unknown[]).flatMap((id, index) => {
+      if (typeof id !== 'string') return []
+      const name = Array.isArray(names) ? (names as unknown[])[index] : undefined
+      return [typeof name === 'string' ? `${name} [${id}]` : `[${id}]`]
+    })
+    return [`“${query}”: ${found.length === 0 ? 'nothing found' : found.join('; ')}`]
+  })
+}
 
 /** The most recent cards whose rows' figure basis goes in the digest: one per arrangement. */
 export const PRODUCTS_BASIS_CARDS = 2

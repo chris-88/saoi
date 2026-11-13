@@ -12,6 +12,8 @@ import { demoDomainConfig } from '@shared/tenants/demo/domain-config.ts'
 import { knowledgeBaseSection } from '@shared/tenants/demo/kb-prompt.ts'
 import { mortgageRatesSection } from '@shared/tenants/demo/mortgage-rates-select.ts'
 import { switchingSection } from '@shared/tenants/demo/switching.ts'
+import { saoiDomainConfig } from '@shared/llm/market-prompt.ts'
+import type { PromptInput } from '@shared/llm/prompt.ts'
 import { fixtureScript } from './fixtures/index.ts'
 import type { GateAllowed } from './gate.ts'
 import { toolsForTurn } from './stage.ts'
@@ -145,8 +147,13 @@ export function generate(args: {
   readonly meter: Meter
   readonly rejections: { name: string; error: string }[]
   readonly called: string[]
+  /**
+   * The market's catalogue section (`marketCatalogueSection`) for a market conversation, the
+   * case holding a claimed plan or holdings; null for a Demo Bank conversation.
+   */
+  readonly marketCatalogue: string | null
 }): AsyncGenerator<StreamEvent> {
-  const { handle, generation, gate, loaded, kb, rateTable } = args
+  const { handle, generation } = args
 
   return runSaoirseTurn({
     provider: handle.provider,
@@ -167,17 +174,45 @@ export function generate(args: {
     onToolRejected: (rejection) => args.rejections.push(rejection),
     onToolCalled: (name) => args.called.push(name),
     onUsage: (used) => args.meter.recordModel(used),
-    prompt: {
-      domainConfig: demoDomainConfig,
-      productCatalogue: knowledgeBaseSection(kb.products),
-      rateGuidance: mortgageRatesSection(rateTable),
-      switchingGuidance: switchingSection(),
-      sliders: loaded.persona,
-      digest: generation.digest,
-      sensitive: gate.suppressHumour,
-      clarifyInScope: gate.clarifyInScope,
-    },
+    prompt: promptFor(args),
     history: generation.history,
     executeTool: args.executeTool,
   })
+}
+
+/**
+ * What the system prompt is built from this turn. A market conversation (the case holds a
+ * claimed plan or holdings) is told the market and Saoi's scope, with none of Demo Bank's
+ * catalogue, rate table or switching guidance (2026-11-13); every other case is the Demo Bank
+ * POC as before. The persona and the digest are the same either way.
+ */
+export function promptFor(args: {
+  readonly generation: Generation
+  readonly gate: GateAllowed
+  readonly loaded: LoadedCase
+  readonly kb: Awaited<ReturnType<typeof loadProductCatalogue>>
+  readonly rateTable: Awaited<ReturnType<typeof loadMortgageRates>>
+  readonly marketCatalogue: string | null
+}): PromptInput {
+  const shared = {
+    sliders: args.loaded.persona,
+    digest: args.generation.digest,
+    sensitive: args.gate.suppressHumour,
+    clarifyInScope: args.gate.clarifyInScope,
+  }
+  if (args.marketCatalogue !== null) {
+    return {
+      ...shared,
+      domainConfig: saoiDomainConfig,
+      productCatalogue: args.marketCatalogue,
+      marketConversation: true,
+    }
+  }
+  return {
+    ...shared,
+    domainConfig: demoDomainConfig,
+    productCatalogue: knowledgeBaseSection(args.kb.products),
+    rateGuidance: mortgageRatesSection(args.rateTable),
+    switchingGuidance: switchingSection(),
+  }
 }

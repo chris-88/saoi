@@ -3,6 +3,7 @@ import { withdraw, type StreamEvent } from '@shared/contracts/stream.ts'
 import { saveMessage, writeEvent } from '@shared/db/case-repository.ts'
 import { fixtureProvider, fixtureTurnSchema } from '@shared/llm/fixture-provider.ts'
 import type { ModelProvider, ModelRequest } from '@shared/llm/model.ts'
+import { marketCatalogueSection } from '@shared/llm/market-prompt.ts'
 import { slidersFor } from '@shared/llm/persona.ts'
 import type { ToolExecutor } from '@shared/llm/saoirse.ts'
 import { returnInstruction, returnsAfterPlanEdit, type Generation } from './context.ts'
@@ -98,6 +99,8 @@ async function run(provider: ModelProvider, turnGeneration: Generation = generat
     meter: createMeter(Date.now()),
     rejections,
     called,
+    // A claimed plan: a market conversation, told the market rather than Demo Bank's catalogue.
+    marketCatalogue: marketCatalogueSection(null),
   })) {
     events.push(event)
   }

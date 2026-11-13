@@ -20,6 +20,8 @@ import { markAlertsSeen } from '@shared/db/alerts.ts'
 import { just } from './stream.ts'
 import type { Market } from '@shared/domain/market/types.ts'
 import { supabaseMarketStore } from '../store/market.ts'
+import { marketSummary } from '@shared/domain/market/lookup.ts'
+import { marketCatalogueSection } from '@shared/llm/market-prompt.ts'
 import { createToolExecutor } from './tools.ts'
 
 /**
@@ -161,6 +163,20 @@ export function createTurnRunner(deps: TurnDeps): TurnRunner {
       isCustomerTurn,
     })
 
+    /*
+     * A market conversation (a claimed plan or holdings) is told the market instead of Demo
+     * Bank's catalogue: counts and the day checked, from the store `show_products` and
+     * `lookup_products` read. A market that cannot be read is said so in the section, and the
+     * tools try again when called.
+     */
+    const marketCatalogue = generation.hasFigures
+      ? marketCatalogueSection(
+          await market()
+            .then(marketSummary)
+            .catch(() => null),
+        )
+      : null
+
     const shown: unknown[] = []
     const spoken: string[] = []
 
@@ -198,6 +214,7 @@ export function createTurnRunner(deps: TurnDeps): TurnRunner {
           meter,
           rejections,
           called,
+          marketCatalogue,
         })
 
         // The plan they brought is the reason for this turn: it is on screen before anything.

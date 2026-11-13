@@ -561,6 +561,11 @@ export type CaseDigest = {
    */
   readonly productsBasis?: readonly string[]
   /**
+   * What `lookup_products` was asked in earlier turns, newest first: the query and what it
+   * found, never the figures, which are looked up again when they are needed.
+   */
+  readonly productsLookedUp?: readonly string[]
+  /**
    * Whether what they asked for is what suits them, worked out from what they have said about
    * the amount and how soon they mean to repay it. Already decided; the figures are not yours.
    */
@@ -631,6 +636,12 @@ export type PromptInput = {
   readonly productCatalogue: string
   readonly sliders: PersonaSliders
   readonly digest: CaseDigest
+  /**
+   * A market conversation (the case holds a claimed plan or holdings): the catalogue is the
+   * market (`market-prompt.ts`) and the sections that describe applying to, and banking with,
+   * Demo Bank are left out. The persona and the policy are the same either way.
+   */
+  readonly marketConversation?: boolean
   /** §50, the gate marked this turn sensitive. */
   /** YYYY-MM-DD. Defaults to the server's today; passed explicitly so it can be tested. */
   readonly today?: string
@@ -721,7 +732,7 @@ function applicationLines(application: DigestApplication): readonly string[] {
   return lines
 }
 
-function digestSection(digest: CaseDigest): string {
+function digestSection(digest: CaseDigest, marketConversation: boolean): string {
   const lines: string[] = ['# Case', '']
 
   lines.push(
@@ -751,7 +762,10 @@ function digestSection(digest: CaseDigest): string {
    */
   if (digest.stage !== undefined) lines.push(stageSection(digest.stage), '')
   if (digest.awaiting !== undefined) lines.push(awaitingSection(digest.awaiting), '')
-  if (digest.banksHere !== undefined) lines.push(banksHereSection(digest.banksHere), '')
+  // Whether they bank "here" is Demo Bank's question; a market conversation has no "here".
+  if (digest.banksHere !== undefined && !marketConversation) {
+    lines.push(banksHereSection(digest.banksHere), '')
+  }
 
   lines.push('## What you already know')
   lines.push(
@@ -1087,6 +1101,14 @@ function digestSection(digest: CaseDigest): string {
       'a card has been shown). Never say a figure will not be realised unless the row says the',
       'rate after is not stated, and never tell them to check with the provider: the row’s note',
       'is the fact to relay.',
+      'When they name a product, a provider or a rate, call `lookup_products` with their words',
+      'before answering, and answer from what it returns, with the source and the day checked.',
+      ...(digest.productsLookedUp === undefined || digest.productsLookedUp.length === 0
+        ? []
+        : [
+            'Already looked up (call `lookup_products` again for the figures; they are not kept):',
+            ...digest.productsLookedUp.map((line) => `- ${line}`),
+          ]),
       ...(digest.productsShown === undefined || digest.productsShown.length === 0
         ? []
         : [
@@ -1164,8 +1186,7 @@ function cacheableSections(input: PromptInput): readonly string[] {
     VOICE,
     domainSection(input.domainConfig),
     TOOL_GUIDANCE,
-    HOW_APPLYING_WORKS,
-    WHAT_WE_CAN_DO,
+    ...(input.marketConversation === true ? [] : [HOW_APPLYING_WORKS, WHAT_WE_CAN_DO]),
     factReference(),
     input.productCatalogue,
     ...(input.rateGuidance === undefined || input.rateGuidance.length === 0
@@ -1190,9 +1211,11 @@ function cacheableSections(input: PromptInput): readonly string[] {
  */
 function volatileSections(input: PromptInput): readonly string[] {
   const sliders = applySensitivity(input.sliders, input.sensitive === true)
-  return [composePersona(sliders), digestSection(input.digest), turnSection(input)].filter(
-    (section) => section.length > 0,
-  )
+  return [
+    composePersona(sliders),
+    digestSection(input.digest, input.marketConversation === true),
+    turnSection(input),
+  ].filter((section) => section.length > 0)
 }
 
 function compose(input: PromptInput): string {

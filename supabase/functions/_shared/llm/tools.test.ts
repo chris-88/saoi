@@ -98,7 +98,11 @@ describe('the model has no tool that takes an action', () => {
     // `show_products` is the twenty-second and shows: the model names the arrangement the
     // customer's question implies, and the server reads their figures from the case and builds
     // every row from the market. It starts nothing and names no product of its own choosing.
+    //
+    // `lookup_products` is the twenty-third and only reads: a product, a provider or a rate the
+    // customer named, looked up in the market and returned as facts. No card, nothing started.
     expect([...TOOL_NAMES].sort()).toEqual([
+      'lookup_products',
       'propose_plan',
       'record_facts',
       'record_form_answers',

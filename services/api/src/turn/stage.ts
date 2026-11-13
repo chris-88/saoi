@@ -9,6 +9,25 @@ import { type describeGoals } from '@shared/db/goals.ts'
 import { type LoadedCase } from '@shared/db/loaded-case.ts'
 
 /**
+ * The tools that read or start Demo Bank's catalogue: its products, its rate table, its quote
+ * engine, its savings arrangement and money moved into an account here. Withheld from a market
+ * conversation (a claimed plan or holdings), where the catalogue is the market and Demo Bank is
+ * not in the prompt (2026-11-13: Saoirse called Bank of Ireland's 18-month rate "Demo Bank's own
+ * deposit range" to a customer comparing the market).
+ */
+export const DEMO_CATALOGUE_TOOLS: readonly ToolName[] = [
+  'show_product_options',
+  'show_comparison',
+  'show_quote',
+  'show_mortgage_rates',
+  'show_arrangement',
+  'show_transfer',
+]
+
+/** Offered in every stage of a market conversation: the card, and the lookup it answers from. */
+export const MARKET_TOOLS: readonly ToolName[] = ['show_products', 'lookup_products']
+
+/**
  * Which tools a turn is offered, from the stage it is in.
  *
  * Enforcement rather than advice, and the reason this feature is not another paragraph of
@@ -26,14 +45,17 @@ export function toolsForTurn(
   /**
    * The case has the customer's figures for the market (a claimed plan, or holdings).
    *
-   * `show_products` is offered on that, in whatever stage: the stages are the Demo Bank arc, and
-   * a customer who brought a plan from their own AI asks to see products from the first reply
-   * on. Without either it is withheld, as a card would have nothing to run on.
+   * `show_products` and `lookup_products` are offered on that, in whatever stage: the stages
+   * are the Demo Bank arc, and a customer who brought a plan from their own AI asks about
+   * products from the first reply on. Without either they are withheld, as a card would have
+   * nothing to run on, and the Demo Bank catalogue's tools are withheld with them.
    */
   hasFigures = false,
 ): readonly ToolName[] {
   const staged = CONVERSATION[stage].tools
-  const allowed: readonly ToolName[] = hasFigures ? [...staged, 'show_products'] : staged
+  const allowed: readonly ToolName[] = hasFigures
+    ? [...staged.filter((tool) => !DEMO_CATALOGUE_TOOLS.includes(tool)), ...MARKET_TOOLS]
+    : staged
   if (hasForm) return allowed
 
   return allowed.filter(

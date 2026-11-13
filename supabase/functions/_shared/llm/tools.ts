@@ -6,6 +6,8 @@ import { REMINDER_KINDS } from '../contracts/alerts.ts'
 import { HOLDING_KINDS } from '../contracts/holdings.ts'
 import { MARKET_ARRANGEMENT_KINDS } from '../contracts/cards.ts'
 import { HOME_SORTS } from '../contracts/market-tools.ts'
+import { MARKET_CATEGORIES } from '../market/schema.ts'
+import { LOOKUP_MAX_LIMIT } from '../domain/market/lookup.ts'
 
 /**
  * The tools Saoirse may call.
@@ -325,6 +327,17 @@ export const showProductsInput = z.object({
     .optional(),
 })
 
+/**
+ * A product, a provider or a rate the customer named, looked up across the whole market (every
+ * provider, every source). Read only, no card: the result is the facts to answer from.
+ */
+export const lookupProductsInput = z.object({
+  /** Their words: a provider, a product's name, or words such as "18 month fixed". */
+  query: z.string().trim().min(2).max(120),
+  category: z.enum(MARKET_CATEGORIES).optional(),
+  limit: z.number().int().min(1).max(LOOKUP_MAX_LIMIT).optional(),
+})
+
 export const TOOL_INPUTS = {
   record_facts: recordFactsInput,
   set_reminder: setReminderInput,
@@ -348,6 +361,7 @@ export const TOOL_INPUTS = {
   show_accounts: showAccountsInput,
   show_transfer: showTransferInput,
   show_products: showProductsInput,
+  lookup_products: lookupProductsInput,
 } as const
 
 export type ToolName = keyof typeof TOOL_INPUTS
@@ -360,6 +374,23 @@ export type ToolDefinition = {
 }
 
 export const TOOLS: readonly ToolDefinition[] = [
+  {
+    name: 'lookup_products',
+    description:
+      'Look up a product, a provider or a rate the customer names, in the whole Irish market ' +
+      'Saoi holds (every provider CCPC lists, and the providers whose own pages Saoi reads). ' +
+      'Call it before answering whenever they name one: "BOI has an 18-month fix at 2.48%", ' +
+      '"what does AIB pay on a 2-year fixed", "is MoCo still 2.1%". Pass their words as the ' +
+      'query: the provider and the product or kind ("Bank of Ireland 18 month fixed", "AIB 24 ' +
+      'month fixed", "MoCo"), and a category when they said one (deposit for money placed or ' +
+      'fixed terms, savings for regular saving, mortgage, loan, credit_card, current_account). ' +
+      'It returns each match as facts: the rate with its period, the term or access, the ' +
+      'conditions as the source states them, the source and the day checked, what is not stated. ' +
+      'Relay those as facts with the source and the date; never say a figure is not held until ' +
+      'this has found nothing for it. No card: it is for answering in words, and a comparison, ' +
+      'never a pick.',
+    schema: lookupProductsInput,
+  },
   {
     name: 'show_products',
     description:
