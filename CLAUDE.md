@@ -272,9 +272,10 @@ line in the refresh output. Shapes in `_shared/market/schema.ts`: `rates` is a u
   differences are warnings.
 - **Read** on a turn: only Bank of Ireland's own rows (`loadMarket`), laid over the catalogue by
   `withMarketData`: `rateOf`, the savings engine and the deposit-stack combination take every
-  figure from them. Other providers and every CCPC row stay out of the Demo Bank catalogue,
-  the prompt and every other tool; only `show_products` reads the whole market (the comparison
-  API's store, passed to the turn as `market`). The console's Market data screen shows all of it.
+  figure from them. Other providers and every CCPC row stay out of the Demo Bank catalogue and
+  every Demo Bank tool; `show_products`, `lookup_products` and a market conversation's
+  catalogue section read the whole market (the comparison API's store, passed to the turn as
+  `market`). The console's Market data screen shows all of it.
 - **Compared** by the public comparison API (below), which reads every row.
 
 ### The comparison engine and its public API
@@ -701,11 +702,38 @@ Every tool input is Zod-validated before any effect. Invalid input returns a too
   (`rate-period.ts`, 2026-11-12); `products_shown` records them, and later turns' digests carry
   one line a row (lead, value, `figureBasis`) for the newest card of each of the two most recent
   arrangements (`productsBasisLines`).
+- `lookup_products`: a product, a provider or a rate the customer named ("BOI has an 18-month
+  fix at 2.48%"), looked up across the whole market (every provider, every source, the same
+  normalised views and store as `show_products`; `domain/market/lookup.ts`). Input: `query`
+  (their words; a term such as "18m" or "2 year" is read out of it), optional `category` and
+  `limit` (at most 8). Read only, no card: the result is each match as facts (provider,
+  product, the rate with its period, the term or access, the conditions as the source states
+  them, the source and the day checked, what is not stated, `confirmed`) and the answer rule
+  (relay the facts with the source and date, a comparison never a pick, no "check with the
+  bank"). Matching is every meaningful word, then the provider named; the order is category,
+  provider and name, never a rate. A miss says so and asks for another lookup before saying the
+  product is not held. Writes `products_looked_up` (query, ids, names, no figures); the digest
+  lists the newest four (`productsLookedUpLines`) so a follow-up knows what was found.
 
-Twenty-two tools. **Which ones a turn is offered is decided by the conversation's stage** - the
-form tools are gated further on a form existing, and `show_products` is offered in any stage
-once the case holds a claimed plan or holdings, and never without. Withholding a tool is
-enforcement; telling the model not to use one is advice.
+Twenty-three tools. **Which ones a turn is offered is decided by the conversation's stage** - the
+form tools are gated further on a form existing, and `show_products` and `lookup_products` are
+offered in any stage once the case holds a claimed plan or holdings, and never without. With
+them, the tools that read or start Demo Bank's catalogue (`DEMO_CATALOGUE_TOOLS` in
+`turn/stage.ts`: `show_product_options`, `show_comparison`, `show_quote`, `show_mortgage_rates`,
+`show_arrangement`, `show_transfer`) are withheld. Withholding a tool is enforcement; telling the
+model not to use one is advice.
+
+**A market conversation** (2026-11-13, the same test: a claimed plan or holdings) is prompted
+as Saoi, not Demo Bank: the domain block is `saoiDomainConfig` (Saoi's scope: Irish savings,
+deposit, mortgage, loan, credit card and current account products compared on the customer's
+figures), the catalogue section is `marketCatalogueSection` (`llm/market-prompt.ts`: counts by
+category and provider and the day last checked, no figure, built each turn from the market
+store) with the rule that a named product, provider or rate is looked up with
+`lookup_products` before answering and never called not held until the lookup finds nothing.
+Demo Bank's catalogue (`kb-prompt.ts`), rate table, switching guidance, "How applying works",
+"What the bank can do" and the digest's "Banking here" are left out. The persona block is the
+same (Invariant 5). A case with neither keeps the Demo Bank prompt, journeys and catalogue
+unchanged. The gate's canned refusals (`refusals.ts`) still name Demo Bank in both.
 
 Stream events are a Zod discriminated union: `text_delta | retract | card | status | done | error`. A round that spoke and then had a tool refused is withdrawn: `retract` takes its characters back off the screen and out of the record, and the refused result tells the model to write again. A handler marks a refusal with `refused: true`; partial rejections from the two recording tools are not refusals.
 
