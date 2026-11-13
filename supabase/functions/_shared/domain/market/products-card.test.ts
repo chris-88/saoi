@@ -1051,7 +1051,7 @@ describe('productsCard: the regular savers in their own group (2026-11-13)', () 
     value: '2.00%',
     note: 'bonus paid after drawdown, not counted',
     mustKnow: [
-      'Also takes up to €20,000 as a lump sum, at 0.50%; not counted here',
+      'Also takes up to €20,000 as a lump sum, at 0.50%',
       'Bonus paid after the mortgage is drawn down; not counted',
     ],
   }

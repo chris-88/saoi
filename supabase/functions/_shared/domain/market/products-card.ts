@@ -1377,7 +1377,7 @@ export function isRegularSaver(product: ProductView): boolean {
 }
 
 /** A regular saver's kind on the card; its group is "Regular saver". */
-const REGULAR_SAVER_KIND = 'regular saver'
+export const REGULAR_SAVER_KIND = 'regular saver'
 
 /** A row judged on the monthly saving alone, with its product. */
 type MonthlyRow = MarketRow & { readonly product: ProductView }
@@ -1490,8 +1490,7 @@ function monthlyRows(
             ? `Monthly payments only; the ${whole(held)} needs another account`
             : 'Monthly payments only'
           : `Also takes ${terms.maxLumpSumEur === null ? 'a lump sum' : `up to ${whole(terms.maxLumpSumEur)} as a lump sum`}` +
-            (terms.lumpSumAerPct === null ? '' : `, at ${pct(terms.lumpSumAerPct)}`) +
-            '; not counted here'
+            (terms.lumpSumAerPct === null ? '' : `, at ${pct(terms.lumpSumAerPct)}`)
     // The monthly cap in the detail, unless the source's conditions already state it.
     const capStated =
       terms.maxMonthlyEur !== null &&

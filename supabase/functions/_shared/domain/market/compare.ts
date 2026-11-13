@@ -20,9 +20,11 @@ import {
   bonusTiming,
   type CaseFigures,
   type HeldAccount,
+  isRegularSaver,
   moneyColumnLine,
   productsCard,
   type ProductsCategory,
+  REGULAR_SAVER_KIND,
 } from './products-card.ts'
 import { bandsInWords, ratePeriod, type RatePeriod } from './rate-period.ts'
 import { SAVINGS_ASSUMPTIONS, UNCONFIRMED_RATE } from './search.ts'
@@ -486,7 +488,11 @@ function marketColumn(input: {
 
   // ---- The facts to know and the detail: the products card's own, else worked out here -----
   const cardRow = input.cardRow
-  const sameTerm = cardRow !== undefined && cardRow.row.kind === accessKind(terms, termMonths)
+  // A regular saver's row is the same account at any access: its must-knows are the row's own.
+  const sameTerm =
+    cardRow !== undefined &&
+    (cardRow.row.kind === accessKind(terms, termMonths) ||
+      (cardRow.row.kind === REGULAR_SAVER_KIND && terms.access !== 'fixed_term'))
   const abroad =
     guarantee !== null && guarantee.country !== null && guarantee.country !== 'Ireland'
       ? guarantee.country
@@ -509,6 +515,11 @@ function marketColumn(input: {
             product.platform === null ? null : `Opened through ${product.platform.name}`,
             monthly > 0 && placed.monthly === 0 && terms.takesLumpSum === true
               ? 'Monthly saving not accepted; lump sum only'
+              : null,
+            isRegularSaver(product) && terms.takesLumpSum !== true
+              ? saved > 0
+                ? `Monthly payments only; the ${whole(saved)} needs another account`
+                : 'Monthly payments only'
               : null,
           ],
           PRODUCTS_ROW_MAX_MUST_KNOW,
