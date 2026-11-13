@@ -4,7 +4,12 @@ import { demoDomainConfig } from '../tenants/demo/domain-config.ts'
 import { demoProducts } from '../tenants/demo/products.ts'
 import { knowledgeBaseSection } from '../tenants/demo/kb-prompt.ts'
 import type { CaseDigest } from './prompt.ts'
-import { marketCatalogueSection, saoiDomainConfig } from './market-prompt.ts'
+import {
+  MARKET_TOOL_GUIDANCE,
+  marketCatalogueSection,
+  marketConversationSection,
+  saoiDomainConfig,
+} from './market-prompt.ts'
 import type { MarketSummary } from '../domain/market/lookup.ts'
 import { adviceWordsIn } from '../market/disclosures.ts'
 
@@ -344,6 +349,60 @@ describe('a market conversation', () => {
     const section = marketCatalogueSection(null)
     expect(section).toContain('The market could not be read as this conversation started.')
     expect(section).not.toMatch(/\d+ products/)
+  })
+
+  /*
+   * 2026-11-13, a claimed home plan: ten replies ended "would you like this kept as a plan that
+   * follows your deposit, or would you rather look at the accounts?", "yes a plan" ran the POC's
+   * plan flow, and the price and income the plan held were asked for again.
+   */
+  it('runs none of the Demo Bank arc: no stage, no fork, no plan to build', () => {
+    const prompt = market({
+      stage: 'direction',
+      goals: ['Still unknown for it: Annual basic salary, Property price.'],
+      needs: {
+        surface: [{ name: 'Mortgage', framing: 'They are buying.' }],
+        ask: { name: 'Protection', question: 'Who depends on them?' },
+        hold: [],
+      },
+      plans: [{ title: 'Buy my first home', lines: ['Deposit first'] }],
+      arrangement: ['Lump sum: fixed term'],
+      arrangementNeeds: ['When do they need the money?'],
+    })
+    expect(prompt).toContain('## How this conversation runs')
+    expect(prompt).not.toContain('## Where this conversation has got to')
+    expect(prompt).not.toContain('put the choice back to them')
+    expect(prompt).not.toContain('Still unknown for it')
+    expect(prompt).not.toContain('## What this customer appears to need')
+    expect(prompt).not.toContain('## Plans they are keeping')
+    expect(prompt).not.toContain('## How their money would be arranged')
+    expect(prompt).not.toContain('## One question before their money can be arranged')
+    expect(prompt).not.toContain('## Applications')
+    expect(prompt).not.toContain('Nothing has been started.')
+    expect(prompt).toContain('Never offer to build, propose or start another.')
+    expect(prompt).toContain(
+      'Never end on a choice of what to do next: not "a plan or the accounts"',
+    )
+  })
+
+  it('tells the tools a market conversation has, and none of the POC’s', () => {
+    const prompt = market()
+    expect(prompt).toContain(MARKET_TOOL_GUIDANCE.replaceAll(/\s+/g, ' '))
+    for (const tool of ['show_product_options', 'show_comparison', 'show_review', 'propose_plan']) {
+      expect(prompt, tool).not.toContain(tool)
+    }
+  })
+
+  it('lists a claimed plan’s gross income nowhere a form collects (and the POC as it was)', () => {
+    expect(market()).not.toContain('Annual income before tax')
+    expect(compose()).not.toContain('Annual income before tax')
+  })
+
+  it('holds the no "check with" rule in its own rules', () => {
+    const section = marketConversationSection().replaceAll(/\s+/g, ' ')
+    expect(section).toContain('Never tell them to check anything with the provider or the bank')
+    expect(adviceWordsIn(section)).toEqual([])
+    expect(adviceWordsIn(MARKET_TOOL_GUIDANCE)).toEqual([])
   })
 
   it('keeps a Demo Bank case’s prompt as it was', () => {

@@ -93,13 +93,14 @@ describe('the plan card', () => {
 })
 
 describe('what the model is told', () => {
-  it('lists the steps in the plan’s order and offers a choice, never a pick, as next', () => {
+  it('lists the steps in the plan’s order and leaves next to them, never a pick', () => {
     const lines = savedPlanDigestLines({ id: PLAN_ID, plan: plan() })
     expect(lines[0]).toBe('Title: House deposit by November 2028')
     expect(lines).toContain(
       'Step 1: Monthly saving, SuperSaver Account with Bank of Ireland, €500 a month. Check first: Paid by direct debit from a Bank of Ireland current account',
     )
-    expect(lines.at(-1)).toMatch(/^Next: offer them a choice, never a pick: /)
+    expect(lines.at(-1)).toMatch(/^Next: whatever they ask about it, .*never a pick; /)
+    expect(lines.at(-1)).toContain('are not asked which')
     expect(lines.at(-1)).not.toMatch(/SuperSaver/)
   })
 

@@ -11,6 +11,7 @@ import type { ApplicationState } from '../domain/state-machine.ts'
 import type { DomainConfig } from '../tenants/demo/domain-config.ts'
 import { applySensitivity, composePersona, type PersonaSliders } from './persona.ts'
 import { awaitingSection, stageSection } from './conversation.ts'
+import { MARKET_TOOL_GUIDANCE, marketConversationSection } from './market-prompt.ts'
 import type { AwaitingCard } from '../domain/conversation/awaiting.ts'
 import type { Stage } from '../domain/conversation/stages.ts'
 
@@ -301,9 +302,11 @@ export function factReference(): string {
     '',
     // By label only. The key is what record_facts needs, so naming it here would hand the
     // model the one string it would need to attempt a write it must never make (Invariant 6).
-    ...FACT_KEYS.filter((key) => !factCatalogue[key].extractable).map(
-      (key) => `- ${factCatalogue[key].label}`,
-    ),
+    // The special ones only: a key written from elsewhere (a claimed plan's gross income) is
+    // not a form's to collect.
+    ...FACT_KEYS.filter(
+      (key) => !factCatalogue[key].extractable && factCatalogue[key].sensitivity === 'special',
+    ).map((key) => `- ${factCatalogue[key].label}`),
   ].join('\n')
 }
 
@@ -777,7 +780,15 @@ function digestSection(digest: CaseDigest, marketConversation: boolean): string 
    * eight questions deep and then produce a product card having never named a goal, proposed a
    * plan, or asked the customer which of those they wanted.
    */
-  if (digest.stage !== undefined) lines.push(stageSection(digest.stage), '')
+  /*
+   * A market conversation runs none of the Demo Bank POC's arc (2026-11-13): no stage, so no
+   * fork between a plan and a product, and none of the sections below that feed it (the needs,
+   * the goals and what they still lack, suitability, what applying involves, the POC's plans
+   * and arrangement, the empty applications). The plan they brought is the plan.
+   */
+  const poc = !marketConversation
+  if (marketConversation) lines.push(marketConversationSection(), '')
+  else if (digest.stage !== undefined) lines.push(stageSection(digest.stage), '')
   if (digest.awaiting !== undefined) lines.push(awaitingSection(digest.awaiting), '')
   // Whether they bank "here" is Demo Bank's question; a market conversation has no "here".
   if (digest.banksHere !== undefined && !marketConversation) {
@@ -809,6 +820,7 @@ function digestSection(digest: CaseDigest, marketConversation: boolean): string 
    */
   const needs = digest.needs
   if (
+    poc &&
     needs !== undefined &&
     (needs.surface.length > 0 || needs.ask !== null || needs.hold.length > 0)
   ) {
@@ -848,7 +860,7 @@ function digestSection(digest: CaseDigest, marketConversation: boolean): string 
   }
 
   const suitability = digest.suitability ?? []
-  if (suitability.length > 0) {
+  if (poc && suitability.length > 0) {
     lines.push(
       '## Something else may suit them better',
       'These are worked out from what they have actually told you: for borrowing, the amount',
@@ -862,7 +874,7 @@ function digestSection(digest: CaseDigest, marketConversation: boolean): string 
   }
 
   const prospect = digest.prospect ?? []
-  if (prospect.length > 0) {
+  if (poc && prospect.length > 0) {
     lines.push(
       '## What applying would actually involve',
       'From the real journey for that product, against what this case already knows. If they ask',
@@ -881,7 +893,7 @@ function digestSection(digest: CaseDigest, marketConversation: boolean): string 
   }
 
   const goals = digest.goals ?? []
-  if (goals.length > 0) {
+  if (poc && goals.length > 0) {
     lines.push(
       '## Where they are trying to get to',
       'Worked out from what they have told you, not guessed. One life event usually creates',
@@ -910,7 +922,7 @@ function digestSection(digest: CaseDigest, marketConversation: boolean): string 
   }
 
   const revived = digest.revived ?? []
-  if (revived.length > 0) {
+  if (poc && revived.length > 0) {
     lines.push(
       '## Something you parked is worth raising again',
       'They asked you to come back to these, and the thing they were waiting for has now',
@@ -922,7 +934,7 @@ function digestSection(digest: CaseDigest, marketConversation: boolean): string 
   }
 
   const due = digest.checkin
-  if (due !== undefined && due !== null) {
+  if (poc && due !== undefined && due !== null) {
     lines.push(
       '## The check-in they asked for is due',
       `${due.purpose}, on "${due.plan}". They agreed to this; you are not interrupting them.`,
@@ -937,7 +949,7 @@ function digestSection(digest: CaseDigest, marketConversation: boolean): string 
   }
 
   const kept = digest.plans ?? []
-  if (kept.length > 0) {
+  if (poc && kept.length > 0) {
     lines.push(
       '## Plans they are keeping',
       'These outlive any one application. Refer to them as a shared thing in progress rather',
@@ -949,7 +961,7 @@ function digestSection(digest: CaseDigest, marketConversation: boolean): string 
   }
 
   const plan = digest.plan
-  if (plan !== undefined && plan !== null && plan.steps.length > 0) {
+  if (poc && plan !== undefined && plan !== null && plan.steps.length > 0) {
     lines.push(
       '## The plan',
       'This customer is not ready to apply for everything today, and that is fine. These steps',
@@ -972,7 +984,7 @@ function digestSection(digest: CaseDigest, marketConversation: boolean): string 
   }
 
   const arrangementNeeds = digest.arrangementNeeds ?? []
-  if (arrangementNeeds.length > 0) {
+  if (poc && arrangementNeeds.length > 0) {
     lines.push(
       '## One question before their money can be arranged',
       'The savings engine can split their lump sum and monthly saving across accounts, but not',
@@ -983,7 +995,7 @@ function digestSection(digest: CaseDigest, marketConversation: boolean): string 
   }
 
   const arrangement = digest.arrangement ?? []
-  if (arrangement.length > 0) {
+  if (poc && arrangement.length > 0) {
     lines.push(
       '## How their money would be arranged',
       'Worked out from what they told you and the published rates, not by you. The lump sum goes',
@@ -996,8 +1008,9 @@ function digestSection(digest: CaseDigest, marketConversation: boolean): string 
     )
   }
 
-  lines.push('## Applications')
-  if (digest.applications.length === 0) {
+  // A market conversation opens nothing, so with none there is no section at all.
+  if (poc || digest.applications.length > 0) lines.push('## Applications')
+  if (poc && digest.applications.length === 0) {
     /**
      * Stated as an instruction, not a fact. As a fact it was ignored: a transcript ran for
      * four turns with Saoirse asking for documents and describing progress on a mortgage that had
@@ -1239,7 +1252,7 @@ function cacheableSections(input: PromptInput): readonly string[] {
     POLICY,
     VOICE,
     domainSection(input.domainConfig),
-    TOOL_GUIDANCE,
+    input.marketConversation === true ? MARKET_TOOL_GUIDANCE : TOOL_GUIDANCE,
     ...(input.marketConversation === true ? [] : [HOW_APPLYING_WORKS, WHAT_WE_CAN_DO]),
     factReference(),
     input.productCatalogue,

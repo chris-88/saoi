@@ -363,8 +363,11 @@ export function savedPlanDigestLines(
           `Already shown when they opened it in the app: this card, then your first line, word for word: "${planOpening(plan)}" Do not show the card again, welcome them or repeat that line.`,
         ]
       : []),
-    // A comparison, not a plan to follow: the next step is theirs to choose (2026-11-10).
-    `Next: offer them a choice, never a pick: talk through the options, change a figure or a filter, or how the figures were worked out.${first === undefined && firstDebt !== undefined ? ` The debt step in it: ${firstDebt}` : ''} Saoi cannot open any product for them; they apply with a provider directly.`,
+    /*
+     * A comparison, not a plan to follow: the next step is theirs to choose (2026-11-10), and
+     * theirs to say. Not a menu put to them at the end of each reply (2026-11-13).
+     */
+    `Next: whatever they ask about it, answered from it and the tools, never a pick; they can talk through the options, change a figure or a filter, or ask how the figures were worked out, and are not asked which.${first === undefined && firstDebt !== undefined ? ` The debt step in it: ${firstDebt}` : ''} Saoi cannot open any product for them; they apply with a provider directly.`,
   ]
 }
 
