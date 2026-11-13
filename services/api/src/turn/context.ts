@@ -387,7 +387,7 @@ export async function buildGeneration(
    * events (2026-11-12: asked in the next turn whether bunq's €581 would be realised, Saoirse
    * had only the card's arrangement and said it would not). Unreadable, it is left out.
    */
-  const [shownEvents, lookedUpEvents] = await Promise.all([
+  const [shownEvents, lookedUpEvents, comparedEvents] = await Promise.all([
     admin
       .from('events')
       .select('payload')
@@ -406,6 +406,17 @@ export async function buildGeneration(
       .eq('type', 'products_looked_up')
       .order('created_at', { ascending: false })
       .limit(PRODUCTS_LOOKED_UP_EVENTS),
+    /*
+     * What `compare_products` set side by side (2026-11-13), so a follow-up ("and if I need the
+     * money sooner?") compares the same products again. Ids and names, never the figures.
+     */
+    admin
+      .from('events')
+      .select('payload')
+      .eq('case_id', turn.caseId)
+      .eq('type', 'products_compared')
+      .order('created_at', { ascending: false })
+      .limit(PRODUCTS_COMPARED_EVENTS),
   ])
   const productsBasis = shownEvents.error === null ? productsBasisLines(shownEvents.data ?? []) : []
   const productsLookedUp =
@@ -419,6 +430,14 @@ export async function buildGeneration(
       ? productsMustKnowLines(shownEvents.data ?? [], lookedUpEvents.data ?? [])
       : []
 
+  const productsCompared =
+    comparedEvents.error === null ? productsComparedLines(comparedEvents.data ?? []) : []
+  /*
+   * The products selected on the cards, sent with this message (2026-11-13): current for this
+   * turn only, so the digest lists them and the message carries them as an aside.
+   */
+  const selected = isCustomerTurn ? selectionLines(turn.selection) : []
+
   const digest = buildCaseDigest(loaded, {
     ...(alerts === undefined ? {} : { alerts }),
     ...(holdings === undefined ? {} : { holdings }),
@@ -426,6 +445,8 @@ export async function buildGeneration(
     ...(productsBasis.length === 0 ? {} : { productsBasis }),
     ...(productsLookedUp.length === 0 ? {} : { productsLookedUp }),
     ...(productsMustKnow.length === 0 ? {} : { productsMustKnow }),
+    ...(productsCompared.length === 0 ? {} : { productsCompared }),
+    ...(selected.length === 0 ? {} : { productsSelected: selected }),
     sensitiveDisclosure: gate.suppressHumour,
     stage,
     acting: turn.trigger === 'action',
@@ -538,6 +559,7 @@ export async function buildGeneration(
     claimedPlans,
     customerMessage: isCustomerTurn ? customerMessage : null,
     signIn: offeringSignIn ? SIGN_IN_INSTRUCTION.trim() : null,
+    selection: selectionAside(selected),
   })
 
   if (turn.trigger === 'action') {
@@ -604,6 +626,69 @@ export async function buildGeneration(
 }
 
 export type Generation = Awaited<ReturnType<typeof buildGeneration>>
+
+/** How many `products_compared` events the digest lists, newest first. */
+export const PRODUCTS_COMPARED_EVENTS = 2
+
+/** A lead from the app, as data: no brackets, quotes or line breaks, and short. */
+const asData = (text: string): string =>
+  text
+    .replace(/[\p{Cc}[\]()“”"<>{}]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80)
+
+/**
+ * The products selected on the cards with this message, in the order selected, one line each:
+ * "bunq Savings Account [bunq:savings.bunq_savings]". The lead is the app's, read as data; the
+ * id is held to `PRODUCT_ROW_ID_PATTERN` by the request schema. Pure.
+ */
+export function selectionLines(selection: SaoirseTurnRequest['selection']): string[] {
+  return (selection ?? []).flatMap((item) => {
+    const lead = asData(item.lead)
+    return [lead.length === 0 ? `[${item.rowId}]` : `${lead} [${item.rowId}]`]
+  })
+}
+
+/**
+ * The aside a message with a selection carries (2026-11-13): what is selected, that "these"
+ * means them, and that comparing them is `compare_products` with these ids in this order. Null
+ * with nothing selected. Pure.
+ */
+export function selectionAside(lines: readonly string[]): string | null {
+  if (lines.length === 0) return null
+  const one = lines.length === 1
+  return (
+    `They have selected ${one ? 'one product' : `${String(lines.length)} products`} on the cards, ` +
+    `in this order: ${lines.join('; ')}. "These", "them", "the two" or "this one" in their ` +
+    `message means ${one ? 'it' : 'these'}.` +
+    (one
+      ? ' A comparison needs two or three: asked to compare, say so in a line.'
+      : ' Asked to compare them, or for help choosing between them, call compare_products with ' +
+        'these ids, in this order.')
+  )
+}
+
+/**
+ * What `compare_products` set side by side in earlier turns, newest first, one line each:
+ * "bunq Savings Account against Bank of Ireland SuperSaver Account [bunq:savings.bunq_savings,
+ * boi:savings.supersaver]". No figures. Pure.
+ */
+export function productsComparedLines(events: readonly { readonly payload: unknown }[]): string[] {
+  return events.flatMap(({ payload }) => {
+    if (typeof payload !== 'object' || payload === null) return []
+    const { rowIds, leads } = payload as { rowIds?: unknown; leads?: unknown }
+    if (!Array.isArray(rowIds)) return []
+    const ids = (rowIds as unknown[]).filter((id): id is string => typeof id === 'string')
+    if (ids.length === 0) return []
+    const names = Array.isArray(leads)
+      ? (leads as unknown[]).filter((lead): lead is string => typeof lead === 'string')
+      : []
+    return [
+      `${names.length === ids.length ? names.join(' against ') : 'Products'} [${ids.join(', ')}]`,
+    ]
+  })
+}
 
 /** How many `products_shown` events are read for the figure basis, newest first. */
 export const PRODUCTS_BASIS_EVENTS = 10
@@ -812,6 +897,8 @@ export function conversationSoFar(input: {
   readonly customerMessage: string | null
   /** The sign-in aside, when the offer is about to appear under the reply. */
   readonly signIn: string | null
+  /** The selection aside (`selectionAside`), when products are selected with this message. */
+  readonly selection?: string | null
 }): { history: { role: 'user' | 'assistant'; content: string }[]; answeringArrival: boolean } {
   const spoken = input.messages.filter((message) => message.role !== 'system')
   const history = spoken.map((message) => ({
@@ -838,6 +925,7 @@ export function conversationSoFar(input: {
     const asides = [
       ...(answeringArrival ? [ARRIVAL_ANSWER_INSTRUCTION] : []),
       ...(input.signIn === null ? [] : [input.signIn]),
+      ...(input.selection === undefined || input.selection === null ? [] : [input.selection]),
     ]
     history.push({
       role: 'user',

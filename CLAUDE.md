@@ -767,10 +767,37 @@ Every tool input is Zod-validated before any effect. Invalid input returns a too
   provider and name, never a rate. A miss says so and asks for another lookup before saying the
   product is not held. Writes `products_looked_up` (query, ids, names, no figures); the digest
   lists the newest four (`productsLookedUpLines`) so a follow-up knows what was found.
+- `compare_products`: the two or three products the customer selected on the cards, set
+  against each other (Chris, 2026-11-13: "select products from any of the cards … compare the
+  two that have been selected against each other and help the customer come to a choice").
+  The app sends the selection with the message: the turn request's optional `selection`
+  (`productSelectionSchema` in `contracts/cards.ts`, `{ rowId, lead }`, at most
+  `PRODUCT_SELECTION_MAX` = 3; ids held to `PRODUCT_ROW_ID_PATTERN`, leads read as data). The
+  turn hands it to the model as an aside on the message (`selectionAside`) and the digest lists
+  it ("Selected on the cards with this message"), for that turn only. Input: `rowIds` (2 to 3,
+  in the order selected): a product id, a ladder rung's row id (that term), or `held:<n>`. The
+  server rebuilds every figure from the case (`caseFigures`; `domain/market/compare.ts`) on the
+  products card's money rules (what is held and saved placed where each account takes it,
+  periods as stated, DIRT, a bonus only when paid by the date, the term clamp) and emits the
+  `product_comparison` card: `columns` in the selection order (never ranked), `rows` with one
+  value per column from a fixed set of labels ("Rate", "Rate period", "Money by <keys month>",
+  "Access", "Takes monthly payments", "Lump sum", "Caps", "Deposit guarantee", "Source,
+  checked") and `differs`, `differences` (facts in their figures: the term's end against the
+  keys, what locking the sum adds over the instant account, what each takes, how long each
+  rate holds, whose guarantee), `decides` (the one question whose answer separates them, put to
+  the customer), `mustKnow` per column with its `detail` (the products row's own facts and
+  detail, read from the card the row was on, the money sentence restated on the comparison's
+  figures; worked out here when the row is on no card), the basis and the statement. Savings
+  and deposit accounts only: a mortgage id is refused. The reply is one line about the card
+  and `decides` as the one question; "help me choose" is the differences as facts and that
+  question, never a pick; the must-knows are on the card and not repeated. Writes
+  `products_compared` (ids and names, no figures); the digest lists the newest two
+  (`productsComparedLines`) so a follow-up compares them again. Every string is held to
+  `adviceWordsIn`.
 
-Twenty-three tools. **Which ones a turn is offered is decided by the conversation's stage** - the
-form tools are gated further on a form existing, and `show_products` and `lookup_products` are
-offered in any stage once the case holds a claimed plan or holdings, and never without. With
+Twenty-four tools. **Which ones a turn is offered is decided by the conversation's stage** - the
+form tools are gated further on a form existing, and `show_products`, `lookup_products` and
+`compare_products` are offered in any stage once the case holds a claimed plan or holdings, and never without. With
 them, the tools that read or start Demo Bank's catalogue (`DEMO_CATALOGUE_TOOLS` in
 `turn/stage.ts`: `show_product_options`, `show_comparison`, `show_quote`, `show_mortgage_rates`,
 `show_arrangement`, `show_transfer`) are withheld. Withholding a tool is enforcement; telling the

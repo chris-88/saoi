@@ -274,6 +274,7 @@ export function settledState(card: Card, state: CaseState): Settled | undefined 
     case 'account_opened':
     case 'saved_plan':
     case 'market_products':
+    case 'product_comparison':
     case 'comparison':
     case 'reuse':
     case 'consent':

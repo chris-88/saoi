@@ -745,6 +745,110 @@ export const marketProductsCardSchema = z.object({
 export type MarketProductsCard = z.infer<typeof marketProductsCardSchema>
 
 /**
+ * A products row's id as a card carries it and the app sends it back: a market product id
+ * (`bunq:savings.bunq_savings`, `aib:deposit.c5065`) or `held:<n>`. Letters, digits and
+ * `_ . : @ -` only, so an id handed to the model can carry nothing else.
+ */
+export const PRODUCT_ROW_ID_PATTERN = /^[A-Za-z0-9_.:@-]+$/
+
+/** The most products the customer can hold selected to compare (`selection` on a turn). */
+export const PRODUCT_SELECTION_MAX = 3
+
+/**
+ * One product the customer selected on a products card, sent with their message as the turn
+ * request's `selection` (Chris, 2026-11-13: "select products from any of the cards that are
+ * presented, then compare the two that have been selected"). The id is held to
+ * `PRODUCT_ROW_ID_PATTERN`; the lead is the app's, which the turn reads as data.
+ */
+export const productSelectionSchema = z.object({
+  /** The row's id on the products card (`<provider>:<productId>`, `held:<n>`). */
+  rowId: z.string().trim().min(1).max(160).regex(PRODUCT_ROW_ID_PATTERN),
+  /** The row's lead, as the card showed it. */
+  lead: z.string().trim().min(1).max(160),
+})
+export type ProductSelection = z.infer<typeof productSelectionSchema>
+
+/** The fewest and most products a comparison sets side by side (`compare_products`). */
+export const COMPARISON_MIN_COLUMNS = 2
+export const COMPARISON_MAX_COLUMNS = PRODUCT_SELECTION_MAX
+
+/**
+ * The products the customer selected on the cards, set against each other (`compare_products`,
+ * Chris 2026-11-13: "select products from any of the cards that are presented, then compare the
+ * two that have been selected against each other and help the customer come to a choice").
+ *
+ * Every figure is the engine's, rebuilt from the case by row id (`domain/market/compare.ts`):
+ * the same money rules as the products card (periods as stated, DIRT, a bonus only when paid by
+ * the date, the term clamp). The columns stay in the customer's selection order, and nothing is
+ * ranked: `differences` are the facts that separate them, in their figures, and `decides` is
+ * the one question whose answer separates them for this customer, put to them as a question.
+ * The facts to know before choosing and the detail a products row opened to live here, in
+ * `mustKnow`, per column (Chris, 2026-11-13). Something to read, not something to decide: not in
+ * `AWAITING_CARDS`.
+ */
+export const productComparisonCardSchema = z
+  .object({
+    type: z.literal('product_comparison'),
+    /** "bunq Savings Account against Bank of Ireland SuperSaver Account". */
+    title: z.string(),
+    columns: z
+      .array(
+        z.object({
+          /** The row id the customer selected: a product id, or `held:<n>` for their own account. */
+          rowId: z.string(),
+          lead: z.string(),
+          providerId: z.string().optional(),
+          brand: providerBrandSchema.nullable().optional(),
+          /** "instant access", "18-month fixed", "31-day notice". */
+          kind: z.string(),
+        }),
+      )
+      .min(COMPARISON_MIN_COLUMNS)
+      .max(COMPARISON_MAX_COLUMNS),
+    /**
+     * One value per column, in column order. Labels from a fixed set: "Rate", "Rate period",
+     * "Money by <keys month>", "Access", "Takes monthly payments", "Lump sum", "Caps", "Deposit
+     * guarantee", "Source, checked". `differs`: the values are not all the same.
+     */
+    rows: z.array(
+      z.object({
+        label: z.string(),
+        values: z.array(z.string()).min(COMPARISON_MIN_COLUMNS).max(COMPARISON_MAX_COLUMNS),
+        differs: z.boolean(),
+      }),
+    ),
+    /** The facts that separate them, in their figures; never a ranking or a pick. */
+    differences: z.array(z.string()),
+    /** The one question whose answer decides it, to the customer: "Will you need …?" */
+    decides: z.string(),
+    /**
+     * Per column, the facts to know before choosing (a products row's `mustKnow`), and the rest
+     * of what its row opened to (`detail`: the money and what it counts, the rate's period and
+     * what follows, the conditions, the source and the day checked, what is not stated).
+     */
+    mustKnow: z.array(
+      z.object({
+        rowId: z.string(),
+        facts: z.array(z.string()).max(PRODUCTS_ROW_MAX_MUST_KNOW),
+        detail: z.array(z.string()).max(PRODUCTS_ROW_MAX_DETAIL).optional(),
+      }),
+    ),
+    /** The basis statement (duty of care 2.4). */
+    basis: z.object({
+      figures: z.array(z.string()),
+      assumptions: z.array(z.string()),
+      coverage: z.string(),
+      warnings: z.array(z.string()),
+    }),
+    /** Not regulated, no advice (`market/disclosures.ts`). */
+    statement: z.string(),
+  })
+  .refine((card) => card.rows.every((row) => row.values.length === card.columns.length), {
+    message: 'every row carries one value per column',
+  })
+export type ProductComparisonCard = z.infer<typeof productComparisonCardSchema>
+
+/**
  * Open banking, simulated (Nexus, a stand-in aggregator). Three cards.
  *
  * `connect_accounts` is the consent: the customer picks the bank and allows exactly the scope
@@ -834,6 +938,7 @@ export const cardSchema = z.discriminatedUnion('type', [
   accountOpenedCardSchema,
   savedPlanCardSchema,
   marketProductsCardSchema,
+  productComparisonCardSchema,
   connectAccountsCardSchema,
   accountsOverviewCardSchema,
   transferCardSchema,
@@ -864,6 +969,7 @@ export const CARD_TYPES = [
   'account_opened',
   'saved_plan',
   'market_products',
+  'product_comparison',
   'connect_accounts',
   'accounts_overview',
   'transfer',

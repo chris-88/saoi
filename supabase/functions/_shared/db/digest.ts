@@ -226,6 +226,10 @@ export function buildCaseDigest(
     readonly productsLookedUp?: CaseDigest['productsLookedUp']
     /** The must-knows of the shown products they have asked about by name. */
     readonly productsMustKnow?: CaseDigest['productsMustKnow']
+    /** What `compare_products` set side by side in earlier turns. */
+    readonly productsCompared?: CaseDigest['productsCompared']
+    /** The products selected on the cards with this message. */
+    readonly productsSelected?: CaseDigest['productsSelected']
     /** Where the customer is trying to get to, from the Goal Engine. */
     readonly goals?: readonly string[]
     /** Whether what they are looking at is what suits them. */
@@ -338,6 +342,12 @@ export function buildCaseDigest(
     ...(options.productsLookedUp === undefined
       ? {}
       : { productsLookedUp: options.productsLookedUp }),
+    ...(options.productsCompared === undefined
+      ? {}
+      : { productsCompared: options.productsCompared }),
+    ...(options.productsSelected === undefined
+      ? {}
+      : { productsSelected: options.productsSelected }),
     ...(options.goals === undefined ? {} : { goals: options.goals }),
     ...(options.suitability === undefined ? {} : { suitability: options.suitability }),
     ...(options.prospect === undefined ? {} : { prospect: options.prospect }),

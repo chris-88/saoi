@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { MAX_INPUT_LENGTH } from '../llm/gate.ts'
+import { PRODUCT_SELECTION_MAX, productSelectionSchema } from './cards.ts'
 
 /** The request body for `saoirse-turn`. Validated before anything else happens. */
 export const saoirseTurnRequestSchema = z.object({
@@ -25,6 +26,13 @@ export const saoirseTurnRequestSchema = z.object({
    * a person reads before phoning the customer.
    */
   note: z.string().max(400).optional(),
+  /**
+   * The products the customer has selected on the cards, sent with their message (Chris,
+   * 2026-11-13: select products from any card, then compare them). Each is a row's `id` and
+   * `lead` as the card showed them, in the order they were selected. The turn hands them to the
+   * model with the message; only this turn's selection is current.
+   */
+  selection: z.array(productSelectionSchema).max(PRODUCT_SELECTION_MAX).optional(),
 })
 
 export type SaoirseTurnRequest = z.infer<typeof saoirseTurnRequestSchema>

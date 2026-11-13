@@ -21,6 +21,7 @@ import { showQuoteTool } from './show-quote.ts'
 import { requestUploadTool } from './request-upload.ts'
 import { showProductsTool } from './show-products.ts'
 import { lookupProductsTool } from './lookup-products.ts'
+import { compareProductsTool } from './compare-products.ts'
 import type { ToolName } from '@shared/llm/tools.ts'
 import type { ToolModule } from './_shared.ts'
 
@@ -49,4 +50,5 @@ export const TOOL_MODULES: { readonly [N in ToolName]: ToolModule<N> } = {
   request_upload: requestUploadTool,
   show_products: showProductsTool,
   lookup_products: lookupProductsTool,
+  compare_products: compareProductsTool,
 }
