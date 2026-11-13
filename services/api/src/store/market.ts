@@ -3,7 +3,7 @@ import {
   recordsFromRows,
   type MarketHistoryRow,
 } from '@shared/db/market.ts'
-import { normaliseMarket } from '@shared/domain/market/normalise.ts'
+import { normaliseMarket, type NormaliseOptions } from '@shared/domain/market/normalise.ts'
 import type { Market, MarketRecord } from '@shared/domain/market/types.ts'
 import type { Db } from './client.ts'
 import { must } from './client.ts'
@@ -27,7 +27,11 @@ const PAGE = 1000
 /** Holds one normalised market for `ttlMs`; concurrent callers share one load. */
 export function cachedMarketStore(
   loadRecords: () => Promise<readonly MarketRecord[]>,
-  options: { readonly ttlMs?: number; readonly now?: () => number } = {},
+  options: {
+    readonly ttlMs?: number
+    readonly now?: () => number
+    readonly normalise?: NormaliseOptions
+  } = {},
 ): MarketStore {
   const ttl = options.ttlMs ?? MARKET_CACHE_MS
   const now = options.now ?? Date.now
@@ -35,7 +39,7 @@ export function cachedMarketStore(
   return {
     load() {
       if (held !== null && now() - held.at < ttl) return held.market
-      const market = loadRecords().then((records) => normaliseMarket(records))
+      const market = loadRecords().then((records) => normaliseMarket(records, options.normalise))
       held = { at: now(), market }
       // A failed load is not cached: the next call tries again.
       market.catch(() => {
@@ -46,7 +50,11 @@ export function cachedMarketStore(
   }
 }
 
-export function supabaseMarketStore(db: Db): MarketStore {
+/** `options` as `cachedMarketStore`'s: the admin's views keep Raisin's banks and a shorter hold. */
+export function supabaseMarketStore(
+  db: Db,
+  options: Parameters<typeof cachedMarketStore>[1] = {},
+): MarketStore {
   return cachedMarketStore(async () => {
     // Paged: PostgREST returns at most a thousand rows a request, and history only grows.
     const rows: MarketHistoryRow[] = []
@@ -63,5 +71,5 @@ export function supabaseMarketStore(db: Db): MarketStore {
       if ((page ?? []).length < PAGE) break
     }
     return recordsFromRows(rows)
-  })
+  }, options)
 }

@@ -1,6 +1,8 @@
 import { marketProductVersionSchema, type MarketProductList } from '@shared/contracts/market.ts'
+import type { Market } from '@shared/domain/market/types.ts'
 import type { Db } from '../client.ts'
 import { must } from '../client.ts'
+import { supabaseMarketStore } from '../market.ts'
 
 export type MarketProductFilter = {
   /** All versions, not only the current one. */
@@ -13,10 +15,22 @@ export type MarketProductFilter = {
 export interface AdminMarketStore {
   /** Market data rows, grouped by provider and product, newest version first. */
   list(filter: MarketProductFilter): Promise<MarketProductList>
+  /**
+   * The comparison engine's views over every current row, Raisin's platform banks included
+   * (the public comparison leaves them out). Held a minute, so a refresh shows promptly.
+   */
+  views(): Promise<Market>
 }
 
+export const ADMIN_VIEWS_CACHE_MS = 60 * 1000
+
 export function supabaseAdminMarketStore(db: Db): AdminMarketStore {
+  const market = supabaseMarketStore(db, {
+    ttlMs: ADMIN_VIEWS_CACHE_MS,
+    normalise: { includePlatforms: true },
+  })
   return {
+    views: () => market.load(),
     async list(filter) {
       let query = db
         .from('market_products')
