@@ -711,6 +711,37 @@ Every tool input is Zod-validated before any effect. Invalid input returns a too
   (`rate-period.ts`, 2026-11-12); `products_shown` records them, and later turns' digests carry
   one line a row (lead, value, `figureBasis`) for the newest card of each of the two most recent
   arrangements (`productsBasisLines`).
+  Rows show the key facts only (Chris, 2026-11-13): closed, `lead`, `kind`, `value` (the
+  headline with its period) and `figure`; each also carries `providerId`, `brand` (the monogram's
+  colours, `_shared/market/provider-brand.ts`, copied from saoi-admin's table with its sources
+  and the 3:1 rule), `mustKnow` (at most 3, facts to know before choosing: "Money locked until May
+  2028", "Rate ends 1 Jan, then …", "Deposit guarantee: Netherlands, not Ireland", "Rate from
+  CCPC only; …", "Monthly saving not accepted; lump sum only", who can open it) and `detail` (at
+  most 6 sentences: the money sentence, the source's conditions, the source and the day checked,
+  what is not stated, tax, the guarantee); every line is held to `adviceWordsIn` and carries no
+  instruction. All four are optional in the contract so stored cards parse, and `note` stays for
+  old clients. `arrangement.line` is one short sentence (the arrangement and how to change it);
+  the comparison it rests on (by_access's price of access) is in `basis.objective`.
+  `arrangement.groups` (optional, at most 4, `{ label, rowIds }`) divides the rows, each keeping
+  the card's order: `held_vs_market` "Yours" and "The market", `by_access` "Instant access",
+  "Notice" and "Fixed term", `fits_date` "Fixed term", "Instant access" and "Notice", none for a
+  mortgage card; the tool result and the digest name them.
+  **The term clamp** (`domain/market/term-fit.ts`, Chris 2026-11-13): in `fits_date` and the
+  fixed-term side of `by_access`, a fixed term fits when it ends at least `KEYS_BUFFER_MONTHS` (1,
+  beside `BUYING_COSTS`) before the keys month the plan reaches with that product's own interest
+  (`keysMonthWith`: `simulateDeposit` on what is held and the monthly saving towards the cash
+  needed at the keys, `CaseFigures.neededAtKeysEur`; the rest counted before interest; with only a
+  date given, the date). Each product is shown at its longest rung that fits; a longer rung its
+  own interest brings the keys inside is listed as not fitting in the basis, with the reason as a
+  fact ("18 months ends May 2028; with its interest the keys come in May 2028."), and in the
+  shorter row's detail. `fits_date` rows read "keys Jul 2028, €627", their money runs to their
+  own keys month, and they sort by it then money; the basis states the rule in one sentence
+  (`TERM_FIT_RULE`). The six-month rule is gone.
+  **Must-knows, once** (progressive disclosure): the tool result gives the model each row's
+  `mustKnow`, `products_shown` records them, and the digest keeps those of the shown products the
+  customer has asked about by name (`products_looked_up` ids, `productsMustKnowLines`). Asked
+  about one a second time, or told they will go with it, Saoirse states its must-knows once,
+  unprompted, as facts, and not again; never as a steer.
 - `lookup_products`: a product, a provider or a rate the customer named ("BOI has an 18-month
   fix at 2.48%"), looked up across the whole market (every provider, every source, the same
   normalised views and store as `show_products`; `domain/market/lookup.ts`). Input: `query`
