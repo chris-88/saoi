@@ -555,6 +555,8 @@ function savingsFacts(input: {
   /** The monthly saving the case has, for "monthly saving not accepted". */
   readonly monthly: number
   readonly bonus?: 'by_keys' | 'after_drawdown' | 'not_stated' | null | undefined
+  /** A fixed term whose own keys month is later than the plan's: why, in one line. */
+  readonly keysLine?: string | null | undefined
 }): RowFacts {
   const { product, terms, figures, words, asOf } = input
   const termMonths = terms.access === 'fixed_term' ? figures.termMonths : null
@@ -612,6 +614,7 @@ function savingsFacts(input: {
   const detail = keep(
     [
       input.figureBasis,
+      input.keysLine ?? null,
       conditions.length === 0 ? null : sentence(conditions.join('; ')),
       who === undefined ? null : sentence(who),
       sourceLine(product),
@@ -998,61 +1001,6 @@ function keysRunOf(figures: CaseFigures, saved: number, horizon: Horizon, asOf: 
   }
 }
 
-/** A fixed term judged against the keys: the term that fits, and the longer ones that do not. */
-type Clamped = {
-  readonly item: MarketRow
-  readonly product: ProductView
-  readonly fit: JudgedTerm | null
-  readonly pushedOut: readonly JudgedTerm[]
-}
-
-/**
- * A fixed-term row of `by_access` judged again by the term-fit rule (`term-fit.ts`): the term
- * the search used is replaced by the longest that ends at least the buffer before the keys month
- * its own interest gives, worked out on the same sum; null when no term does.
- */
-function clampFixedRow(
-  item: MarketRow,
-  product: ProductView,
-  run: KeysRun,
-  horizon: Horizon,
-  asOf: AsOf,
-  amount: number,
-  factsMonthly: number,
-): Clamped | null {
-  if (product.terms.kind !== 'deposit') return null
-  const judged = termThatFits(product.terms, run)
-  if (judged.fit === null) return null
-  const months = judged.fit.months
-  const { figures } = simulateDeposit(product.terms, {
-    lumpSum: amount,
-    monthly: 0,
-    horizonMonths: Math.max(horizon.months, months),
-    termMonths: months,
-    asOf,
-  })
-  const row = marketRow(product, figures, horizon, asOf, amount, 0, factsMonthly) ?? item
-  const figureBasis = [row.figureBasis, fitLine(judged.fit), ...judged.pushedOut.map(pushedOutLine)]
-    .filter((line) => line.length > 0)
-    .join(' ')
-  return {
-    item: {
-      ...row,
-      figureBasis,
-      // The detail's money sentence carries the term against the keys, as the model's does.
-      row: {
-        ...row.row,
-        detail: (row.row.detail ?? []).map((line) =>
-          line === row.figureBasis ? figureBasis : line,
-        ),
-      },
-    },
-    product,
-    fit: judged.fit,
-    pushedOut: judged.pushedOut,
-  }
-}
-
 /** "Bank of Ireland Advantage Fixed Term Deposit Account at 18 months does not fit: …". */
 const notFittingLines = (
   clamped: readonly { product: ProductView; pushedOut: readonly JudgedTerm[] }[],
@@ -1064,189 +1012,78 @@ const notFittingLines = (
     ),
   )
 
-function byAccess(
-  market: Market,
-  figures: CaseFigures,
-  request: ShowProductsRequest,
-  asOf: AsOf,
-): ProductsResult {
-  const amount = figures.held.reduce((sum, account) => sum + account.balance, 0)
-  if (amount <= 0) {
-    return { kind: 'questions', questions: ['How much is saved now, and where is it?'] }
-  }
-  const horizon = horizonOf(figures, asOf)
-  const common = {
-    category: request.category,
-    amount,
-    monthly: 0,
-    horizon,
-    asOf,
-    factsMonthly: figures.monthlySavingEur ?? 0,
-  }
-  const instant = searchSavings(market, { ...common, access: 'instant' })
-  const fixed = searchSavings(market, { ...common, access: 'fixed_term' })
-  // With a keys month, each fixed term is judged again against the keys its own interest brings.
-  const run = keysRunOf(figures, amount, horizon, asOf)
-  const clamped: Clamped[] = []
-  let noTerm = 0
-  for (const item of fixed.rows) {
-    const product = fixed.products.find((candidate) => candidate.id === item.row.id)
-    if (product === undefined) continue
-    if (!horizon.dated) {
-      clamped.push({ item, product, fit: null, pushedOut: [] })
-      continue
-    }
-    const judged = clampFixedRow(item, product, run, horizon, asOf, amount, run.monthlyEur)
-    if (judged === null) noTerm += 1
-    else clamped.push(judged)
-  }
-  const half = PRODUCTS_CARD_MAX_ROWS / 2
-  const instantRows = [...instant.rows].sort(byRate)
-  const fixedRows = clamped.map((entry) => entry.item).sort(byRate)
-  const instantShown = instantRows.slice(
-    0,
-    Math.max(half, PRODUCTS_CARD_MAX_ROWS - Math.min(half, fixedRows.length)),
+/** An account judged against the keys month its own interest gives. */
+type Fit = MarketRow & {
+  readonly fixed: boolean
+  readonly product: ProductView
+  /** YYYY-MM the keys come in with this account's own interest. */
+  readonly keysOn: string
+  readonly pushedOut: readonly JudgedTerm[]
+}
+
+/** The categories a savings card reads: `savings` for regular saving, `deposits` for lump sums. */
+const categoriesOf = (category: ProductsCategory | undefined): ReadonlySet<string> =>
+  category === 'savings'
+    ? new Set(['savings'])
+    : category === 'deposits'
+      ? new Set(['deposit'])
+      : new Set(['savings', 'deposit'])
+
+/** Soonest keys first, then what it adds by them. */
+const byKeys = (a: Fit, b: Fit): number =>
+  a.keysOn.localeCompare(b.keysOn) || b.money - a.money || b.rate - a.rate
+
+/**
+ * "Interest stops at Nov 2027, the end of the term; the keys then come in August 2028, a month
+ * after the plan's.": a fixed term whose own keys month is later than the plan's, because the
+ * money stops earning at the term's end (the rate after it is not stated). Null otherwise.
+ */
+function keysLaterLine(term: JudgedTerm, planKeys: string): string | null {
+  if (term.keysOn <= planKeys) return null
+  const later = monthsUntil(`${planKeys}-01`, term.keysOn)
+  return (
+    `Interest stops at ${shortMonth(term.endsOn)}, the end of the term; the keys then come in ` +
+    `${monthName(term.keysOn)}, ${later === 1 ? 'a month' : `${String(later)} months`} after the plan's.`
   )
-  const fixedShown = fixedRows.slice(0, PRODUCTS_CARD_MAX_ROWS - instantShown.length)
-  // The price of access: what the fixed term that adds most adds over the instant-access
-  // account that adds most, in euro on the sum held, with the two rates.
-  const mostOf = (rows: readonly MarketRow[]) =>
-    [...rows].sort((a, b) => b.money - a.money || b.rate - a.rate)[0]
-  const topInstant = mostOf(instantRows)
-  const topFixed = mostOf(fixedRows)
-  const priceLine =
-    topInstant === undefined || topFixed === undefined
-      ? ''
-      : topFixed.money - topInstant.money >= 1
-        ? ` The fixed term that adds most (${topFixed.row.value}) adds ${whole(topFixed.money - topInstant.money)} more on ${whole(amount)} than the instant-access account that adds most (${topInstant.row.value}): that is the price of access.`
-        : ` The instant-access account that adds most (${topInstant.row.value}) adds as much as any fixed term that ends in time, so access costs nothing here.`
-  const products = [...instant.products, ...fixed.products]
-  const matched = instant.matched + fixed.matched - noTerm
-  const fixedExcluded =
-    noTerm === 0
-      ? fixed.excluded
-      : [...fixed.excluded, { reason: 'No term that ends a month before the keys', count: noTerm }]
-  const shown = [...instantShown, ...fixedShown]
-  return {
-    kind: 'card',
-    card: {
-      type: 'market_products',
-      question: QUESTIONS.by_access(figures.keysMonth),
-      arrangement: {
-        kind: 'by_access',
-        title: 'Instant access against fixed term',
-        line: `Instant access beside fixed terms that end in time for ${horizon.dated ? `the keys` : `${String(horizon.months)} months`}, each by rate; ask for them against your own account, or by the date, instead.`,
-      },
-      rows: shown.map((item) => item.row),
-      more: Math.max(0, matched - shown.length),
-      basis: {
-        figures: savingsFiguresUsed(figures, amount, horizon),
-        objective:
-          `Instant access first, then fixed term; each by AER, highest first.${priceLine} ${moneyColumnLine(horizon)}` +
-          (horizon.dated ? ` ${TERM_FIT_RULE}` : ''),
-        assumptions: [
-          ...new Set([...instant.assumptions, ...fixed.assumptions]),
-          ...notFittingLines(clamped),
-        ],
-        coverage: coverageLine(
-          matched,
-          products,
-          [...instant.excluded, ...fixedExcluded],
-          'instant-access and fixed-term accounts',
-        ),
-        warnings: warningsOf(
-          shown.map((item) => item.row),
-          products,
-        ),
-      },
-      statement: RESULT_STATEMENT,
-    },
-    figureBasis: shown.map((item) => ({
-      id: item.row.id,
-      lead: item.row.lead,
-      value: item.row.value,
-      line: item.figureBasis,
-    })),
-  }
 }
 
 /**
- * When a deposit's bonus is paid, against the months to the keys: `after_drawdown` for a saver
- * whose bonus needs the lender's mortgage drawn down (`LINKED_SAVERS`, or conditions that say
- * so), `by_keys` for one recorded as paid before drawdown within the time, `not_stated` else.
+ * Every savings and deposit account judged against the keys (`term-fit.ts`): a fixed term at the
+ * longest rung that ends at least the buffer before the keys month its own interest gives, any
+ * other account to the keys month it gives; the money runs to that month, on what is held and
+ * the monthly saving where it takes them. `fits_date` shows all of it; `by_access` takes the
+ * fixed terms (`fixedOnly`), so the two show the same fixed-term rows with the same figures.
  */
-export function bonusTiming(
-  product: ProductView,
-  terms: DepositTerms,
-  horizonMonths: number,
-): 'by_keys' | 'after_drawdown' | 'not_stated' {
-  const saver = (LINKED_SAVERS[product.provider] ?? []).find((item) =>
-    product.id.endsWith(`:${item.productId}`),
-  )
-  if (saver !== undefined) {
-    if (saver.paid === 'after_drawdown') return 'after_drawdown'
-    return saver.minMonths <= horizonMonths ? 'by_keys' : 'not_stated'
-  }
-  if ((terms.bonus?.conditions ?? []).some((line) => /mortgage drawn down/i.test(line))) {
-    return 'after_drawdown'
-  }
-  return 'not_stated'
-}
-
-function fitsDate(
+function savingsFits(
   market: Market,
-  figures: CaseFigures,
-  request: ShowProductsRequest,
-  asOf: AsOf,
-): ProductsResult {
-  if (figures.keysMonth === null) {
-    return {
-      kind: 'questions',
-      questions: ['When would you like to have the keys? The month is enough.'],
-    }
-  }
-  const saved = figures.held.reduce((sum, account) => sum + account.balance, 0)
-  const monthly = figures.monthlySavingEur ?? 0
-  if (saved <= 0 && monthly <= 0) {
-    return {
-      kind: 'questions',
-      questions: ['How much is saved now, and how much goes aside each month?'],
-    }
-  }
-  const horizon = horizonOf(figures, asOf)
-  if (!horizon.dated) {
-    return {
-      kind: 'questions',
-      questions: ['The keys month has passed: when would you like to have the keys now?'],
-    }
-  }
-  // Each account's keys month is the one the plan reaches with its own interest; a fixed term
-  // is the longest that ends at least the buffer before it (`term-fit.ts`).
-  const run = keysRunOf(figures, saved, horizon, asOf)
-  const categories =
-    request.category === 'savings'
-      ? new Set(['savings'])
-      : request.category === 'deposits'
-        ? new Set(['deposit'])
-        : new Set(['savings', 'deposit'])
+  options: {
+    readonly categories: ReadonlySet<string>
+    readonly saved: number
+    readonly monthly: number
+    readonly run: KeysRun
+    readonly horizon: Horizon
+    readonly asOf: AsOf
+    readonly fixedOnly: boolean
+  },
+): {
+  readonly fits: Fit[]
+  readonly excluded: ReadonlyMap<string, number>
+  readonly notFitting: { product: ProductView; pushedOut: readonly JudgedTerm[] }[]
+} {
+  const { categories, saved, monthly, run, horizon, asOf, fixedOnly } = options
   const excluded = new Map<string, number>()
   const exclude = (reason: string) => excluded.set(reason, (excluded.get(reason) ?? 0) + 1)
-  type Fit = MarketRow & {
-    readonly fixed: boolean
-    readonly product: ProductView
-    /** YYYY-MM the keys come in with this account's own interest. */
-    readonly keysOn: string
-    readonly pushedOut: readonly JudgedTerm[]
-  }
   const notFitting: { product: ProductView; pushedOut: readonly JudgedTerm[] }[] = []
   const seen = new Set<string>()
   const fits: Fit[] = market.products.flatMap((product): Fit[] => {
     const terms = product.terms
     if (terms.kind !== 'deposit' || !categories.has(product.category)) return []
+    if (fixedOnly && terms.access !== 'fixed_term') return []
     if (/child|kid|junior|teen|student|third level/i.test(product.name)) return []
     let termMonths: number | null = null
     let keysOn: string
     let fitWords = ''
+    let laterLine: string | null = null
     let pushedOut: readonly JudgedTerm[] = []
     if (terms.access === 'fixed_term') {
       const judged = termThatFits(terms, run)
@@ -1263,6 +1100,7 @@ function fitsDate(
       keysOn = judged.fit.keysOn
       pushedOut = judged.pushedOut
       fitWords = [fitLine(judged.fit), ...pushedOut.map(pushedOutLine)].join(' ')
+      laterLine = keysLaterLine(judged.fit, horizon.by)
     } else {
       keysOn = keysMonthWith(terms, run, null) ?? horizon.by
       if (terms.access === 'notice' && (terms.noticeDays ?? 0) > monthsUntil(asOf, keysOn) * 30) {
@@ -1367,14 +1205,196 @@ function fitsDate(
             asOf,
             monthly,
             bonus: timing,
+            keysLine: laterLine,
           }),
         },
       },
     ]
   })
-  // Soonest keys first, then what it adds by them.
-  const byKeys = (a: Fit, b: Fit): number =>
-    a.keysOn.localeCompare(b.keysOn) || b.money - a.money || b.rate - a.rate
+  return { fits, excluded, notFitting }
+}
+
+function byAccess(
+  market: Market,
+  figures: CaseFigures,
+  request: ShowProductsRequest,
+  asOf: AsOf,
+): ProductsResult {
+  const amount = figures.held.reduce((sum, account) => sum + account.balance, 0)
+  if (amount <= 0) {
+    return { kind: 'questions', questions: ['How much is saved now, and where is it?'] }
+  }
+  const horizon = horizonOf(figures, asOf)
+  const monthly = figures.monthlySavingEur ?? 0
+  const common = {
+    category: request.category,
+    amount,
+    monthly: 0,
+    horizon,
+    asOf,
+    factsMonthly: monthly,
+  }
+  const instant = searchSavings(market, { ...common, access: 'instant' })
+  // With a keys month, the fixed terms are fits_date's own (`savingsFits`): the same rule, the
+  // same rows, the same figures, in the same order. A fixed term is a lump-sum deposit, so a
+  // card narrowed to regular saving still reads them on this side: without them it is not
+  // instant access against fixed term.
+  let fixedRows: MarketRow[]
+  let fixedProducts: ProductView[]
+  let fixedMatched: number
+  let fixedExcluded: { reason: string; count: number }[]
+  let fixedAssumptions: string[]
+  if (horizon.dated) {
+    const judged = savingsFits(market, {
+      categories: categoriesOf(request.category === 'deposits' ? 'deposits' : undefined),
+      saved: amount,
+      monthly,
+      run: keysRunOf(figures, amount, horizon, asOf),
+      horizon,
+      asOf,
+      fixedOnly: true,
+    })
+    const fits = [...judged.fits].sort(byKeys)
+    fixedRows = fits
+    fixedProducts = fits.map((fit) => fit.product)
+    fixedMatched = fits.length
+    fixedExcluded = [...judged.excluded].map(([reason, count]) => ({ reason, count }))
+    fixedAssumptions = notFittingLines(judged.notFitting)
+  } else {
+    const fixed = searchSavings(market, { ...common, access: 'fixed_term' })
+    fixedRows = [...fixed.rows].sort(byRate)
+    fixedProducts = fixed.products
+    fixedMatched = fixed.matched
+    fixedExcluded = fixed.excluded
+    fixedAssumptions = fixed.assumptions
+  }
+  const half = PRODUCTS_CARD_MAX_ROWS / 2
+  const instantRows = [...instant.rows].sort(byRate)
+  const instantShown = instantRows.slice(
+    0,
+    Math.max(half, PRODUCTS_CARD_MAX_ROWS - Math.min(half, fixedRows.length)),
+  )
+  const fixedShown = fixedRows.slice(0, PRODUCTS_CARD_MAX_ROWS - instantShown.length)
+  // The price of access: what the fixed term that adds most adds over the instant-access
+  // account that adds most, in euro on the sum held, with the two rates.
+  const mostOf = (rows: readonly MarketRow[]) =>
+    [...rows].sort((a, b) => b.money - a.money || b.rate - a.rate)[0]
+  const topInstant = mostOf(instantRows)
+  const topFixed = mostOf(fixedRows)
+  const priceLine =
+    topInstant === undefined || topFixed === undefined
+      ? ''
+      : topFixed.money - topInstant.money >= 1
+        ? ` The fixed term that adds most (${topFixed.row.value}) adds ${whole(topFixed.money - topInstant.money)} more on ${whole(amount)} than the instant-access account that adds most (${topInstant.row.value}): that is the price of access.`
+        : ` The instant-access account that adds most (${topInstant.row.value}) adds as much as any fixed term that ends in time, so access costs nothing here.`
+  const products = [...instant.products, ...fixedProducts]
+  const matched = instant.matched + fixedMatched
+  const shown = [...instantShown, ...fixedShown]
+  return {
+    kind: 'card',
+    card: {
+      type: 'market_products',
+      question: QUESTIONS.by_access(figures.keysMonth),
+      arrangement: {
+        kind: 'by_access',
+        title: 'Instant access against fixed term',
+        line: horizon.dated
+          ? 'Instant access by rate beside fixed terms that end in time for the keys, by their keys month; ask for them against your own account, or by the date, instead.'
+          : `Instant access beside fixed terms that end in time for ${String(horizon.months)} months, each by rate; ask for them against your own account, or by the date, instead.`,
+      },
+      rows: shown.map((item) => item.row),
+      more: Math.max(0, matched - shown.length),
+      basis: {
+        figures: savingsFiguresUsed(figures, amount, horizon),
+        objective: horizon.dated
+          ? `Instant access first, by AER, highest first; then fixed terms, by the keys month each gives with its own interest, soonest first, then by interest after DIRT.${priceLine} ` +
+            `${moneyColumnLine(horizon)} A fixed term's money runs to the keys month that term gives, as it does by the date. ${TERM_FIT_RULE}`
+          : `Instant access first, then fixed term; each by AER, highest first.${priceLine} ${moneyColumnLine(horizon)}`,
+        assumptions: [...new Set([...instant.assumptions, ...fixedAssumptions])],
+        coverage: coverageLine(
+          matched,
+          products,
+          [...instant.excluded, ...fixedExcluded],
+          'instant-access and fixed-term accounts',
+        ),
+        warnings: warningsOf(
+          shown.map((item) => item.row),
+          products,
+        ),
+      },
+      statement: RESULT_STATEMENT,
+    },
+    figureBasis: shown.map((item) => ({
+      id: item.row.id,
+      lead: item.row.lead,
+      value: item.row.value,
+      line: item.figureBasis,
+    })),
+  }
+}
+
+/**
+ * When a deposit's bonus is paid, against the months to the keys: `after_drawdown` for a saver
+ * whose bonus needs the lender's mortgage drawn down (`LINKED_SAVERS`, or conditions that say
+ * so), `by_keys` for one recorded as paid before drawdown within the time, `not_stated` else.
+ */
+export function bonusTiming(
+  product: ProductView,
+  terms: DepositTerms,
+  horizonMonths: number,
+): 'by_keys' | 'after_drawdown' | 'not_stated' {
+  const saver = (LINKED_SAVERS[product.provider] ?? []).find((item) =>
+    product.id.endsWith(`:${item.productId}`),
+  )
+  if (saver !== undefined) {
+    if (saver.paid === 'after_drawdown') return 'after_drawdown'
+    return saver.minMonths <= horizonMonths ? 'by_keys' : 'not_stated'
+  }
+  if ((terms.bonus?.conditions ?? []).some((line) => /mortgage drawn down/i.test(line))) {
+    return 'after_drawdown'
+  }
+  return 'not_stated'
+}
+
+function fitsDate(
+  market: Market,
+  figures: CaseFigures,
+  request: ShowProductsRequest,
+  asOf: AsOf,
+): ProductsResult {
+  if (figures.keysMonth === null) {
+    return {
+      kind: 'questions',
+      questions: ['When would you like to have the keys? The month is enough.'],
+    }
+  }
+  const saved = figures.held.reduce((sum, account) => sum + account.balance, 0)
+  const monthly = figures.monthlySavingEur ?? 0
+  if (saved <= 0 && monthly <= 0) {
+    return {
+      kind: 'questions',
+      questions: ['How much is saved now, and how much goes aside each month?'],
+    }
+  }
+  const horizon = horizonOf(figures, asOf)
+  if (!horizon.dated) {
+    return {
+      kind: 'questions',
+      questions: ['The keys month has passed: when would you like to have the keys now?'],
+    }
+  }
+  // Each account's keys month is the one the plan reaches with its own interest; a fixed term
+  // is the longest that ends at least the buffer before it (`term-fit.ts`).
+  const run = keysRunOf(figures, saved, horizon, asOf)
+  const { fits, excluded, notFitting } = savingsFits(market, {
+    categories: categoriesOf(request.category),
+    saved,
+    monthly,
+    run,
+    horizon,
+    asOf,
+    fixedOnly: false,
+  })
   const fixed = fits.filter((fit) => fit.fixed).sort(byKeys)
   const open = fits.filter((fit) => !fit.fixed).sort(byKeys)
   const half = PRODUCTS_CARD_MAX_ROWS / 2

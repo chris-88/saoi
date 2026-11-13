@@ -672,17 +672,19 @@ describe('productsCard: the rows in groups (2026-11-13)', () => {
     }
   })
 
-  it('by_access: instant access, then fixed term, each by rate', () => {
+  it('by_access: instant access by rate, then fixed term by its keys month', () => {
     const groups = groupsOf(
       cardOf(productsCard(MARKET, FIGURES, { arrangement: 'by_access' }, PRODUCTS_AS_OF)),
     )
     expect(groups.map((group) => group.label)).toEqual(['Instant access', 'Fixed term'])
     expect(groups[0]?.rows.every((row) => row?.kind === 'instant access')).toBe(true)
     expect(groups[1]?.rows.every((row) => row?.kind.endsWith('fixed'))).toBe(true)
-    for (const group of groups) {
-      const rates = group.rows.map((row) => Number(row?.value.replace(/%.*/, '')))
-      expect(rates, group.label).toEqual([...rates].sort((a, b) => b - a))
-    }
+    const rates = (groups[0]?.rows ?? []).map((row) => Number(row?.value.replace(/%.*/, '')))
+    expect(rates).toEqual([...rates].sort((a, b) => b - a))
+    const keys = (groups[1]?.rows ?? []).map((row) =>
+      new Date(`1 ${/^keys (\w{3} \d{4})/.exec(row?.figure ?? '')?.[1] ?? ''}`).getTime(),
+    )
+    expect(keys).toEqual([...keys].sort((a, b) => a - b))
   })
 
   it('fits_date: fixed terms that end in time, then instant access, then notice', () => {
@@ -714,5 +716,159 @@ describe('productsCard: the rows in groups (2026-11-13)', () => {
     expect(
       marketProductsCardSchema.parse({ ...card, arrangement }).arrangement.groups,
     ).toBeUndefined()
+  })
+})
+
+describe('productsCard: by_access shows fits_date’s fixed terms (2026-11-13)', () => {
+  /** The fixed-term rows of a card, as the customer sees them. */
+  const fixedOf = (card: MarketProductsCard) =>
+    card.rows
+      .filter((row) => row.kind.endsWith('fixed'))
+      .map(({ id, kind, value, figure, note, mustKnow, detail }) => ({
+        id,
+        kind,
+        value,
+        figure,
+        note,
+        mustKnow,
+        detail,
+      }))
+  const fixedGroup = (card: MarketProductsCard) =>
+    card.arrangement.groups?.find((group) => group.label === 'Fixed term')?.rowIds ?? []
+
+  /** €25,000 held and €100 a month towards €27,400 by October 2028. */
+  const SLOW = { ...FIGURES, monthlySavingEur: 100, neededAtKeysEur: 27_400, keysMonth: '2028-10' }
+
+  it('the same fixed-term rows, with the same figures, on the fixture', () => {
+    for (const figures of [FIGURES, SLOW]) {
+      const byAccess = cardOf(
+        productsCard(MARKET, figures, { arrangement: 'by_access' }, PRODUCTS_AS_OF),
+      )
+      const fits = cardOf(
+        productsCard(MARKET, figures, { arrangement: 'fits_date' }, PRODUCTS_AS_OF),
+      )
+      expect(fixedOf(byAccess).length).toBeGreaterThan(0)
+      expect(fixedOf(byAccess)).toEqual(fixedOf(fits))
+      expect(fixedGroup(byAccess)).toEqual(fixedGroup(fits))
+    }
+  })
+
+  /**
+   * The live case (2026-11-13): €32,000 held, €1,000 a month, keys July 2028 with €52,500
+   * needed. The fixed terms as the live market had them that day (CCPC and Bank of Ireland's
+   * own page), with bunq's ladder, which the fixture does not carry.
+   */
+  const base = MARKET.products.find((product) => product.id === 'ptsb:deposit.c485')
+  if (base === undefined || base.terms.kind !== 'deposit') throw new Error('no ptsb 18-month')
+  const baseTerms = base.terms
+  const fixedTerm = (
+    id: string,
+    provider: string,
+    name: string,
+    ladder: readonly (readonly [number, number])[],
+  ): ProductView => ({
+    ...base,
+    id,
+    provider,
+    providerName: provider === 'boi' ? 'Bank of Ireland' : provider,
+    name,
+    category: 'deposit',
+    terms: {
+      ...baseTerms,
+      aerPct: null,
+      takesMonthly: false,
+      ladder: ladder.map(([months, aerPct]) => ({ months, aerPct, productId: id })),
+    },
+  })
+  const LIVE_MARKET: Market = {
+    ...MARKET,
+    products: [
+      ...MARKET.products.filter(
+        (product) => product.terms.kind !== 'deposit' || product.terms.access !== 'fixed_term',
+      ),
+      fixedTerm('boi:savings.advantage_fixed', 'boi', 'Advantage Fixed Term Deposit Account', [
+        [6, 2.01],
+        [12, 2.4],
+        [18, 2.48],
+      ]),
+      fixedTerm('ptsb:deposit.c485', 'ptsb', '18 Month Fixed Term', [[18, 2]]),
+      fixedTerm('bunq:deposit.ladder_bunq_term_deposits', 'bunq', 'bunq Term Deposits', [
+        [3, 1.76],
+        [6, 1.86],
+        [12, 2.11],
+        [24, 1.91],
+      ]),
+      fixedTerm('ptsb:deposit.ladder_fixed_term_deposit', 'ptsb', 'Fixed Term Deposit', [
+        [6, 1.25],
+        [12, 2],
+        [36, 2],
+        [60, 2],
+      ]),
+    ],
+  }
+  const LIVE = {
+    ...FIGURES,
+    held: [
+      {
+        label: 'Savings',
+        provider: null,
+        balance: 32_000,
+        ratePct: null,
+        kind: 'savings' as const,
+      },
+    ],
+    monthlySavingEur: 1_000,
+    neededAtKeysEur: 52_500,
+    keysMonth: '2028-07',
+  }
+  const LIVE_AS_OF = '2026-11-13'
+
+  it('the live figures: the 18-month terms fit, under “Fixed term”, as by the date', () => {
+    const byAccess = cardOf(
+      productsCard(LIVE_MARKET, LIVE, { arrangement: 'by_access' }, LIVE_AS_OF),
+    )
+    const fits = cardOf(productsCard(LIVE_MARKET, LIVE, { arrangement: 'fits_date' }, LIVE_AS_OF))
+    expect(byAccess.arrangement.groups?.map((group) => group.label)).toEqual([
+      'Instant access',
+      'Fixed term',
+    ])
+    const rows = fixedOf(byAccess)
+    expect(rows.find((row) => row.id === 'boi:savings.advantage_fixed')).toMatchObject({
+      kind: '18-month fixed',
+      figure: 'keys Jul 2028, €802',
+    })
+    expect(rows.find((row) => row.id === 'ptsb:deposit.c485')).toMatchObject({
+      kind: '18-month fixed',
+      figure: 'keys Jul 2028, €646',
+    })
+    expect(rows).toEqual(fixedOf(fits))
+    expect(fixedGroup(byAccess)).toEqual(fixedGroup(fits))
+  })
+
+  it('a card narrowed to savings still sets instant access against the fixed terms', () => {
+    const card = cardOf(
+      productsCard(
+        LIVE_MARKET,
+        LIVE,
+        { arrangement: 'by_access', category: 'savings' },
+        LIVE_AS_OF,
+      ),
+    )
+    expect(fixedGroup(card)).toContain('boi:savings.advantage_fixed')
+  })
+
+  it('bunq’s year: the money stops at the term’s end, so its keys come a month after the plan’s', () => {
+    for (const arrangement of ['by_access', 'fits_date'] as const) {
+      const card = cardOf(productsCard(LIVE_MARKET, LIVE, { arrangement }, LIVE_AS_OF))
+      const bunq = card.rows.find((row) => row.id === 'bunq:deposit.ladder_bunq_term_deposits')
+      expect(bunq?.figure, arrangement).toMatch(/^keys Aug 2028, €[\d,]+$/)
+      expect(bunq?.detail, arrangement).toContain(
+        "Interest stops at Nov 2027, the end of the term; the keys then come in August 2028, a month after the plan's.",
+      )
+      for (const line of bunq?.detail ?? []) expect(adviceWordsIn(line), line).toEqual([])
+      // A term whose keys are the plan's own carries no such line.
+      const boi = card.rows.find((row) => row.id === 'boi:savings.advantage_fixed')
+      expect(boi?.detail?.some((line) => line.startsWith('Interest stops'))).toBe(false)
+    }
   })
 })
