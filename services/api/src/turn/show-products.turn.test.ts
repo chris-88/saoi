@@ -21,7 +21,7 @@ import { runSaoirseTurn } from '@shared/llm/saoirse.ts'
 import { demoDomainConfig } from '@shared/tenants/demo/domain-config.ts'
 import { knowledgeBaseSection } from '@shared/tenants/demo/kb-prompt.ts'
 import { loadedCase } from '../testing.actions.ts'
-import { productsBasisLines, productsShownLines } from './context.ts'
+import { productsBasisLines, productsMustKnowLines, productsShownLines } from './context.ts'
 import { persistReply } from './persist.ts'
 import { toolsForTurn } from './stage.ts'
 import { createToolExecutor } from './tools.ts'
@@ -374,5 +374,127 @@ describe('a turn that shows products', () => {
     expect(productsShownLines(loaded.messages)).toEqual([
       'Your account against the market (held_vs_market), your last reply',
     ])
+  })
+})
+
+describe('a product’s must-knows, once it is asked about by name (2026-11-13)', () => {
+  const EMPTY_DIGEST = {
+    customerName: null,
+    authLevel: 'anonymous',
+    facts: [],
+    applications: [],
+    declinedProducts: [],
+    advisories: [],
+    partner: null,
+    eventsSinceLastSeen: [],
+  } as never
+
+  /** One scripted turn through the real loop, the tool results kept. */
+  async function turn(toolUses: { name: string; input: unknown }[], reply: string) {
+    const provider = fixtureProvider(
+      fixtureTurnSchema.parse({ rounds: [{ deltas: [], toolUses }, { deltas: [reply] }] }),
+    )
+    const inner = createToolExecutor(toolContext({ market: () => Promise.resolve(MARKET) }))
+    const results: string[] = []
+    const executeTool: typeof inner = async (name, input) => {
+      const outcome = await inner(name, input)
+      results.push(outcome.result)
+      return outcome
+    }
+    const events: StreamEvent[] = []
+    for await (const event of runSaoirseTurn({
+      provider,
+      model: 'test-model',
+      prompt: {
+        domainConfig: demoDomainConfig,
+        productCatalogue: knowledgeBaseSection(),
+        sliders: slidersFor('default'),
+        digest: EMPTY_DIGEST,
+      },
+      history: [{ role: 'user', content: 'x' }],
+      executeTool,
+      enabledTools: toolsForTurn('opening', false, true),
+    })) {
+      events.push(event)
+    }
+    return { results, events }
+  }
+
+  const recorded = (type: string) =>
+    vi
+      .mocked(writeEvent)
+      .mock.calls.flatMap((call) => (call[1].type === type ? [{ payload: call[1].payload }] : []))
+      .reverse()
+
+  it('the card’s tool result carries each row’s must-knows; the digest keeps them for a product looked up by name', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(`${PRODUCTS_AS_OF}T12:00:00Z`))
+    let shown
+    try {
+      shown = await turn(
+        [{ name: 'show_products', input: { arrangement: 'by_access' } }],
+        'Instant access on top, fixed terms under it.',
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+    const result = shown.results[0] ?? ''
+    expect(result).toContain('mustKnow, the facts to know before choosing each')
+    expect(result).toContain(
+      '- bunq Savings Account: Rate ends 1 Jan, then 1.61% to €10,000 and 1.51% above; Deposit guarantee: Netherlands, not Ireland',
+    )
+    expect(result).toContain(
+      '- Bank of Ireland Advantage Fixed Term Deposit Account: Money locked until May 2028; Monthly saving not accepted; lump sum only',
+    )
+    expect(adviceWordsIn(result)).toEqual([])
+
+    // The customer asks about bunq by name: Saoirse looks it up.
+    await turn(
+      [{ name: 'lookup_products', input: { query: 'bunq savings account' } }],
+      'bunq’s Savings Account pays 3.11% to 1 January.',
+    )
+    const lines = productsMustKnowLines(recorded('products_shown'), recorded('products_looked_up'))
+    expect(lines).toEqual([
+      'bunq Savings Account [bunq:savings.bunq_savings]: Rate ends 1 Jan, then 1.61% to €10,000 and 1.51% above; Deposit guarantee: Netherlands, not Ireland',
+    ])
+
+    // The next turn's prompt has the rule and the facts to state once, and nothing about the
+    // products they have not named.
+    const digest = buildCaseDigest(loadedCase(CASE, {}), {
+      holdings: { lines: [], progress: null },
+      productsShown: ['Instant access against fixed term (by_access), your last reply'],
+      productsMustKnow: lines,
+    })
+    const prompt = composeSystemPrompt({
+      domainConfig: demoDomainConfig,
+      productCatalogue: knowledgeBaseSection(),
+      sliders: slidersFor('default'),
+      digest,
+    })
+    expect(prompt).toContain(
+      'second time, or say they will go with it, state its must-knows once, unprompted, as facts',
+    )
+    expect(prompt).toContain(
+      '- bunq Savings Account [bunq:savings.bunq_savings]: Rate ends 1 Jan, then 1.61% to €10,000 and 1.51% above; Deposit guarantee: Netherlands, not Ireland',
+    )
+    expect(prompt).not.toContain('Money locked until May 2028')
+  })
+
+  it('keeps the newest card’s facts, and only for ids looked up', () => {
+    const card = (facts: string[]) => ({
+      payload: {
+        mustKnow: [
+          { id: 'a', lead: 'A Saver', facts },
+          { id: 'b', lead: 'B', facts },
+        ],
+      },
+    })
+    expect(
+      productsMustKnowLines(
+        [card(['Newest']), card(['Older']), { payload: null }],
+        [{ payload: { ids: ['a', 'z'] } }, { payload: { query: 'x' } }],
+      ),
+    ).toEqual(['A Saver [a]: Newest'])
+    expect(productsMustKnowLines([card(['Newest'])], [])).toEqual([])
   })
 })

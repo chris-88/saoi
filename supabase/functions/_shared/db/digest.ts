@@ -224,6 +224,8 @@ export function buildCaseDigest(
     readonly productsBasis?: CaseDigest['productsBasis']
     /** What `lookup_products` was asked, and found, in earlier turns. */
     readonly productsLookedUp?: CaseDigest['productsLookedUp']
+    /** The must-knows of the shown products they have asked about by name. */
+    readonly productsMustKnow?: CaseDigest['productsMustKnow']
     /** Where the customer is trying to get to, from the Goal Engine. */
     readonly goals?: readonly string[]
     /** Whether what they are looking at is what suits them. */
@@ -329,6 +331,9 @@ export function buildCaseDigest(
     ...(options.alerts === undefined ? {} : { alerts: options.alerts }),
     ...(options.holdings === undefined ? {} : { holdings: options.holdings }),
     ...(options.productsShown === undefined ? {} : { productsShown: options.productsShown }),
+    ...(options.productsMustKnow === undefined
+      ? {}
+      : { productsMustKnow: options.productsMustKnow }),
     ...(options.productsBasis === undefined ? {} : { productsBasis: options.productsBasis }),
     ...(options.productsLookedUp === undefined
       ? {}

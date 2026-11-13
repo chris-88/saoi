@@ -8,6 +8,7 @@ import {
   productsCardText,
   type RowBasis,
 } from '@shared/domain/market/products-card.ts'
+import type { MarketProductsCard } from '@shared/contracts/cards.ts'
 import { adviceWordsIn } from '@shared/market/disclosures.ts'
 import type { ToolModule } from './_shared.ts'
 
@@ -26,6 +27,23 @@ export function figureBasisText(rows: readonly RowBasis[]): string {
     '\nfigureBasis, what each row’s money figure counts, to answer a question about one (not to ' +
     'read out with the card):\n' +
     rows.map((row) => `- ${row.lead}: ${row.line}`).join('\n')
+  )
+}
+
+/**
+ * The facts to know before choosing each row (`mustKnow`), for the model to state once when the
+ * customer asks about one a second time or says they will go with it (2026-11-13: progressive
+ * disclosure). Not to read out with the card.
+ */
+export function mustKnowText(rows: MarketProductsCard['rows']): string {
+  const lines = rows.flatMap((row) =>
+    (row.mustKnow ?? []).length === 0 ? [] : [`- ${row.lead}: ${(row.mustKnow ?? []).join('; ')}`],
+  )
+  if (lines.length === 0) return ''
+  return (
+    '\nmustKnow, the facts to know before choosing each (state them once, as facts, when they ' +
+    'ask about one a second time or say they will go with it; not to read out with the card):\n' +
+    lines.join('\n')
   )
 }
 
@@ -109,6 +127,12 @@ export const showProductsTool: ToolModule<'show_products'> = {
           value: row.value,
           line: row.line,
         })),
+        // Read back by the digest (`productsMustKnowLines`) for a product asked about by name.
+        mustKnow: card.rows.flatMap((row) =>
+          (row.mustKnow ?? []).length === 0
+            ? []
+            : [{ id: row.id, lead: row.lead, facts: row.mustKnow }],
+        ),
       },
     }).catch(() => undefined)
 
@@ -123,7 +147,8 @@ export const showProductsTool: ToolModule<'show_products'> = {
         ' Say one line about what it shows, in their terms, and ask ' +
         'nothing else. Do not read the rows or figures out, do not rank them in words, and ' +
         'never say which one to take: it is a comparison, and they decide.' +
-        figureBasisText(outcome.figureBasis),
+        figureBasisText(outcome.figureBasis) +
+        mustKnowText(card.rows),
       card,
     }
   },
