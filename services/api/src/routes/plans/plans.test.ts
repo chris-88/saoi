@@ -532,7 +532,7 @@ describe('POST /api/plans/claim', () => {
     const second = await post(app, '/api/plans/claim', { token }, { as: STRANGER_ID })
     expect(second.status).toBe(409)
     expect(second.body.error?.code).toBe('conflict')
-    expect(second.body.error?.message).toMatch(/already been opened/)
+    expect(second.body.error?.message).toMatch(/opened on another device/)
   })
 
   it('refuses an expired link with 410 and spends nothing', async () => {

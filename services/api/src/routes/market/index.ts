@@ -115,7 +115,7 @@ const INFORMATION =
 /** What each route keeps of what was sent. Each operation states its own. */
 const NOTHING_STORED = 'Nothing sent is stored.'
 const PLAN_HELD =
-  'Stored: the plan, behind its single-use link, for 24 hours; deleted then if the link has not been opened, and once opened kept with the Saoi app conversation it opened into. Nothing else sent is stored.'
+  'Stored: the plan, behind its link, for 24 hours; deleted then if the link has not been opened, and once opened kept with the Saoi app conversation it opened into, which the same link brings that browser back to. Nothing else sent is stored.'
 const RUN_RECORDED =
   'Stored: one anonymous row per run with the day (no time), income band, months-to-the-keys band, whether the date is met, county and rent band when given, kind of home and first-time buyer. No figures, no identifiers, no IP address, no free text. Nothing else sent is stored.'
 
@@ -351,8 +351,8 @@ const moneyCheckRoute = createRoute({
     'current account or savings, a goal such as a house deposit, loans and card balances, a ' +
     'mortgage, Help to Buy. Returns in one result what Saoi finds (money found a year, with its ' +
     'sources), a plan across the Irish market when there is money to place, up to three ' +
-    'questions that would sharpen it, the presentation lines, and a single-use link to the plan ' +
-    'in the Saoi app. Up to three `alternatives` are worked out in the same call. For the same ' +
+    'questions that would sharpen it, the presentation lines, and a link that opens the plan in ' +
+    'the Saoi app and brings the same browser back to its conversation. Up to three `alternatives` are worked out in the same call. For the same ' +
     'input it returns the same plan and questions as saoi_build_plan. ' +
     INFORMATION +
     PLAN_HELD,
@@ -385,8 +385,8 @@ const buildPlanRoute = createRoute({
     '`position` is everything held at the end less what is still owed. Up to three ' +
     '`alternatives` are worked out in the same call. For the same input it returns the same ' +
     'plan and questions as saoi_money_check. Returns `plan` (a `MarketPlan`, the body ' +
-    '`POST /api/plans` takes), the reasoning, every figure, `next`, and a single-use link to ' +
-    'the plan in the Saoi app. ' +
+    '`POST /api/plans` takes), the reasoning, every figure, `next`, and a link that opens the ' +
+    'plan in the Saoi app and brings the same browser back to its conversation. ' +
     INFORMATION +
     PLAN_HELD,
   security: [],

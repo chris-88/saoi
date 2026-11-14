@@ -90,8 +90,9 @@ const saveRoute = createRoute({
   description:
     'Public: no sign-in. Called by the Saoi MCP server (`saoi_save_plan`) with the plan ' +
     '`saoi_build_plan` returned (`MarketPlan`, version 1). Holds it and returns a claim link ' +
-    'into app.saoi.ie that works once, for 24 hours; unopened, it is then deleted, and once ' +
-    'opened it is kept with the Saoi app conversation it opened into. ' +
+    'into app.saoi.ie, held for 24 hours; unopened, it is then deleted, and once opened it is ' +
+    'kept with the Saoi app conversation it opened into, and the same link brings the browser ' +
+    'that opened it back to that conversation. ' +
     '`saoi_build_plan` already returns such a link with every plan. The body is capped at 64 KiB; saves are ' +
     'rate-limited per address and capped per day.',
   security: [],
@@ -212,8 +213,8 @@ const claimRoute = createRoute({
 
 const UNKNOWN = 'This link is not one Saoi gave out. Check it was copied in full.'
 const USED =
-  'This plan has already been opened. Each link works once, so it is in the conversation of ' +
-  'whoever opened it first. Ask your assistant to save the plan again for a fresh link.'
+  'This link was opened on another device. The link brings the browser that opened it back to ' +
+  'its conversation; ask your assistant to save the plan again for a fresh link.'
 const EXPIRED =
   'This link has expired: a plan is held for 24 hours, then deleted. Ask your assistant to ' +
   'build the plan again for a fresh link.'
