@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { homeCalculatorRequestSchema } from '../../contracts/market-tools.ts'
 import { homeCalculator } from './home-calculator.ts'
-import { countyOf, gapMonthsBand, homeCalculatorRun, incomeBand, rentBand } from './run-bands.ts'
+import {
+  countyOf,
+  gapMonthsBand,
+  homeCalculatorRun,
+  incomeBand,
+  priceBand,
+  rentBand,
+} from './run-bands.ts'
 
 const AS_OF = '2026-11-10'
 
@@ -22,6 +29,26 @@ describe('income bands', () => {
   ])('%d is %s', (eur, band) => expect(incomeBand(eur)).toBe(band))
 
   it('is unknown with no income', () => expect(incomeBand(null)).toBe('unknown'))
+})
+
+describe('price bands', () => {
+  it.each([
+    [0, '<250k'],
+    [249_999, '<250k'],
+    [250_000, '250-350k'],
+    [349_999, '250-350k'],
+    [350_000, '350-450k'],
+    [449_999, '350-450k'],
+    [450_000, '450-600k'],
+    [599_999, '450-600k'],
+    [600_000, '600k+'],
+    [2_000_000, '600k+'],
+  ])('%d is %s', (eur, band) => expect(priceBand(eur)).toBe(band))
+
+  it('is unknown with no price', () => {
+    expect(priceBand(null)).toBe('unknown')
+    expect(priceBand(undefined)).toBe('unknown')
+  })
 })
 
 describe('gap-in-months bands', () => {

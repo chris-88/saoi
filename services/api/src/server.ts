@@ -13,6 +13,7 @@ import { supabaseCalculatorRunStore } from './store/calculator-runs.ts'
 import { supabaseMarketStore } from './store/market.ts'
 import { supabaseAlertStore } from './store/alerts.ts'
 import { supabaseHoldingStore } from './store/holdings.ts'
+import { supabaseTelemetryStore } from './store/telemetry.ts'
 import { createAdminStores } from './store/admin/factory.ts'
 import { anthropicModels, fixtureModels } from './turn/generate.ts'
 import { createTurnRunner } from './turn/turn.ts'
@@ -85,6 +86,8 @@ const app = createApp({
     internalKey: env.INTERNAL_JOB_KEY ?? '',
   },
   holdings: { store: holdingStore, plans: planStore },
+  // The MCP server posts each call with the same key the alerts timer uses; unset, 404.
+  telemetry: { store: supabaseTelemetryStore(db), internalKey: env.INTERNAL_JOB_KEY ?? '' },
   casePlan: {
     plans: planStore,
     holdings: holdingStore,

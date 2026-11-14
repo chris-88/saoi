@@ -253,7 +253,7 @@ export function planRoutes(options: PlanRouteOptions) {
 
     const token = newPlanToken()
     const expiresAt = new Date(now() + PLAN_LINK_TTL_MS).toISOString()
-    await store.save({
+    const saved = await store.save({
       plan: body.plan,
       client: body.client ?? null,
       tokenHash: hashPlanToken(token),
@@ -265,7 +265,7 @@ export function planRoutes(options: PlanRouteOptions) {
       products: body.plan.combination.products.length,
     })
 
-    return c.json({ claimUrl: planLink(base, token), expiresAt }, 201)
+    return c.json({ claimUrl: planLink(base, token), expiresAt, planId: saved.id }, 201)
   })
 
   routes.use('/api/plans/preview', limiter)
@@ -278,6 +278,15 @@ export function planRoutes(options: PlanRouteOptions) {
     const parsed = marketPlanSchema.safeParse(upgradeStoredPlan(stored.document))
     if (!parsed.success) {
       throw new ApiError('internal', 'This plan could not be read.', { cause: parsed.error })
+    }
+    if (stored.openedAt === null) {
+      // The funnel's "link opened": the first preview only. A failed write never fails it.
+      await store.markOpened(stored.id).catch((error: unknown) => {
+        c.get('log').warn('plan opening not recorded', {
+          requestId: c.get('requestId'),
+          error: error instanceof Error ? error.message : 'unknown',
+        })
+      })
     }
     return c.json(previewOf(parsed.data, stored.expiresAt), 200)
   })

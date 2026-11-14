@@ -2,6 +2,7 @@ import { OpenAPIHono } from '@hono/zod-openapi'
 import type { AppEnv } from '../../context.ts'
 import { requireAdmin } from '../../middleware/requireAdmin.ts'
 import type { AdminStores } from '../../store/admin/index.ts'
+import { aiUsageRoutes } from './ai-usage.ts'
 import { casesRoutes } from './cases.ts'
 import { catalogueRoutes } from './catalogue.ts'
 import { configRoutes } from './config.ts'
@@ -25,6 +26,7 @@ export function adminRoutes(stores: AdminStores) {
   })
   router.use('/api/admin/*', requireAdmin)
   router.route('/', overviewRoutes)
+  router.route('/', aiUsageRoutes)
   router.route('/', casesRoutes)
   router.route('/', inspectRoutes)
   router.route('/', simulateRoutes)

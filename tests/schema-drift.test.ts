@@ -14,6 +14,11 @@ import {
 } from '../supabase/functions/_shared/contracts/alerts.ts'
 import { HOLDING_KINDS, HOLDING_SOURCES } from '../supabase/functions/_shared/contracts/holdings.ts'
 import {
+  MCP_CALL_KINDS,
+  MCP_CALL_OUTCOMES,
+  MCP_HOSTS,
+} from '../supabase/functions/_shared/contracts/telemetry.ts'
+import {
   GAP_MONTHS_BANDS,
   INCOME_BANDS,
   RENT_BANDS,
@@ -186,5 +191,14 @@ describe('the schema keeps the invariants', () => {
     const sorted = (values: readonly string[]) => [...values].sort()
     expect(sorted(checkConstraintLiterals('holdings', 'kind'))).toEqual(sorted(HOLDING_KINDS))
     expect(sorted(checkConstraintLiterals('holdings', 'source'))).toEqual(sorted(HOLDING_SOURCES))
+  })
+
+  it('accepts exactly the AI usage kinds, hosts and outcomes', () => {
+    const sorted = (values: readonly string[]) => [...values].sort()
+    expect(sorted(checkConstraintLiterals('mcp_calls', 'kind'))).toEqual(sorted(MCP_CALL_KINDS))
+    expect(sorted(checkConstraintLiterals('mcp_calls', 'host'))).toEqual(sorted(MCP_HOSTS))
+    expect(sorted(checkConstraintLiterals('mcp_calls', 'outcome'))).toEqual(
+      sorted(MCP_CALL_OUTCOMES),
+    )
   })
 })

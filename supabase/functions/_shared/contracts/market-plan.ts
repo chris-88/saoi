@@ -734,6 +734,8 @@ export const savePlanResponseSchema = z.object({
   /** Open once. `https://app.saoi.ie/?plan=<token>`. */
   claimUrl: z.url(),
   expiresAt: isoDateTime,
+  /** The saved plan's id, which the Saoi MCP server records with the call (2026-11-14). */
+  planId: z.string().optional(),
 })
 
 export type SavePlanBody = z.infer<typeof savePlanBodySchema>

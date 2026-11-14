@@ -33,6 +33,7 @@ type Claim = { planId: string; caseId: string; participantId: string; plan: Mark
 function fakePlans(init: { savedToday?: number; withPlan?: string[] } = {}) {
   const rows = new Map<string, StoredPlan & { tokenHash: string }>()
   const claims: Claim[] = []
+  const opened: string[] = []
   const withPlan = new Set(init.withPlan ?? [])
   let next = 0
   const store: PlanStore = {
@@ -50,12 +51,21 @@ function fakePlans(init: { savedToday?: number; withPlan?: string[] } = {}) {
         claimedAt: null,
         claimedBy: null,
         caseId: null,
+        openedAt: null,
       })
       return Promise.resolve({ id })
     },
     sweep: () => Promise.resolve(0),
     savedSince: () => Promise.resolve(init.savedToday ?? 0),
     findByTokenHash: (hash) => Promise.resolve(rows.get(hash) ?? null),
+    markOpened: (planId) => {
+      opened.push(planId)
+      for (const row of rows.values()) {
+        if (row.id === planId)
+          rows.set(row.tokenHash, { ...row, openedAt: new Date(NOW).toISOString() })
+      }
+      return Promise.resolve()
+    },
     caseHasPlan: (caseId) => Promise.resolve(withPlan.has(caseId)),
     claimedPlan: () => Promise.resolve(null),
     markClaimed: ({ planId, userId, caseId }) => {
@@ -79,7 +89,7 @@ function fakePlans(init: { savedToday?: number; withPlan?: string[] } = {}) {
     saveChoices: () => Promise.resolve(),
     choiceInputs: () => Promise.resolve({ facts: {}, shown: [] }),
   }
-  return { store, rows, claims }
+  return { store, rows, claims, opened }
 }
 
 function appWith(
@@ -242,6 +252,8 @@ describe('POST /api/plans', () => {
     expect(saved.status).toBe(201)
     expect(saved.body['claimUrl']).toMatch(/^https:\/\/app\.saoi\.ie\/\?plan=[A-Za-z0-9_-]{22}$/)
     expect(saved.body['expiresAt']).toBe(new Date(NOW + PLAN_LINK_TTL_MS).toISOString())
+    // The id, which the MCP server records with the call (AI usage).
+    expect(saved.body['planId']).toBe('00000000-0000-4000-8000-000000000001')
 
     // Only the hash is kept (Invariant 8).
     const token = tokenOf(String(saved.body['claimUrl']))
@@ -284,6 +296,16 @@ describe('POST /api/plans', () => {
 })
 
 describe('POST /api/plans/preview', () => {
+  it('records the first opening of the link, once', async () => {
+    const { app, plans } = appWith()
+    const saved = await save(app)
+    const token = tokenOf(String(saved.body['claimUrl']))
+    expect(plans.opened).toEqual([])
+    expect((await post(app, '/api/plans/preview', { token }, { as: null })).status).toBe(200)
+    expect((await post(app, '/api/plans/preview', { token }, { as: null })).status).toBe(200)
+    expect(plans.opened).toEqual([saved.body['planId']])
+  })
+
   it('shows a saved comparison without signing in and without spending the link', async () => {
     const { app, plans } = appWith()
     const token = tokenOf(String((await save(app)).body['claimUrl']))

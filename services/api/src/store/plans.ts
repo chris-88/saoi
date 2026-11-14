@@ -35,6 +35,8 @@ export type StoredPlan = {
   readonly claimedAt: string | null
   readonly claimedBy: string | null
   readonly caseId: string | null
+  /** When the app first previewed it; null until then. */
+  readonly openedAt: string | null
 }
 
 export type PlanStore = {
@@ -49,6 +51,11 @@ export type PlanStore = {
   /** Plans saved since then, for the daily ceiling on a public route. */
   savedSince(sinceIso: string): Promise<number>
   findByTokenHash(tokenHash: string): Promise<StoredPlan | null>
+  /**
+   * The first preview of the plan's link (2026-11-14, AI usage): `saved_plans.opened_at`, and
+   * `link_opened_at` on the MCP call that held it, each only when not yet set.
+   */
+  markOpened(planId: string): Promise<void>
   /** Whether any plan has been claimed into this case. */
   caseHasPlan(caseId: string): Promise<boolean>
   /** The plan most recently claimed into this case, parsed; null when there is none. */
@@ -162,6 +169,7 @@ const toStored = (row: Row): StoredPlan => ({
   claimedAt: row.claimed_at,
   claimedBy: row.claimed_by,
   caseId: row.case_id,
+  openedAt: row.opened_at,
 })
 
 export function supabasePlanStore(db: Db): PlanStore {
@@ -208,6 +216,21 @@ export function supabasePlanStore(db: Db): PlanStore {
         .maybeSingle()
       if (result.error) throw new Error(`Could not read the plan: ${result.error.message}`)
       return result.data === null ? null : toStored(result.data)
+    },
+
+    async markOpened(planId) {
+      const at = new Date().toISOString()
+      const [plan, call] = await Promise.all([
+        db.from('saved_plans').update({ opened_at: at }).eq('id', planId).is('opened_at', null),
+        db
+          .from('mcp_calls')
+          .update({ link_opened_at: at })
+          .eq('saved_plan_id', planId)
+          .is('link_opened_at', null),
+      ])
+      if (plan.error) throw new Error(`Could not mark the plan opened: ${plan.error.message}`)
+      if (call.error)
+        throw new Error(`Could not mark the call's link opened: ${call.error.message}`)
     },
 
     async caseHasPlan(caseId) {

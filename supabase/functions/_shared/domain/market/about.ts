@@ -92,7 +92,9 @@ it in the Saoi app; it is deleted then if the link has not been opened, and once
 kept with the conversation it opened into. Each run of the home calculator keeps one anonymous
 row of bands (the day, income band, how many months to the keys, whether the date is met,
 county and rent band when given, kind of home, first-time buyer): no figures, no identifiers,
-no IP address. Nothing else a customer sends is stored.
+no IP address. When an AI calls Saoi, Saoi records which assistant, which tool, the figures in
+bands and any search words, and the time; no name, address or account. Nothing else a customer
+sends is stored.
 
 ## How the order is decided
 
@@ -117,5 +119,5 @@ Bank of Ireland's savings and deposit figures are read from Bank of Ireland's ow
 
 export const ABOUT: Readonly<Record<AboutTopic, About>> = {
   ranking: { topic: 'ranking', title: 'How Saoi ranks', text: RANKING, updatedOn: '2026-11-10' },
-  earnings: { topic: 'earnings', title: 'How Saoi earns', text: EARNINGS, updatedOn: '2026-11-12' },
+  earnings: { topic: 'earnings', title: 'How Saoi earns', text: EARNINGS, updatedOn: '2026-11-14' },
 }

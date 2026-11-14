@@ -97,7 +97,7 @@ saoi-api, services/api (Node, Hono; service role; holds ANTHROPIC_API_KEY, VAPID
                 product as the engine folds them (GET /api/admin/market/views)
 
 Postgres
-  38 tables. Core: cases, participants, participant_sessions, customers
+  39 tables. Core: cases, participants, participant_sessions, customers
   (synthetic bank-held), facts, messages, events, consents, tokens.
   Applications: applications, application_requests, application_confirmations,
   documents, product_interests.
@@ -112,7 +112,9 @@ Postgres
   admin_users, push_subscriptions.
   Open banking, simulated: linked_accounts, linked_transactions, transfers.
   Feedback and collaborators: feedback, collaborators.
-  Evidence: calculator_runs (one anonymous, banded row per home-calculator run).
+  Evidence: calculator_runs (one anonymous, banded row per home-calculator run),
+  mcp_calls (one row per AI call to the MCP server: assistant, tool, outcome, what was asked
+  in bands and search words; read by the console's AI usage screen).
 ```
 
 ### A Saoirse turn (`POST /api/cases/:caseId/turns`)
@@ -960,6 +962,19 @@ Gate output:
 - Notify, persona sliders and presets, domain category view, audience metrics.
 - Reset restores the canonical presenter case from `_shared/domain/seed/canonical.ts`. Build a minimal reset in M1; you will need it constantly.
 - Purge audience cases. Global kill switch that makes the gate return a "demo paused" response.
+- AI usage (2026-11-14, vault `+/fleeting/saoi/2026-11-14-saoi-ai-usage-analytics-design.md`):
+  saoi-mcp posts every tool call, prompt get and resource read to `POST /api/telemetry/mcp`
+  (machine route, `X-Internal-Key`, not in the OpenAPI document; `_shared/contracts/telemetry.ts`)
+  after it answers, one `mcp_calls` row each: host (`claude`, `chatgpt`, `gemini`, `cursor`,
+  `other`), tool, outcome (`ok`, `error`, `gated`), ms, card, the figures the gate missed, `asked`
+  (search words verbatim, figures as bands from `run-bands.ts`) and the saved plan behind the
+  result's link (`saveLink.planId`, `planId` on `POST /api/plans`). The first preview writes
+  `saved_plans.opened_at` and the call's `link_opened_at`; the call keeps `plan_saved` and
+  `link_opened_at` because the sweep deletes unopened plans. `GET /api/admin/ai-usage` counts
+  the funnel per host from the call (calls, cards shown, plans saved, links opened, claimed,
+  signed in, product chosen; probe cases left out), calls a day, tools, the gate's misses, the
+  user agents behind `other` and the recent calls fifty a page. Intended retention 180 days, no
+  job yet.
 
 ## Feedback, traffic and collaborators (§44, §53)
 
@@ -1055,7 +1070,8 @@ The browser apps' `VITE_*` variables are documented in saoi-web and saoi-admin. 
 
 saoi-api environment, as actually read: `ANTHROPIC_API_KEY`, `SAOI_MODEL`, `GATE_MODEL`,
 `APP_BASE_URL`, `AUDIENCE_MAX_CASES`, `PRESENTER_KEY`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_D`,
-`VAPID_SUBJECT`, `INTERNAL_JOB_KEY` (the alerts run; unset, that route answers 404).
+`VAPID_SUBJECT`, `INTERNAL_JOB_KEY` (the alerts run and `POST /api/telemetry/mcp`, which the
+MCP server sends it to; unset, both answer 404).
 
 Soft-read, unset in production: `LLM_PROVIDER` (`fixture` replays a script) and `LLM_FIXTURE`
 (which one).

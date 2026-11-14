@@ -2001,6 +2001,10 @@ export const buildPlanResponseSchema = z.object({
     .object({
       url: z.string().describe('Opens the plan in the Saoi app, once.'),
       expiresAt: z.string(),
+      planId: z
+        .string()
+        .optional()
+        .describe('The held plan’s id, which the Saoi MCP server records with the call.'),
     })
     .nullable()
     .describe(

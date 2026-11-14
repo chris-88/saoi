@@ -1050,6 +1050,74 @@ export type Database = {
         }
         Relationships: []
       }
+      mcp_calls: {
+        Row: {
+          asked: Json
+          called_at: string
+          card: boolean
+          client_name: string | null
+          client_version: string | null
+          gate_missing: string[]
+          host: string
+          id: string
+          kind: string
+          link_opened_at: string | null
+          ms: number
+          name: string
+          outcome: string
+          plan_saved: boolean
+          saved_plan_id: string | null
+          session_key: string | null
+          user_agent: string | null
+        }
+        Insert: {
+          asked?: Json
+          called_at?: string
+          card?: boolean
+          client_name?: string | null
+          client_version?: string | null
+          gate_missing?: string[]
+          host: string
+          id?: string
+          kind: string
+          link_opened_at?: string | null
+          ms: number
+          name: string
+          outcome: string
+          plan_saved?: boolean
+          saved_plan_id?: string | null
+          session_key?: string | null
+          user_agent?: string | null
+        }
+        Update: {
+          asked?: Json
+          called_at?: string
+          card?: boolean
+          client_name?: string | null
+          client_version?: string | null
+          gate_missing?: string[]
+          host?: string
+          id?: string
+          kind?: string
+          link_opened_at?: string | null
+          ms?: number
+          name?: string
+          outcome?: string
+          plan_saved?: boolean
+          saved_plan_id?: string | null
+          session_key?: string | null
+          user_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mcp_calls_saved_plan_id_fkey"
+            columns: ["saved_plan_id"]
+            isOneToOne: false
+            referencedRelation: "saved_plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       messages: {
         Row: {
           cards: Json
@@ -1668,6 +1736,7 @@ export type Database = {
           document: Json
           expires_at: string
           id: string
+          opened_at: string | null
           title: string
           token_hash: string
           version: number
@@ -1681,6 +1750,7 @@ export type Database = {
           document: Json
           expires_at: string
           id?: string
+          opened_at?: string | null
           title: string
           token_hash: string
           version: number
@@ -1694,6 +1764,7 @@ export type Database = {
           document?: Json
           expires_at?: string
           id?: string
+          opened_at?: string | null
           title?: string
           token_hash?: string
           version?: number
