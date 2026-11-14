@@ -552,7 +552,7 @@ export function marketRoutes(options: MarketRouteOptions) {
     c: Context<AppEnv>,
     plan: MarketPlan,
     at: number,
-  ): Promise<{ url: string; expiresAt: string } | null> => {
+  ): Promise<{ url: string; expiresAt: string; planId: string } | null> => {
     const drafts = options.drafts
     if (drafts === undefined || !draftAllowed(clientAddress(c))) return null
     try {
@@ -564,13 +564,13 @@ export function marketRoutes(options: MarketRouteOptions) {
       if (held >= (drafts.dailyMax ?? DEFAULT_DAILY_MAX)) return null
       const token = newPlanToken()
       const expiresAt = new Date(at + PLAN_LINK_TTL_MS).toISOString()
-      await drafts.store.save({
+      const saved = await drafts.store.save({
         plan,
         client: 'draft',
         tokenHash: hashPlanToken(token),
         expiresAt,
       })
-      return { url: planLink(linkBase(drafts.appBaseUrl), token), expiresAt }
+      return { url: planLink(linkBase(drafts.appBaseUrl), token), expiresAt, planId: saved.id }
     } catch (error) {
       c.get('log').warn('plan draft not held', {
         requestId: c.get('requestId'),
