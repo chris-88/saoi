@@ -1,7 +1,8 @@
 import { beforeAll, describe, expect, it } from 'vitest'
+// First: the app patches zod with `.openapi`, which a schema built before it would lack.
+import { buildApp, emailUser, request, serviceClient, serviceDb, startVisitor } from '../harness.ts'
 import { supabasePlanStore } from '../../../src/store/plans.ts'
 import { supabaseTelemetryStore } from '../../../src/store/telemetry.ts'
-import { buildApp, emailUser, request, serviceClient, serviceDb, startVisitor } from '../harness.ts'
 
 const app = buildApp()
 const service = serviceClient()
