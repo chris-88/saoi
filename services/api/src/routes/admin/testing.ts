@@ -24,6 +24,7 @@ const unmocked = <T extends object>(name: string): T =>
 export function adminTestApp(stores: Partial<AdminStores> = {}, overrides: Partial<AppDeps> = {}) {
   const admin: AdminStores = {
     access: { isAdmin: (userId) => Promise.resolve(userId === ADMIN_ID) },
+    aiUsage: unmocked('aiUsage'),
     cases: unmocked('cases'),
     catalogue: unmocked('catalogue'),
     config: unmocked('config'),

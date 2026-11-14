@@ -1,5 +1,6 @@
 import type { Db } from '../client.ts'
 import { supabaseAccessStore } from './access.ts'
+import { supabaseAdminAiUsageStore } from './ai-usage.ts'
 import { supabaseAdminCasesStore } from './cases.ts'
 import { supabaseAdminCatalogueStore } from './catalogue.ts'
 import { supabaseAdminConfigStore } from './config.ts'
@@ -16,6 +17,7 @@ import { supabaseAdminSimulateStore } from './simulate.ts'
 export function createAdminStores(db: Db, externals: AdminExternals): AdminStores {
   return {
     access: supabaseAccessStore(db),
+    aiUsage: supabaseAdminAiUsageStore(db),
     cases: supabaseAdminCasesStore(db),
     catalogue: supabaseAdminCatalogueStore(db),
     config: supabaseAdminConfigStore(db, externals),

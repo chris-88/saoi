@@ -1,4 +1,5 @@
 import type { AdminAccessStore } from './access.ts'
+import type { AdminAiUsageStore } from './ai-usage.ts'
 import type { AdminCasesStore } from './cases.ts'
 import type { AdminCatalogueStore } from './catalogue.ts'
 import type { AdminConfigStore } from './config.ts'
@@ -16,6 +17,7 @@ import type { AdminSimulateStore } from './simulate.ts'
  */
 export type AdminStores = {
   readonly access: AdminAccessStore
+  readonly aiUsage: AdminAiUsageStore
   readonly cases: AdminCasesStore
   readonly catalogue: AdminCatalogueStore
   readonly config: AdminConfigStore

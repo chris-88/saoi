@@ -1,6 +1,7 @@
 import { knowledgeProductSchema, mortgageRateSchema } from './catalogue.ts'
 import { z } from 'zod'
 import { CASE_KINDS, CASE_OUTCOMES, CASE_STATUSES } from '../domain/case.ts'
+import { MCP_CALL_KINDS, MCP_CALL_OUTCOMES, MCP_HOSTS, mcpAskedSchema } from './telemetry.ts'
 
 /** Milliseconds from the request arriving: the gate, the first words, the whole turn. */
 export const turnTimingSchema = z.object({
@@ -429,6 +430,96 @@ export const analyticsSchema = z.object({
 })
 
 export type Analytics = z.infer<typeof analyticsSchema>
+
+/**
+ * The AI usage screen (design `2026-11-14-saoi-ai-usage-analytics-design`): calls to the Saoi MCP
+ * server by assistant, and the link funnel from a call to a product chosen in the app. Counted
+ * from `mcp_calls`, the saved plans their results carried and the events on the cases those
+ * plans opened into; probe cases (kind `test`) are left out.
+ */
+export const AI_USAGE_STEPS = [
+  { step: 'calls', label: 'Calls' },
+  { step: 'cardsShown', label: 'Cards shown' },
+  { step: 'plansSaved', label: 'Plans saved' },
+  { step: 'linksOpened', label: 'Links opened' },
+  { step: 'claimed', label: 'Claimed' },
+  { step: 'signedIn', label: 'Signed in' },
+  { step: 'chosen', label: 'Product chosen' },
+] as const
+export type AiUsageStep = (typeof AI_USAGE_STEPS)[number]['step']
+const AI_USAGE_STEP_IDS = AI_USAGE_STEPS.map((entry) => entry.step) as [
+  AiUsageStep,
+  ...AiUsageStep[],
+]
+
+/** The recent-calls feed is paged this many at a time. */
+export const AI_USAGE_PAGE = 50
+
+const aiUsageCountsSchema = z.object({
+  calls: z.number().int(),
+  /** Distinct `session_key`s: a conversation, loosely (address, user agent and day). */
+  sessions: z.number().int(),
+  cardsShown: z.number().int(),
+  plansSaved: z.number().int(),
+  linksOpened: z.number().int(),
+  claimed: z.number().int(),
+  signedIn: z.number().int(),
+  chosen: z.number().int(),
+})
+export type AiUsageCounts = z.infer<typeof aiUsageCountsSchema>
+
+export const aiUsageCallSchema = z.object({
+  id: z.string(),
+  calledAt: z.string(),
+  host: z.enum(MCP_HOSTS),
+  name: z.string(),
+  kind: z.enum(MCP_CALL_KINDS),
+  outcome: z.enum(MCP_CALL_OUTCOMES),
+  ms: z.number().int(),
+  card: z.boolean(),
+  asked: mcpAskedSchema,
+  gateMissing: z.array(z.string()),
+})
+export type AiUsageCall = z.infer<typeof aiUsageCallSchema>
+
+export const aiUsageSchema = z.object({
+  period: z.enum(PERIODS),
+  /** Inclusive start, exclusive end. */
+  from: z.string(),
+  to: z.string(),
+  totals: aiUsageCountsSchema,
+  /** The same window immediately before. Null when the period is `all`. */
+  previous: aiUsageCountsSchema.nullable(),
+  /** Per assistant, the steps in order: each counts calls in the window that got that far. */
+  funnel: z.array(
+    z.object({
+      host: z.enum(MCP_HOSTS),
+      steps: z.array(
+        z.object({ step: z.enum(AI_USAGE_STEP_IDS), label: z.string(), count: z.number().int() }),
+      ),
+    }),
+  ),
+  /** Calls a day (UTC) per assistant, every day of the window for each assistant that called. */
+  series: z.array(z.object({ day: z.string(), host: z.enum(MCP_HOSTS), calls: z.number().int() })),
+  /** Per tool, prompt or resource, most called first. */
+  tools: z.array(
+    z.object({
+      name: z.string(),
+      calls: z.number().int(),
+      errors: z.number().int(),
+      gated: z.number().int(),
+      medianMs: z.number().nullable(),
+    }),
+  ),
+  /** The figures the home calculator's gate was waiting for when it held the card back. */
+  gateMissing: z.array(z.object({ figure: z.string(), count: z.number().int() })),
+  /** Raw user agents behind `other`, so the host map can be extended. */
+  userAgents: z.array(z.object({ userAgent: z.string(), count: z.number().int() })),
+  /** Newest first, a page at a time; `nextCursor` asks for the page after it. */
+  recent: z.array(aiUsageCallSchema),
+  nextCursor: z.string().nullable(),
+})
+export type AiUsage = z.infer<typeof aiUsageSchema>
 
 /**
  * What a conversation cost to run (console §4).

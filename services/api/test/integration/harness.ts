@@ -78,6 +78,12 @@ export function serviceClient(): SupabaseClient<any> {
   })
 }
 
+/** The typed service-role client the stores take. */
+export function serviceDb() {
+  const c = config()
+  return createServiceClient(c.url, c.serviceKey)
+}
+
 export type App = ReturnType<typeof createApp>
 
 export function buildApp(options: { audienceMaxCases?: number; fixture?: string } = {}): App {
