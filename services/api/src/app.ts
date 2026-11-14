@@ -33,6 +33,11 @@ import {
   type AlertRouteOptions,
 } from './routes/alerts/index.ts'
 import { holdingRoutes, type HoldingRouteOptions } from './routes/holdings/index.ts'
+import {
+  TELEMETRY_ROUTE_PREFIX,
+  telemetryRoutes,
+  type TelemetryRouteOptions,
+} from './routes/telemetry/index.ts'
 import { casePlanRoutes, type CasePlanRouteOptions } from './routes/plans/case-plan.ts'
 import { planChoiceRoutes } from './routes/plans/plan-choices.ts'
 import type { CaseStore } from './store/cases.ts'
@@ -56,6 +61,8 @@ export type AppDeps = {
   readonly market?: MarketRouteOptions
   /** Plan alerts and reminders. Unset, `/api/cases/{id}/alerts`, `/reminders` and the run are not mounted. */
   readonly alerts?: AlertRouteOptions
+  /** The AI usage record. Unset, `POST /api/telemetry/mcp` is not mounted. */
+  readonly telemetry?: TelemetryRouteOptions
   /** Holdings. Unset, `/api/cases/{id}/holdings` is not mounted. */
   readonly holdings?: HoldingRouteOptions
   /** The plan in the profile. Unset, `/api/cases/{id}/plan` is not mounted. */
@@ -75,7 +82,8 @@ const isPublic = (method: string, path: string): boolean =>
   PUBLIC_ROUTES.has(`${method} ${path.replace(/\/+$/, '')}`) ||
   MARKET_ROUTE_PREFIXES.some((prefix) => path.startsWith(prefix)) ||
   // Machine routes: no user token; each checks `X-Internal-Key` and answers 404 without one set.
-  path.startsWith(INTERNAL_ROUTE_PREFIX)
+  path.startsWith(INTERNAL_ROUTE_PREFIX) ||
+  path.startsWith(TELEMETRY_ROUTE_PREFIX)
 
 const unlessPublic = (inner: MiddlewareHandler<AppEnv>) =>
   createMiddleware<AppEnv>((c, next) =>
@@ -204,6 +212,7 @@ export function createApp(deps: AppDeps) {
   app.route('/', caseRoutes)
   if (deps.plans) app.route('/', planRoutes(deps.plans))
   if (deps.market) app.route('/', marketRoutes(deps.market))
+  if (deps.telemetry) app.route('/', telemetryRoutes(deps.telemetry))
   if (deps.admin) app.route('/', adminRoutes(deps.admin))
 
   return app
