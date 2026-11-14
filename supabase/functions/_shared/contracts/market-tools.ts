@@ -2008,7 +2008,7 @@ export const buildPlanResponseSchema = z.object({
     })
     .nullable()
     .describe(
-      'The plan held for 24 hours behind a single-use link: deleted then if not opened, kept with the Saoi app conversation it opens into once opened. Null when the draft could not be held (the daily or per-address limit); saoi_save_plan can then save it.',
+      'The plan held for 24 hours behind a link that opens it in the Saoi app: deleted then if not opened, kept with the Saoi app conversation it opens into once opened, and the same link brings that browser back to it. Null when the draft could not be held (the daily or per-address limit); saoi_save_plan can then save it.',
     ),
   helpToBuy: z
     .object({
