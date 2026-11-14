@@ -147,7 +147,7 @@ const PACE_HORIZON = 120
 
 /** What the host relays after a plan: the offer to save it, and what the app adds. */
 export const PLAN_NEXT = [
-  'The plan is held for 24 hours behind the single-use save link so the customer can open it in the Saoi app (app.saoi.ie), then deleted unless opened. Besides that, Saoi keeps only its record of the call: which assistant, which tool, the figures in bands and the time; no name, address or account. Offer the link.',
+  'The plan is held for 24 hours behind the save link so the customer can open it in the Saoi app (app.saoi.ie), then deleted unless opened; once opened, the link brings that browser back to the conversation. Besides that, Saoi keeps only its record of the call: which assistant, which tool, the figures in bands and the time; no name, address or account. Offer the link.',
   'In the app the plan opens as a card, and Saoirse, Saoi’s assistant, knows it and can talk it through; signing in with an email address keeps it across devices, including the installed app. Alerts when a chosen product’s rate changes and reminders as the goal date nears are coming, not built yet.',
   'To compare options (a debt kept or cleared, another monthly amount or date), pass them as `alternatives` in one saoi_build_plan call; call it again only when the customer changes their situation in a later message.',
 ].join(' ')
@@ -441,7 +441,7 @@ function saveCallFor(
   return {
     ready,
     label: 'Save this comparison',
-    note: 'Held for 24 hours behind a single-use link, then deleted unless opened.',
+    note: 'Held for 24 hours, then deleted unless opened. Once opened, the link brings this browser back to the conversation.',
     appToday: [
       'keeps the comparison',
       'Saoirse, Saoi’s assistant, talks it through',

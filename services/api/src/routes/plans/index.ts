@@ -31,7 +31,7 @@ import { authenticatedErrors, errorResponse, security } from '../common.ts'
  * `saoi_save_plan`).
  *
  * `POST /api/plans` is public: the MCP server calls it with the plan its tools built, and gets
- * back a one-time link. `POST /api/plans/claim` is the app opening that link with the
+ * back a link. `POST /api/plans/claim` is the app opening that link with the
  * visitor's anonymous session: the plan lands in a conversation and the token is spent.
  */
 
@@ -86,7 +86,7 @@ const saveRoute = createRoute({
   method: 'post',
   path: '/api/plans',
   tags: ['plans'],
-  summary: 'Save a plan made in the customer’s own AI, behind a one-time link',
+  summary: 'Save a plan made in the customer’s own AI, behind a link into the Saoi app',
   description:
     'Public: no sign-in. Called by the Saoi MCP server (`saoi_save_plan`) with the plan ' +
     '`saoi_build_plan` returned (`MarketPlan`, version 1). Holds it and returns a claim link ' +

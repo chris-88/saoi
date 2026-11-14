@@ -76,7 +76,7 @@ export type MarketRouteOptions = {
    */
   readonly runs?: CalculatorRunStore
   /**
-   * Where `build-plan` holds each plan as a 24-hour draft behind a single-use link. Without it,
+   * Where `build-plan` holds each plan as a 24-hour draft behind a link. Without it,
    * plans carry no link (`saveLink: null`).
    */
   readonly drafts?: {
@@ -545,7 +545,7 @@ export function marketRoutes(options: MarketRouteOptions) {
   }
 
   /**
-   * Holds a plan as a 24-hour draft behind a single-use link. A refusal or a failure never costs
+   * Holds a plan as a 24-hour draft behind a link. A refusal or a failure never costs
    * the customer the plan: it comes back without a link, and the presentation says so.
    */
   const holdDraft = async (
