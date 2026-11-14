@@ -13,12 +13,14 @@ import type { AsOf } from './types.ts'
 export const INCOME_BANDS = ['<40k', '40-60k', '60-80k', '80-100k', '100-150k', '150k+'] as const
 export const GAP_MONTHS_BANDS = ['0', '1-6', '7-12', '13-24', '25-48', '48+', 'never'] as const
 export const RENT_BANDS = ['<1000', '1000-1500', '1500-2000', '2000-2500', '2500+'] as const
+export const PRICE_BANDS = ['<250k', '250-350k', '350-450k', '450-600k', '600k+'] as const
 /** For a run where the figure the band rests on was not given. */
 export const UNKNOWN_BAND = 'unknown'
 
 export type IncomeBand = (typeof INCOME_BANDS)[number] | typeof UNKNOWN_BAND
 export type GapMonthsBand = (typeof GAP_MONTHS_BANDS)[number] | typeof UNKNOWN_BAND
 export type RentBand = (typeof RENT_BANDS)[number]
+export type PriceBand = (typeof PRICE_BANDS)[number] | typeof UNKNOWN_BAND
 
 /** Gross income a year, both applicants together. Each band includes its lower bound. */
 export function incomeBand(eur: number | null): IncomeBand {
@@ -54,6 +56,19 @@ export function rentBand(eur: number | undefined): RentBand | null {
   if (eur < 2_000) return '1500-2000'
   if (eur < 2_500) return '2000-2500'
   return '2500+'
+}
+
+/**
+ * A home's price (2026-11-14, the AI usage record in `mcp_calls.asked`). Each band includes its
+ * lower bound. `unknown`: no price was given.
+ */
+export function priceBand(eur: number | null | undefined): PriceBand {
+  if (eur === null || eur === undefined) return UNKNOWN_BAND
+  if (eur < 250_000) return '<250k'
+  if (eur < 350_000) return '250-350k'
+  if (eur < 450_000) return '350-450k'
+  if (eur < 600_000) return '450-600k'
+  return '600k+'
 }
 
 /** The county, only when it is on the fixed list; anything else is never kept. */
