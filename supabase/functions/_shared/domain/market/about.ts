@@ -87,9 +87,9 @@ tracked that earns a fee.
 
 ## What is stored
 
-A plan worked out for a customer is held for 24 hours behind a single-use link so they can open
-it in the Saoi app; it is deleted then if the link has not been opened, and once opened it is
-kept with the conversation it opened into. Each run of the home calculator keeps one anonymous
+A plan worked out for a customer is held for 24 hours behind a link so they can open it in the
+Saoi app; it is deleted then if the link has not been opened, and once opened it is kept with
+the conversation it opened into, and the link brings that browser back to it. Each run of the home calculator keeps one anonymous
 row of bands (the day, income band, how many months to the keys, whether the date is met,
 county and rent band when given, kind of home, first-time buyer): no figures, no identifiers,
 no IP address. When an AI calls Saoi, Saoi records which assistant, which tool, the figures in

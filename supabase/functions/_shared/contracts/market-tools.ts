@@ -2025,7 +2025,7 @@ export const buildPlanResponseSchema = z.object({
     ),
   moneyFound: moneyFoundSchema,
   plan: marketPlanSchema.describe(
-    'The plan, in the shape `POST /api/plans` takes. Send it back unchanged to save it behind a one-time link into the Saoi app.',
+    'The plan, in the shape `POST /api/plans` takes. Send it back unchanged to save it behind a link into the Saoi app.',
   ),
   horizonMonths: z
     .number()

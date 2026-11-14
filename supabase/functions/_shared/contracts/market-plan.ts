@@ -4,7 +4,7 @@ import { z } from 'zod'
  * A plan made in the customer's own AI, through the Saoi MCP tools, and carried into the app.
  *
  * `saoi_build_plan` returns one of these; `saoi_save_plan` sends it back unchanged to
- * `POST /api/plans`, which stores it behind a one-time claim link (`?plan=<token>` on
+ * `POST /api/plans`, which stores it behind a claim link (`?plan=<token>` on
  * app.saoi.ie). Claiming it opens a conversation with the plan already there.
  *
  * What it holds, in the order a person reads it:
