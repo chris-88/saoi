@@ -182,6 +182,45 @@ export function rankQuestions(
    * that amount, so it is the score; the spread is the plan run with none of it and all of it.
    */
   const conditional = main.home?.helpToBuyConditional === true ? main.home.helpToBuyEur : 0
+  /*
+   * Estimated (2026-11-19): with an income but no tax-paid figure, Help to Buy is counted on an
+   * estimate of the tax paid. What is at stake is how far a real figure could move it: the plan
+   * is run with the estimate (the main run) and with 30% less, and the Help to Buy difference is
+   * the score. When the cap or the price sets the refund with room to spare, that is zero, and
+   * the question is not asked.
+   */
+  const mainHome = main.home
+  const estimated =
+    mainHome !== null &&
+    mainHome.taxPaidBasis === 'estimated' &&
+    mainHome.taxPaidEur !== null &&
+    mainHome.taxPaidEur !== undefined &&
+    mainHome.helpToBuyEur > 0
+      ? mainHome.taxPaidEur
+      : null
+  if (home && base.taxPaidLastFourYearsEur === undefined && estimated !== null) {
+    const lower = run({ ...base, taxPaidLastFourYearsEur: round2(estimated * 0.7) })
+    const stake = round2((mainHome?.helpToBuyEur ?? 0) - (lower.home?.helpToBuyEur ?? 0))
+    if (stake > 0) {
+      const measures = [lower, main].map(measure)
+      candidates.push({
+        key: 'tax_paid',
+        question: `Is about ${euro(estimated)} of Income Tax and DIRT over the last four tax years right? It is estimated from the income; the exact figure is on each year’s Statement of Liability in Revenue myAccount.`,
+        why: `Help to Buy of ${euro(mainHome?.helpToBuyEur ?? 0)} rests on it: a figure 30% lower would take ${euro(stake)} off.`,
+        spread: {
+          keysMonths: keysSpread(
+            measures.map((m) => m.keys),
+            asOf,
+          ),
+          costEur: round2(spreadOf(measures.map((m) => m.cost))),
+          costPer100kEur: round2(spreadOf(measures.map((m) => m.costPer100k))),
+          priceEur: round2(spreadOf(measures.map((m) => m.price))),
+          totalEur: round2(spreadOf(measures.map((m) => m.total))),
+        },
+        scoreEur: stake,
+      })
+    }
+  }
   if (home && base.taxPaidLastFourYearsEur === undefined && conditional > 0) {
     const results = [0, conditional].map((taxPaidLastFourYearsEur) =>
       run({ ...base, taxPaidLastFourYearsEur }),

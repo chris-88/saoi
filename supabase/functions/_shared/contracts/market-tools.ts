@@ -957,6 +957,61 @@ const ruleSourceSchema = z.object({
   checkedOn: z.string().describe('YYYY-MM-DD the page was read.'),
 })
 
+/** What the tax-paid figure a Help to Buy amount rests on is: given, estimated, or nothing. */
+export const TAX_PAID_BASES = ['given', 'estimated', 'not_given'] as const
+export const taxPaidBasisSchema = z
+  .enum(TAX_PAID_BASES)
+  .describe(
+    '`given`: `taxPaidLastFourYearsEur` was given and caps Help to Buy. `estimated`: not given, so the Income Tax over the four tax years before an application this year is estimated from the gross income on Revenue’s bands and credits (`taxPaidEstimate`), and Help to Buy is counted on it, stated as an estimate. `not_given`: neither, so Help to Buy is shown as what it could be and not counted.',
+  )
+export type TaxPaidBasis = z.infer<typeof taxPaidBasisSchema>
+
+export const taxPaidEstimateSchema = z
+  .object({
+    totalEur: eur.describe('Income Tax over the four years, the figure Help to Buy is capped at.'),
+    applicationYear: z.number().int().describe('The year the application is taken as made in.'),
+    years: z
+      .array(
+        z.object({
+          year: z.number().int(),
+          chartYear: z
+            .number()
+            .int()
+            .describe('The year of Revenue’s chart used; differs when the year is not on it.'),
+          taxEur: eur.describe('Income Tax for the year, every applicant together.'),
+        }),
+      )
+      .describe('One entry per tax year, oldest first.'),
+    incomesEur: z.array(eur).describe('The gross income a year each applicant is taxed on.'),
+    line: z
+      .string()
+      .describe('One sentence: the figure, the years and what it was estimated from.'),
+    check: z.string().describe('Where the exact figure is, and that a figure given replaces this.'),
+    assumptions: z
+      .array(z.string())
+      .describe('Each assumption behind the figure, stated and correctable.'),
+    sources: z.array(ruleSourceSchema),
+  })
+  .describe(
+    'A rough figure for the Income Tax paid over the four tax years before an application, from the gross income given: the same income each year, each applicant taxed singly as a PAYE employee with the personal and Employee credits, no pension, rent or other reliefs, no DIRT. Present it as about: the exact figure is on each year’s Statement of Liability in myAccount.',
+  )
+export type TaxPaidEstimate = z.infer<typeof taxPaidEstimateSchema>
+
+/** The income tax chart the card estimates from, so its figure agrees with the server’s. */
+export const incomeTaxRulesSchema = z.object({
+  taxYears: z.number().int().describe('How many tax years before the application count: 4.'),
+  years: z.array(
+    z.object({
+      year: z.number().int(),
+      standardRateBandEur: eur,
+      standardRatePct: z.number(),
+      higherRatePct: z.number(),
+      personalCreditEur: eur,
+      employeeCreditEur: eur,
+    }),
+  ),
+})
+
 export const HOME_ROUTE_IDS = [
   'second_hand',
   'new_build_help_to_buy',
@@ -1051,7 +1106,7 @@ export const firstHomeRequestSchema = z.object({
   taxPaidLastFourYearsEur: eur
     .optional()
     .describe(
-      'Income Tax and DIRT paid over the four tax years before applying (not USC or PRSI), across the buyers, less any Help to Buy already claimed. Help to Buy cannot be more than this. Absent: the amount is shown as "up to".',
+      'Income Tax and DIRT paid over the four tax years before applying (not USC or PRSI), across the buyers, less any Help to Buy already claimed. Help to Buy cannot be more than this. Absent: estimated from the gross income (`helpToBuy.taxPaidEstimate`) and the amount rests on the estimate, stated as one.',
     ),
   termYears: z.number().int().min(5).max(40).optional().describe('Default 30.'),
   ber: z
@@ -1090,6 +1145,13 @@ export const firstHomeResponseSchema = z.object({
       'The most it could be: 10% of the price, at most the cap, before the tax-paid limit.',
     ),
     limitedBy: z.enum(['share_of_price', 'cap', 'tax_paid']).nullable(),
+    taxPaidBasis: taxPaidBasisSchema.optional(),
+    taxPaidEstimate: taxPaidEstimateSchema
+      .nullable()
+      .optional()
+      .describe(
+        'The estimate `amountEur` rests on when `taxPaidBasis` is `estimated`; null otherwise.',
+      ),
     reasons: z
       .array(z.string())
       .describe('Why it is, or is not, or may be, available, with the figures.'),
@@ -1391,7 +1453,7 @@ export const buildPlanRequestSchema = z.object({
   taxPaidLastFourYearsEur: eur
     .optional()
     .describe(
-      'Income Tax and DIRT paid over the last four tax years (not USC or PRSI): the most Help to Buy can be.',
+      'Income Tax and DIRT paid over the last four tax years (not USC or PRSI): the most Help to Buy can be. Absent: estimated from the gross income, and Help to Buy is counted on the estimate, stated as one.',
     ),
   buyingTogether: z
     .boolean()
@@ -1588,8 +1650,16 @@ export const homePathwaysSchema = z
     helpToBuyConditional: z
       .boolean()
       .describe(
-        'True for a new build when tax paid was not given: the options and their keys months are without Help to Buy, as the home calculator’s headline is; the `new_build_help_to_buy` route carries the keys date if tax paid covers it. With tax paid given, Help to Buy is counted.',
+        'True for a new build when tax paid was neither given nor estimable (no income): the options and their keys months are without Help to Buy, as the home calculator’s headline is; the `new_build_help_to_buy` route carries the keys date if tax paid covers it. With tax paid given or estimated from the income (`taxPaidBasis`), Help to Buy is counted.',
       ),
+    taxPaidBasis: taxPaidBasisSchema.optional(),
+    taxPaidEur: eur
+      .nullable()
+      .optional()
+      .describe(
+        'The tax-paid figure Help to Buy is capped at: given or estimated. Null when neither.',
+      ),
+    taxPaidEstimate: taxPaidEstimateSchema.nullable().optional(),
     neededAtKeysEur: eur.describe(
       'Deposit plus stamp duty and fees, less Help to Buy when it is counted.',
     ),
@@ -1656,7 +1726,7 @@ export const homeCalculatorRequestSchema = z
     taxPaidLastFourYearsEur: eur
       .optional()
       .describe(
-        'Income Tax and DIRT paid over the last four tax years: the most Help to Buy can be. Absent on a new build: the headline leaves Help to Buy out and `helpToBuyEur` is what it could be (`helpToBuyConditional`).',
+        'Income Tax and DIRT paid over the last four tax years: the most Help to Buy can be. Absent on a new build: estimated from the income (`figures.taxPaidEstimate`) and Help to Buy counted on the estimate; with no income either, the headline leaves Help to Buy out and `helpToBuyEur` is what it could be (`helpToBuyConditional`).',
       ),
     county: countySchema.optional(),
     monthlyRentEur: monthlyRentSchema.optional(),
@@ -1807,6 +1877,11 @@ export const homeCalculatorResponseSchema = z.object({
       stampDutyPct: z.number(),
       legalAndSurveyEur: eur.describe('Legal fees and a survey: an estimate.'),
       helpToBuy: z.object({ shareOfPrice: z.number(), capEur: eur, maxPriceEur: eur }),
+      incomeTax: incomeTaxRulesSchema
+        .optional()
+        .describe(
+          'Revenue’s bands and credits per tax year, so the card estimates tax paid from the income as the sliders move, the same way the server does (`figures.taxPaidEstimate`).',
+        ),
       firstTimeBuyer: z.object({ loanToIncome: z.number(), maxLtvPct: z.number() }),
       otherBuyer: z.object({ loanToIncome: z.number(), maxLtvPct: z.number() }),
       sources: z.array(z.string()),
@@ -1845,7 +1920,20 @@ export const homeCalculatorResponseSchema = z.object({
     helpToBuyConditional: z
       .boolean()
       .describe(
-        'True for a new build when tax paid was not given: the headline (`neededAtKeysEur`, `depositReachedOn`, `targetDateMet`) is without Help to Buy, and the `new_build_help_to_buy` route carries the keys date if tax paid covers it.',
+        'True for a new build when tax paid was neither given nor estimable (no income given): the headline (`neededAtKeysEur`, `depositReachedOn`, `targetDateMet`) is without Help to Buy, and the `new_build_help_to_buy` route carries the keys date if tax paid covers it. With an income, tax paid is estimated (`taxPaidBasis`, `taxPaidEstimate`) and Help to Buy is counted on it.',
+      ),
+    taxPaidBasis: taxPaidBasisSchema.optional(),
+    taxPaidEur: eur
+      .nullable()
+      .optional()
+      .describe(
+        'The tax-paid figure Help to Buy is capped at: given or estimated. Null when neither.',
+      ),
+    taxPaidEstimate: taxPaidEstimateSchema
+      .nullable()
+      .optional()
+      .describe(
+        'Present its `line` beside the Help to Buy figure when `taxPaidBasis` is `estimated`.',
       ),
     neededAtKeysEur: eur
       .nullable()
@@ -2015,6 +2103,8 @@ export const buildPlanResponseSchema = z.object({
       status: z.enum(['available', 'not_available', 'depends']),
       amountEur: eur.nullable(),
       upToEur: eur,
+      taxPaidBasis: taxPaidBasisSchema.optional(),
+      taxPaidEstimate: taxPaidEstimateSchema.nullable().optional(),
       note: z.string(),
       sourceUrl: z.string(),
       checkedOn: z.string(),

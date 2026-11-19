@@ -39,6 +39,9 @@ const PLAN: MarketPlan = buildPlan(
     goals: [{ id: 'home', kind: 'house_deposit', label: 'Buying a home', targetDate: '2028-06' }],
     homePrice: 400_000,
     propertyKind: 'new_build',
+    // Help to Buy out of these figures (tax paid given as none): these tests are about the
+    // routes, not the home. With an income and no figure, it is estimated and counted.
+    taxPaidLastFourYearsEur: 0,
     buyingTogether: true,
     homePreferences: { sortBy: 'monthly_repayment' },
   }),

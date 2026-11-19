@@ -4,6 +4,8 @@ import type {
   HomeSort,
   MortgageTerms,
   ProductView,
+  TaxPaidBasis,
+  TaxPaidEstimate,
 } from '../../contracts/market-tools.ts'
 import { MORTGAGE_WARNINGS } from '../../market/disclosures.ts'
 import { HELP_TO_BUY, MORTGAGE_MEASURES } from '../../market/first-home-rules.ts'
@@ -68,7 +70,10 @@ export type PathwayInput = {
   readonly newBuild: boolean
   readonly annualGrossIncome: number | undefined
   readonly homePrice: number | undefined
+  /** Tax paid over the four years: as given, or estimated from the income (`taxPaidBasis`). */
   readonly taxPaid: number | undefined
+  readonly taxPaidBasis?: TaxPaidBasis | undefined
+  readonly taxPaidEstimate?: TaxPaidEstimate | null | undefined
   /** What the savings path holds towards the goal at its date, after DIRT. */
   readonly savedByGoal: number
   readonly goalDate: string
@@ -562,7 +567,7 @@ export function homePathways(input: PathwayInput): HomePathways | null {
     input.newBuild
       ? helpToBuyConditional
         ? `a new build, taken as BER A (green rates apply); Help to Buy is not counted in these figures: up to ${euro(helpToBuyShown)}, it is limited by the Income Tax and DIRT paid over the last four tax years, not given`
-        : `a new build, taken as BER A (green rates apply), with Help to Buy of ${euro(helpToBuy)}`
+        : `a new build, taken as BER A (green rates apply), with Help to Buy of ${euro(helpToBuy)}${input.taxPaidBasis === 'estimated' && input.taxPaid !== undefined ? ` (capped at the Income Tax paid over the last four tax years, about ${euro(input.taxPaid)} estimated from the income${helpToBuy < helpToBuyUpTo(price, input) ? ', which sets it here' : ', above what the price allows'}; the exact figure is on each year’s Statement of Liability in myAccount)` : ''}`
       : prefs.green === true
         ? 'not a new build, so no Help to Buy; green rates for a BER B3 or better home'
         : 'not a new build, so no Help to Buy and standard rates (a BER C where a lender prices by BER)',
@@ -586,6 +591,9 @@ export function homePathways(input: PathwayInput): HomePathways | null {
     legalAndSurveyEur: BUYING_COSTS.legalAndSurveyEur,
     helpToBuyEur: helpToBuyShown,
     helpToBuyConditional,
+    taxPaidBasis: input.taxPaidBasis ?? (input.taxPaid === undefined ? 'not_given' : 'given'),
+    taxPaidEur: input.taxPaid ?? null,
+    taxPaidEstimate: input.taxPaidEstimate ?? null,
     neededAtKeysEur: needed,
     keysOn,
     comparedOver: basis,

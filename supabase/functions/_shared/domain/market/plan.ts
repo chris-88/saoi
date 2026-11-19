@@ -26,6 +26,7 @@ import { rankQuestions } from './next-question.ts'
 import { homePathways } from './pathways.ts'
 import { homeRoutes, routeLines } from './routes.ts'
 import { affordability } from './mortgage.ts'
+import { incomesOf, resolveTaxPaid } from './tax-paid.ts'
 import { moneyFoundForPlan } from './money-found.ts'
 import { questionsFor } from './questions.ts'
 import { project } from './projection.ts'
@@ -924,6 +925,11 @@ function buildMain(
   }
 
   // ---- 5. What a house deposit supports --------------------------------------------------------
+  /** Tax paid over the four years: given, else estimated from the (joint) income and rent. */
+  const taxPaid = resolveTaxPaid(request.taxPaidLastFourYearsEur, {
+    incomesEur: incomesOf(situation.income?.annualGross, request.buyingTogether),
+    asOf,
+  })
   let afford: BuildPlanResponse['affordability'] = null
   if (main?.kind === 'house_deposit' && situation.income?.annualGross !== undefined) {
     const deposit = current.savingsAtHorizon
@@ -947,6 +953,9 @@ function buildMain(
           ...(request.taxPaidLastFourYearsEur === undefined
             ? {}
             : { taxPaidLastFourYearsEur: request.taxPaidLastFourYearsEur }),
+          ...(request.buyingTogether === undefined
+            ? {}
+            : { jointApplication: request.buyingTogether }),
           limit: 1,
         },
         asOf,
@@ -956,7 +965,7 @@ function buildMain(
       const htbNote =
         withHtb === null
           ? `Help to Buy would not raise the price the limits allow here.`
-          : `For a new build or self-build, Help to Buy (up to ${euro(htbAt)} at that price: 10% of it, at most ${euro(HELP_TO_BUY.capEur)}, and no more than the Income Tax and DIRT paid over the last four years${request.taxPaidLastFourYearsEur === undefined ? ', not given' : ''}) counted towards the deposit lifts that to ${euro(withHtb)}.`
+          : `For a new build or self-build, Help to Buy (up to ${euro(htbAt)} at that price: 10% of it, at most ${euro(HELP_TO_BUY.capEur)}, and no more than the Income Tax and DIRT paid over the last four years${taxPaid.basis === 'estimated' ? `, about ${euro(taxPaid.eur)} estimated from the income` : taxPaid.basis === 'not_given' ? ', not given' : ''}) counted towards the deposit lifts that to ${euro(withHtb)}.`
       helpToBuy = {
         upToEur: htbAt,
         maxPriceWithHelpToBuy: withHtb,
@@ -1086,7 +1095,9 @@ function buildMain(
       price,
       propertyKind: request.propertyKind,
       firstTimeBuyer: true,
-      taxPaid: request.taxPaidLastFourYearsEur,
+      taxPaid: taxPaid.eur,
+      taxPaidBasis: taxPaid.basis,
+      taxPaidEstimate: taxPaid.estimate,
     })
     const where =
       price === null
@@ -1105,6 +1116,8 @@ function buildMain(
       status: htb.status,
       amountEur: htb.amountEur,
       upToEur: htb.upToEur,
+      taxPaidBasis: taxPaid.basis,
+      taxPaidEstimate: taxPaid.estimate,
       note: note.trim(),
       sourceUrl: HELP_TO_BUY.sources[1]?.url ?? '',
       checkedOn: HELP_TO_BUY.sources[1]?.checkedOn ?? '',
@@ -1121,7 +1134,9 @@ function buildMain(
           newBuild: request.propertyKind === 'new_build' || request.propertyKind === 'self_build',
           annualGrossIncome: situation.income?.annualGross,
           homePrice: request.homePrice,
-          taxPaid: request.taxPaidLastFourYearsEur,
+          taxPaid: taxPaid.eur,
+          taxPaidBasis: taxPaid.basis,
+          taxPaidEstimate: taxPaid.estimate,
           savedByGoal: position.towardsGoal,
           goalDate: main.targetDate?.slice(0, 7) ?? addMonths(asOf, horizon),
           reachedOn: (amount) =>
@@ -1157,7 +1172,8 @@ function buildMain(
           applicants: undefined,
           savedEur: chosen.lump,
           monthlyEur: chosen.monthly,
-          taxPaidEur: request.taxPaidLastFourYearsEur,
+          taxPaidEur: taxPaid.eur,
+          taxPaidBasis: taxPaid.basis,
           county: request.county,
           maxLoanEur: income === null ? null : round2(income * measures.loanToIncome),
           maxLtvPct: measures.maxLtvPct,

@@ -42,7 +42,9 @@ export type RoutesInput = {
   readonly applicants: 'single' | 'joint' | undefined
   readonly savedEur: number
   readonly monthlyEur: number
+  /** Tax paid over the four years: as given, or estimated from the income (`taxPaidBasis`). */
   readonly taxPaidEur: number | undefined
+  readonly taxPaidBasis?: 'given' | 'estimated' | 'not_given' | undefined
   readonly county: LocalArea | undefined
   /** The Central Bank income limit for this buyer. Null: no income given. */
   readonly maxLoanEur: number | null
@@ -249,6 +251,10 @@ function newBuildHelpToBuy(input: RoutesInput, asOf: AsOf): HomeRoute {
   }
   const upTo = round2(Math.min(price * HELP_TO_BUY.shareOfPrice, HELP_TO_BUY.capEur))
   const help = input.taxPaidEur === undefined ? upTo : round2(Math.min(upTo, input.taxPaidEur))
+  const estimated = input.taxPaidBasis === 'estimated'
+  const taxWords = estimated
+    ? `about ${euro(input.taxPaidEur ?? 0)} of Income Tax over the last four tax years, estimated from the income`
+    : `the ${euro(input.taxPaidEur ?? 0)} tax paid`
   const keys = keysAt(
     {
       priceEur: price,
@@ -291,7 +297,7 @@ function newBuildHelpToBuy(input: RoutesInput, asOf: AsOf): HomeRoute {
         keysWords === null
           ? `${name}: ${euro(help)} Help to Buy, ${euro(keys.neededEur)} still needed at the keys`
           : `${name}: keys ${keysWords} with ${euro(help)} Help to Buy`,
-      reason: `${euro(help)} Help to Buy on a ${euro(price)} home${help < upTo ? `, limited by the ${euro(input.taxPaidEur ?? 0)} tax paid` : ''}; ${euro(keys.neededEur)} needed at the keys, before interest.`,
+      reason: `${euro(help)} Help to Buy on a ${euro(price)} home${help < upTo ? `, limited by ${taxWords}` : estimated ? ` (${taxWords}, is above it, so the tax does not limit it)` : ''}; ${euro(keys.neededEur)} needed at the keys, before interest.`,
     },
     () =>
       keysWords === null

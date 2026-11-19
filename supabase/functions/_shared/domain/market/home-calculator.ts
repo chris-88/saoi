@@ -12,7 +12,9 @@ import { homeRoutes, routeLines } from './routes.ts'
 import { homeMarketSummary } from './home-market.ts'
 import { TERM_YEARS } from './pathways.ts'
 import { round2 } from './simulate.ts'
+import { resolveTaxPaid, taxLimitsHelpToBuyBy } from './tax-paid.ts'
 import type { AsOf, Market } from './types.ts'
+import { INCOME_TAX_YEARS } from '../../market/income-tax-rules.ts'
 
 /**
  * The home calculator (Chris, 2026-11-10): the front door for buying a home. Takes whatever the
@@ -24,10 +26,12 @@ import type { AsOf, Market } from './types.ts'
  * The same arithmetic runs in the calculator card as sliders move, from `rules` in the result,
  * so the two agree. Savings are counted before interest here (stated): the plan adds interest.
  *
- * Help to Buy is counted in the headline only when tax paid is given (decision
- * `2026-11-10-saoi-routes-card`): without it, the headline is without Help to Buy, the figure is
- * what it could be (`helpToBuyConditional`), and the new-build route carries the keys date if
- * tax paid covers it. The routes (`routes.ts`) follow the headline.
+ * Help to Buy is counted in the headline when tax paid is given, or estimated from the income
+ * (`tax-paid.ts`, Chris 2026-11-19: a rough figure beats "not given", stated as an estimate with
+ * where the exact one is). With neither (decision `2026-11-10-saoi-routes-card`), the headline
+ * is without Help to Buy, the figure is what it could be (`helpToBuyConditional`), and the
+ * new-build route carries the keys date if tax paid covers it. The routes (`routes.ts`) follow
+ * the headline.
  */
 
 const NEW_KINDS = new Set(['new_build', 'self_build'])
@@ -56,17 +60,22 @@ export function homeCalculator(
       : round2(maxPrice - Math.min(maxPrice * ltv, maxLoan))
   const htbApplies =
     firstTimeBuyer && request.propertyKind !== undefined && NEW_KINDS.has(request.propertyKind)
-  /** Counted towards the cash at the keys only when tax paid, which limits it, was given. */
-  const htbCounted = htbApplies && request.taxPaidLastFourYearsEur !== undefined
+  /** Tax paid over the four years: given, else estimated from the income, else nothing. */
+  const taxPaid = resolveTaxPaid(request.taxPaidLastFourYearsEur, {
+    incomesEur: [request.annualGrossIncomeEur, request.secondIncomeEur].filter(
+      (g): g is number => g !== undefined,
+    ),
+    asOf,
+  })
+  /** Counted towards the cash at the keys when tax paid, which limits it, is given or estimated. */
+  const htbCounted = htbApplies && taxPaid.eur !== undefined
   /** What Help to Buy could be at a price, before the tax-paid limit. */
   const helpToBuyUpTo = (price: number): number =>
     !htbApplies || price > HELP_TO_BUY.maxPriceEur
       ? 0
       : round2(Math.min(price * HELP_TO_BUY.shareOfPrice, HELP_TO_BUY.capEur))
   const helpToBuyAt = (price: number): number =>
-    !htbCounted
-      ? 0
-      : round2(Math.min(helpToBuyUpTo(price), request.taxPaidLastFourYearsEur ?? Infinity))
+    !htbCounted ? 0 : round2(Math.min(helpToBuyUpTo(price), taxPaid.eur ?? Infinity))
   const stampAt = stampDutyAt
   const saved = request.depositSavedEur ?? 0
   const monthly = request.monthlySavingEur ?? 0
@@ -163,6 +172,12 @@ export function homeCalculator(
       `Help to Buy is not counted above: up to ${euro(helpToBuyShown)}, it is limited by the Income Tax and DIRT paid over the last four tax years, not given.`,
     )
   }
+  if (htbCounted && taxPaid.basis === 'estimated' && price !== null && helpToBuy > 0) {
+    const lost = taxLimitsHelpToBuyBy(helpToBuyUpTo(price), taxPaid.eur)
+    lines.push(
+      `The ${euro(helpToBuy)} Help to Buy rests on an estimate: ${taxPaid.estimate.line.replace(/\.$/, '')}, ${lost > 0 ? `which sets it here, ${euro(lost)} below the ${euro(helpToBuyUpTo(price))} the price allows` : `above the ${euro(helpToBuyUpTo(price))} the price and the cap allow, so the tax does not limit it`}. ${taxPaid.estimate.check}`,
+    )
+  }
 
   const figures: HomeCalculatorResponse['figures'] = {
     incomeEur: income,
@@ -178,6 +193,9 @@ export function homeCalculator(
     legalAndSurveyEur: BUYING_COSTS.legalAndSurveyEur,
     helpToBuyEur: helpToBuyShown,
     helpToBuyConditional,
+    taxPaidBasis: taxPaid.basis,
+    taxPaidEur: taxPaid.eur ?? null,
+    taxPaidEstimate: taxPaid.estimate,
     neededAtKeysEur: needed,
     depositReachedOn: reachedOn,
     targetDateMet: targetMet,
@@ -203,7 +221,8 @@ export function homeCalculator(
             : 'single',
       savedEur: saved,
       monthlyEur: monthly,
-      taxPaidEur: request.taxPaidLastFourYearsEur,
+      taxPaidEur: taxPaid.eur,
+      taxPaidBasis: taxPaid.basis,
       county: request.county,
       maxLoanEur: maxLoan,
       maxLtvPct: measures.maxLtvPct,
@@ -212,6 +231,9 @@ export function homeCalculator(
   )
 
   const assumed: string[] = []
+  if (htbApplies && taxPaid.basis === 'estimated') {
+    assumed.push(`${taxPaid.estimate.line} ${taxPaid.estimate.check}`)
+  }
   if (request.firstTimeBuyer === undefined) {
     assumed.push(
       `First-time buyer, as nothing else was said: the ${String(MORTGAGE_MEASURES.first_time_buyer.loanToIncome)} times income limit applies (${String(MORTGAGE_MEASURES.second_and_subsequent.loanToIncome)} times for a second or later buyer).`,
@@ -266,6 +288,10 @@ export function homeCalculator(
         shareOfPrice: HELP_TO_BUY.shareOfPrice,
         capEur: HELP_TO_BUY.capEur,
         maxPriceEur: HELP_TO_BUY.maxPriceEur,
+      },
+      incomeTax: {
+        taxYears: HELP_TO_BUY.taxYears,
+        years: INCOME_TAX_YEARS.map((y) => ({ ...y })),
       },
       firstTimeBuyer: {
         loanToIncome: MORTGAGE_MEASURES.first_time_buyer.loanToIncome,

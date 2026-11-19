@@ -274,11 +274,9 @@ describe('the Bank of Ireland route: first-time buyer, €350,000, €35,000 sav
     )
   })
 
-  describe('a new build with tax paid not given (the calculator’s Help to Buy rule)', () => {
-    // €41,500 needed at the keys without Help to Buy: six months away at €2,000 a month, with
-    // €1,500 still to find after five, more than interest on the savings path earns, so the
-    // month is the calculator's (which is before interest). Counting Help to Buy would make it
-    // next month.
+  describe('a new build with tax paid estimated from the income (2026-11-19)', () => {
+    // €90,000 a year: about €96,740 of Income Tax over 2022 to 2025, well above the €35,000 Help
+    // to Buy at €350,000, so the refund is counted in full, as it is when tax paid is given.
     const situation = {
       monthlySaving: 2_000,
       savings: [{ label: 'Savings', balance: 30_000 }],
@@ -286,7 +284,7 @@ describe('the Bank of Ireland route: first-time buyer, €350,000, €35,000 sav
       income: { annualGross: 90_000 },
     }
     const goal = { ...firstHome, targetDate: '2029-11' }
-    const without = plan({
+    const estimated = plan({
       situation,
       goals: [goal],
       homePrice: 350_000,
@@ -311,9 +309,56 @@ describe('the Bank of Ireland route: first-time buyer, €350,000, €35,000 sav
       AS_OF,
     )
 
+    it('counts Help to Buy on the estimate, the same as the calculator and as a figure given', () => {
+      expect(calculator.figures.helpToBuyConditional).toBe(false)
+      expect(calculator.figures.taxPaidBasis).toBe('estimated')
+      expect(calculator.figures.taxPaidEur).toBe(96_740)
+      expect(estimated.home?.helpToBuyConditional).toBe(false)
+      expect(estimated.home?.taxPaidBasis).toBe('estimated')
+      expect(estimated.home?.taxPaidEstimate?.totalEur).toBe(96_740)
+      expect(estimated.home?.helpToBuyEur).toBe(35_000)
+      expect(estimated.home?.neededAtKeysEur).toBe(calculator.figures.neededAtKeysEur)
+      expect(estimated.home?.neededAtKeysEur).toBe(withTax.home?.neededAtKeysEur)
+      expect(estimated.home?.keysOn).toBe(withTax.home?.keysOn)
+      expect(estimated.home?.assumptions.join(' ')).toMatch(
+        /with Help to Buy of €35,000 \(capped at the Income Tax paid over the last four tax years, about €96,740 estimated from the income, above what the price allows; the exact figure is on each year’s Statement of Liability in myAccount\)/,
+      )
+      expect(withTax.home?.taxPaidBasis).toBe('given')
+      expect(withTax.home?.taxPaidEstimate).toBeNull()
+    })
+  })
+
+  describe('a new build with neither tax paid nor an income (the calculator’s Help to Buy rule)', () => {
+    // Nothing to estimate from: the options leave Help to Buy out, as the calculator does, and
+    // the new-build route carries the date if tax paid covers it.
+    const situation = {
+      monthlySaving: 2_000,
+      savings: [{ label: 'Savings', balance: 30_000 }],
+      firstTimeBuyer: true,
+    }
+    const goal = { ...firstHome, targetDate: '2029-11' }
+    const without = plan({
+      situation,
+      goals: [goal],
+      homePrice: 350_000,
+      propertyKind: 'new_build',
+    })
+    const calculator = homeCalculator(
+      {
+        depositSavedEur: 30_000,
+        monthlySavingEur: 2_000,
+        targetPriceEur: 350_000,
+        firstTimeBuyer: true,
+        propertyKind: 'new_build',
+      },
+      AS_OF,
+    )
+
     it('gives every option the calculator’s keys month, without Help to Buy', () => {
       expect(calculator.figures.helpToBuyConditional).toBe(true)
+      expect(calculator.figures.taxPaidBasis).toBe('not_given')
       expect(without.home?.helpToBuyConditional).toBe(true)
+      expect(without.home?.taxPaidBasis).toBe('not_given')
       expect(without.home?.neededAtKeysEur).toBe(calculator.figures.neededAtKeysEur)
       expect(without.home?.keysOn).toBe(calculator.figures.depositReachedOn)
       for (const option of without.home?.pathways ?? []) {
@@ -328,13 +373,6 @@ describe('the Bank of Ireland route: first-time buyer, €350,000, €35,000 sav
       expect(route?.keysOn).toBe(calculated?.keysOn)
       expect((route?.keysOn ?? '') < (without.home?.keysOn ?? '')).toBe(true)
       expect(route?.line).toBe(calculated?.line)
-    })
-
-    it('counts Help to Buy as before once tax paid is given', () => {
-      expect(withTax.home?.helpToBuyConditional).toBe(false)
-      expect(withTax.home?.helpToBuyEur).toBe(35_000)
-      expect(withTax.home?.neededAtKeysEur).toBe((without.home?.neededAtKeysEur ?? 0) - 35_000)
-      expect((withTax.home?.keysOn ?? '') < (without.home?.keysOn ?? '')).toBe(true)
     })
   })
 })

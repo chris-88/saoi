@@ -1,4 +1,9 @@
-import type { FirstHomeRequest, FirstHomeResponse } from '../../contracts/market-tools.ts'
+import type {
+  FirstHomeRequest,
+  FirstHomeResponse,
+  TaxPaidBasis,
+  TaxPaidEstimate,
+} from '../../contracts/market-tools.ts'
 import {
   FIRST_HOME_SCHEME,
   GREEN_MORTGAGES,
@@ -10,6 +15,7 @@ import { euro } from './figures.ts'
 import { affordability } from './mortgage.ts'
 import { homeRoutes, routeLines } from './routes.ts'
 import { round2 } from './simulate.ts'
+import { incomesOf, resolveTaxPaid } from './tax-paid.ts'
 import type { AsOf, Market } from './types.ts'
 
 /**
@@ -39,8 +45,16 @@ export function helpToBuyFor(input: {
   readonly price: number | null
   readonly propertyKind: FirstHomeRequest['propertyKind']
   readonly firstTimeBuyer: boolean
+  /** As given, or estimated from the income (`taxPaidBasis`, with the estimate). */
   readonly taxPaid: number | undefined
+  readonly taxPaidBasis?: TaxPaidBasis | undefined
+  readonly taxPaidEstimate?: TaxPaidEstimate | null | undefined
 }): HelpToBuy {
+  const estimated = input.taxPaidBasis === 'estimated' && input.taxPaid !== undefined
+  const basisFields = {
+    taxPaidBasis: input.taxPaidBasis ?? (input.taxPaid === undefined ? 'not_given' : 'given'),
+    taxPaidEstimate: estimated ? (input.taxPaidEstimate ?? null) : null,
+  } as const
   const base = {
     conditions: CONDITIONS,
     capEur: HELP_TO_BUY.capEur,
@@ -50,6 +64,7 @@ export function helpToBuyFor(input: {
   }
   const none = (reasons: string[]): HelpToBuy => ({
     ...base,
+    ...basisFields,
     status: 'not_available',
     amountEur: null,
     upToEur: 0,
@@ -85,7 +100,13 @@ export function helpToBuyFor(input: {
     if (input.taxPaid < upTo) {
       limitedBy = 'tax_paid'
       reasons.push(
-        `Limited to the ${euro(input.taxPaid)} of Income Tax and DIRT paid over the last four tax years.`,
+        estimated
+          ? `Limited to about ${euro(input.taxPaid)} of Income Tax over the last four tax years, estimated from the income, ${euro(round2(upTo - input.taxPaid))} below what the price allows. ${input.taxPaidEstimate?.check ?? ''}`.trim()
+          : `Limited to the ${euro(input.taxPaid)} of Income Tax and DIRT paid over the last four tax years.`,
+      )
+    } else if (estimated) {
+      reasons.push(
+        `${input.taxPaidEstimate?.line ?? `About ${euro(input.taxPaid)} of Income Tax over the last four tax years, estimated from the income.`} That is above the ${euro(upTo)}, so the tax does not limit it. ${input.taxPaidEstimate?.check ?? ''}`.trim(),
       )
     }
   }
@@ -97,6 +118,7 @@ export function helpToBuyFor(input: {
   }
   return {
     ...base,
+    ...basisFields,
     status: depends ? 'depends' : amount !== null && amount > 0 ? 'available' : 'not_available',
     amountEur: depends ? null : amount,
     upToEur: round2(upTo),
@@ -118,15 +140,16 @@ export function firstHome(
   const deposit = request.deposit
   const ltv = measures.maxLtvPct / 100
   const withoutHtb = Math.min(deposit / (1 - ltv), deposit + maxLoanByIncome)
+  /** Tax paid: as given, else estimated from the income (split evenly for a joint application). */
+  const taxPaid = resolveTaxPaid(request.taxPaidLastFourYearsEur, {
+    incomesEur: incomesOf(request.annualGrossIncome, request.jointApplication),
+    asOf,
+  })
 
   // With Help to Buy towards the deposit: the price where both limits hold, within its cap.
   const htbPossible = firstTimeBuyer && request.propertyKind !== 'second_hand'
   const htbAt = (price: number): number =>
-    Math.min(
-      price * HELP_TO_BUY.shareOfPrice,
-      HELP_TO_BUY.capEur,
-      request.taxPaidLastFourYearsEur ?? Infinity,
-    )
+    Math.min(price * HELP_TO_BUY.shareOfPrice, HELP_TO_BUY.capEur, taxPaid.eur ?? Infinity)
   let withHtb: number | null = null
   if (htbPossible) {
     let price = withoutHtb
@@ -143,7 +166,9 @@ export function firstHome(
     price: price ?? withHtb ?? withoutHtb,
     propertyKind: request.propertyKind,
     firstTimeBuyer,
-    taxPaid: request.taxPaidLastFourYearsEur,
+    taxPaid: taxPaid.eur,
+    taxPaidBasis: taxPaid.basis,
+    taxPaidEstimate: taxPaid.estimate,
   })
 
   let forPrice: FirstHomeResponse['lending']['forPrice'] = null
@@ -220,7 +245,8 @@ export function firstHome(
             : 'single',
       savedEur: deposit,
       monthlyEur: 0,
-      taxPaidEur: request.taxPaidLastFourYearsEur,
+      taxPaidEur: taxPaid.eur,
+      taxPaidBasis: taxPaid.basis,
       county: request.county,
       maxLoanEur: round2(maxLoanByIncome),
       maxLtvPct: measures.maxLtvPct,

@@ -38,25 +38,59 @@ const home = (extra: Record<string, unknown> = {}) =>
     CREATED,
   )
 
+/** The same couple with no income given: nothing to estimate tax paid from, so Help to Buy waits. */
+const noIncome = (extra: Record<string, unknown> = {}) =>
+  home({
+    situation: {
+      monthlySaving: 1_500,
+      savings: [{ label: 'Deposit saved', balance: 32_000, access: 'instant' }],
+      firstTimeBuyer: true,
+    },
+    ...extra,
+  })
+
 describe('the arrival on a home plan', () => {
   const result = home()
   const arrival = result.plan.arrival
 
-  it('words the host card’s headline: the month before interest, Help to Buy left out', () => {
+  it('words the host card’s headline: Help to Buy counted on tax paid estimated from the income', () => {
+    // €110,000 between two: about €81,480 of Income Tax over four years, above the €35,000.
     expect(arrival?.keysOn).toMatch(/^\d{4}-\d{2}$/)
     expect(arrival?.readyLine).toMatch(/^[A-Z][a-z]+ \d{4}$/)
-    expect(arrival?.readyNote).toBe('Before interest')
+    expect(arrival?.readyNote).toBeNull()
     expect(arrival?.factParts).toEqual([
+      '€40,000 deposit',
+      '+ €4,000 stamp duty',
+      '+ €3,000 legal and survey',
+      '− €35,000 Help to Buy',
+    ])
+    expect(arrival?.progress).toEqual({
+      savedEur: 32_000,
+      neededEur: 12_000,
+      monthlySavingEur: 1_500,
+    })
+  })
+
+  it('words it the month before interest, Help to Buy left out, when there is no income to estimate from', () => {
+    const waiting = noIncome().plan.arrival
+    expect(waiting?.keysOn).toBe('2027-09')
+    expect(waiting?.readyNote).toBe('Before interest')
+    expect(waiting?.factParts).toEqual([
       '€40,000 deposit',
       '+ €4,000 stamp duty',
       '+ €3,000 legal and survey',
       'Help to Buy up to €35,000 not counted',
     ])
-    expect(arrival?.progress).toEqual({
+    expect(waiting?.progress).toEqual({
       savedEur: 32_000,
       neededEur: 47_000,
       monthlySavingEur: 1_500,
     })
+    // The top rate is bunq's bonus, which ends at the next reset before these keys: one line says
+    // so, naming no provider, and that the interest counts the rate after it (2026-11-12).
+    expect(waiting?.tiles[0]?.detail.slice(2)).toEqual([
+      '3.11% is a bonus rate to 1 January; the interest figure counts the rate after it.',
+    ])
   })
 
   it('gives the three tiles in order, the headline number alone, never a lender', () => {
@@ -77,11 +111,8 @@ describe('the arrival on a home plan', () => {
       /^Interest after DIRT on the deposit money to [A-Z][a-z]+ \d{4}, the keys month$/,
     )
     expect(savings?.detail[1]).toMatch(/^Top rate among the \d+ accounts? that take this saving/)
-    // The top rate is bunq's bonus, which ends at the next reset: one line says so, naming no
-    // provider, and that the interest counts the rate after it (2026-11-12).
-    expect(savings?.detail.slice(2)).toEqual([
-      '3.11% is a bonus rate to 1 January; the interest figure counts the rate after it.',
-    ])
+    // The keys come in December 2026, before bunq's bonus resets on 1 January: no note on it.
+    expect(savings?.detail.slice(2)).toEqual([])
     // Mortgage: the lowest monthly repayment, the loan and the lowest rate under it.
     expect(mortgage?.qualifier).toBe('from')
     expect(mortgage?.value).toMatch(/^€[\d,]+\/mo$/)
@@ -133,9 +164,9 @@ describe('the arrival on a home plan', () => {
   })
 
   it('runs the savings to the date given when the keys are not reached at this pace', () => {
+    // Nothing a month, no income (so no Help to Buy counted): €32,000 against €47,000.
     const slow = home({
       situation: {
-        income: { annualGross: 110_000 },
         savings: [{ label: 'Deposit saved', balance: 32_000, access: 'instant' }],
         firstTimeBuyer: true,
       },
@@ -147,13 +178,17 @@ describe('the arrival on a home plan', () => {
 
   it('names what was taken as given, and the question the app opens with', () => {
     expect(arrival?.assumptions).toEqual(['First-time buyer', 'New build', 'Rent not given'])
-    expect(arrival?.hookQuestion).toEqual({
-      key: 'tax_paid',
-      question: 'How much Income Tax and DIRT have you both paid over the last four years?',
-      why: 'It decides whether Help to Buy covers the €35,000.',
+    // Everything that moves this plan was given: nothing to ask, so the fixed opening line.
+    expect(arrival?.hookQuestion).toBeNull()
+    expect(arrivalOpening(arrival)).toBe(ARRIVAL_FALLBACK_OPENING)
+    // Without an income, the income is the question; tax paid follows it.
+    const waiting = noIncome().plan.arrival
+    expect(waiting?.hookQuestion).toMatchObject({
+      key: 'income',
+      question: 'What is the gross income a year (joint, if buying together)?',
     })
-    expect(arrivalOpening(arrival)).toBe(
-      'How much Income Tax and DIRT have you both paid over the last four years? It decides whether Help to Buy covers the €35,000.',
+    expect(arrivalOpening(waiting)).toBe(
+      `${waiting?.hookQuestion?.question ?? ''} ${waiting?.hookQuestion?.why ?? ''}`,
     )
   })
 
