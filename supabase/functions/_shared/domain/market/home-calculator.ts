@@ -35,6 +35,7 @@ import { INCOME_TAX_YEARS } from '../../market/income-tax-rules.ts'
  */
 
 const NEW_KINDS = new Set(['new_build', 'self_build'])
+const lowerFirst = (text: string): string => text.charAt(0).toLowerCase() + text.slice(1)
 
 export function homeCalculator(
   request: HomeCalculatorRequest,
@@ -175,7 +176,7 @@ export function homeCalculator(
   if (htbCounted && taxPaid.basis === 'estimated' && price !== null && helpToBuy > 0) {
     const lost = taxLimitsHelpToBuyBy(helpToBuyUpTo(price), taxPaid.eur)
     lines.push(
-      `The ${euro(helpToBuy)} Help to Buy rests on an estimate: ${taxPaid.estimate.line.replace(/\.$/, '')}, ${lost > 0 ? `which sets it here, ${euro(lost)} below the ${euro(helpToBuyUpTo(price))} the price allows` : `above the ${euro(helpToBuyUpTo(price))} the price and the cap allow, so the tax does not limit it`}. ${taxPaid.estimate.check}`,
+      `The ${euro(helpToBuy)} Help to Buy rests on an estimate: ${lowerFirst(taxPaid.estimate.line.replace(/\.$/, ''))}, ${lost > 0 ? `which sets it here, ${euro(lost)} below the ${euro(helpToBuyUpTo(price))} the price allows` : `above the ${euro(helpToBuyUpTo(price))} the price and the cap allow, so the tax does not limit it`}. ${taxPaid.estimate.check}`,
     )
   }
 
