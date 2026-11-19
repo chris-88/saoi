@@ -408,9 +408,12 @@ The engine behind the Saoi MCP tools, in `_shared/domain/market/` (pure; contrac
   plausible answers, scored in euro on the goal (the spread in the price that can be bought, keys
   months × monthly saving, what is held, and cost per €100,000 borrowed; never the absolute cost
   of a bigger home, and not the price when the price is what is asked), and the
-  largest is asked; the rest are `laterQuestions`. On a new build with Help to Buy conditional,
-  tax paid (`tax_paid`) is a candidate scored by the Help to Buy at stake, worded for both when
-  `buyingTogether` (2026-11-12). First-time buyer (`first_time_buyer`), when assumed, is scored
+  largest is asked; the rest are `laterQuestions`. On a new build with Help to Buy conditional
+  (no income to estimate tax paid from), tax paid (`tax_paid`) is a candidate scored by the Help
+  to Buy at stake, worded for both when `buyingTogether` (2026-11-12); with tax paid estimated
+  and setting the refund, the candidate asks whether the estimate is right, scored by what a
+  figure 30% lower would take off, and is not raised when the cap or the price sets it
+  (2026-11-19). First-time buyer (`first_time_buyer`), when assumed, is scored
   by what the plan moves between the two answers plus what the limits (4 against 3.5 times
   income) move in their figures: with a price, only the part of the loan it needs that 3.5
   times does not reach, capped at the gap; without one, the spread in the most the limits
@@ -429,6 +432,23 @@ The engine behind the Saoi MCP tools, in `_shared/domain/market/` (pure; contrac
   their Revenue and Central Bank pages and dates (Help to Buy cap €35,000 for applications from
   7 October 2026, to 31 December 2029; LTI 4 and 3.5, LTV 90%, 15% allowances). The review adds a
   `help_to_buy` finding and the plan's affordability adds Help to Buy for a first-time buyer.
+  **Tax paid, estimated** (`tax-paid.ts`, Chris 2026-11-19: "roughly calc a user's tax paid over
+  the last few years to show them if they qualify"): Help to Buy is capped at the Income Tax and
+  DIRT paid over the four tax years before the application, a figure almost nobody knows. When
+  `taxPaidLastFourYearsEur` is not given and an income is, `resolveTaxPaid` estimates it from the
+  gross income on Revenue's bands and credits per year (`_shared/market/income-tax-rules.ts`,
+  2022 to 2026, read 2026-11-19 from the "Tax rates, bands and reliefs" chart; a year off the
+  chart takes the nearest and says so): the same income each year, each applicant taxed singly
+  as a PAYE employee with the personal and Employee credits, a joint figure split evenly
+  (`incomesOf`), no pension, rent or other reliefs and no DIRT, each assumption stated. Help to
+  Buy is then counted on the estimate, stated as one with where the exact figure is (each year's
+  Statement of Liability in myAccount); a figure given replaces it. Results carry
+  `taxPaidBasis` (`given`, `estimated`, `not_given`), `taxPaidEur` and `taxPaidEstimate`
+  (`line`, `check`, `years`, `assumptions`, sources), and the calculator's `rules.incomeTax`
+  carries the chart so the MCP card estimates the same way as the sliders move. For most buyers
+  the estimate is well above the cap or 10% of the price and the lines say the tax does not
+  limit it; Help to Buy is never available on a second-hand home, so the estimate changes
+  nothing there (the second-hand route stays beside the new-build one for the comparison).
 - **Routes to a home** (`routes.ts`, decision `2026-11-10-saoi-routes-card`): the home
   calculator and first-home results carry `routes`, every way to a home as a fact: second-hand
   and a new build with Help to Buy (each with a keys date from `home-arithmetic.ts`, the same
@@ -441,11 +461,12 @@ The engine behind the Saoi MCP tools, in `_shared/domain/market/` (pure; contrac
   scheme rules were read 2026-11-10 (header of `first-home-rules.ts`: firsthomescheme.ie,
   localauthorityhomeloan.ie, newstarterhomes.ie and two councils, as gov.ie and
   citizensinformation.ie refused automated reads; the grant's build year is unconfirmed). On a
-  new build with tax paid not given, the calculator's headline leaves Help to Buy out
-  (`helpToBuyConditional`) and the new-build route carries the keys date if tax paid covers it.
-  Build-plan's home options take the same rule: with tax paid unknown, the options and their
-  keys months leave Help to Buy out, `home.helpToBuyConditional` is true and `helpToBuyEur` is
-  what it could be; with tax paid given it is counted.
+  new build with tax paid neither given nor estimable (no income), the calculator's headline
+  leaves Help to Buy out (`helpToBuyConditional`) and the new-build route carries the keys date
+  if tax paid covers it. Build-plan's home options take the same rule: with tax paid unknown,
+  the options and their keys months leave Help to Buy out, `home.helpToBuyConditional` is true
+  and `helpToBuyEur` is what it could be; with tax paid given, or estimated from the income
+  (2026-11-19, under First home), it is counted and the assumption line names the estimate.
   The first-time-buyer default is named in `assumed`. Rent a month (`monthlyRentEur`) is an
   optional input that changes no figure: first-home sets it beside the options' repayments
   (`rentVsRepayment`), and the calculator asks it last, marked `optional`. Build-plan with a
