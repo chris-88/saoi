@@ -39,6 +39,9 @@ const PLAN: MarketPlan = buildPlan(
     goals: [{ id: 'home', kind: 'house_deposit', label: 'Buying a home', targetDate: '2028-06' }],
     homePrice: 400_000,
     propertyKind: 'new_build',
+    // Help to Buy out of these figures (tax paid given as none): the tests here are about
+    // the choices and the edits, not the home. With an income and no figure, it is estimated.
+    taxPaidLastFourYearsEur: 0,
     buyingTogether: true,
     homePreferences: { sortBy: 'monthly_repayment' },
   }),
@@ -159,9 +162,9 @@ describe('an edit', () => {
     SLOW,
     () => {
       const result = applyPlanEdit(market, PLAN, { monthlySaving: 500 }, AS_OF, EDITED)
-      expect(result?.effects.keysOn).toEqual({ from: '2027-09', to: '2029-05' })
+      expect(result?.effects.keysOn).toEqual({ from: '2027-09', to: '2029-03' })
       expect(result?.reading).toMatch(
-        /^Lowering the monthly saving to €500 means €[\d,]+ less saved by June 2028, eleven months short of the money for the keys, which is there in May 2029\.$/,
+        /^Lowering the monthly saving to €500 means €[\d,]+ less saved by June 2028, nine months short of the money for the keys, which is there in March 2029\.$/,
       )
       factual(result?.reading ?? '')
     },
@@ -171,9 +174,9 @@ describe('an edit', () => {
     'lowering the saving so the money comes in the date’s own month says nothing extra',
     SLOW,
     () => {
-      const result = applyPlanEdit(market, PLAN, { monthlySaving: 800 }, AS_OF, EDITED)
+      const result = applyPlanEdit(market, PLAN, { monthlySaving: 760 }, AS_OF, EDITED)
       expect(result?.reading).toMatch(
-        /^Lowering the monthly saving to €800 means €[\d,]+ less saved by June 2028 and the keys month moves from September 2027 to June 2028\.$/,
+        /^Lowering the monthly saving to €760 means €[\d,]+ less saved by June 2028 and the keys month moves from September 2027 to June 2028\.$/,
       )
     },
   )

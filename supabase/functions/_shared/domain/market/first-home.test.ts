@@ -117,7 +117,18 @@ describe('a first home: €62,000 gross, €35,000 saved, a new build at €380,
       aboveIncomeLimitBy: 62_000,
       helpToBuyMortgageShareMet: true,
     })
-    expect(result.helpToBuy).toMatchObject({ status: 'depends', upToEur: 35_000, limitedBy: 'cap' })
+    // Tax paid not given: estimated from the €62,000 (€51,940 over 2022 to 2025), above the cap.
+    expect(result.helpToBuy).toMatchObject({
+      status: 'available',
+      amountEur: 35_000,
+      upToEur: 35_000,
+      limitedBy: 'cap',
+      taxPaidBasis: 'estimated',
+    })
+    expect(result.helpToBuy.taxPaidEstimate?.totalEur).toBe(51_940)
+    expect(result.helpToBuy.reasons.join(' ')).toMatch(
+      /About €51,940 of Income Tax over 2022 to 2025, estimated from €62,000 a year\. That is above the €35,000, so the tax does not limit it\. The exact figure is on each year’s Statement of Liability/,
+    )
   })
 
   it('states the First Home Scheme as read from its own site, and green rates from the data', () => {

@@ -38,36 +38,6 @@ const couple = (extra: Record<string, unknown> = {}) =>
 const keys = (result: ReturnType<typeof couple>) =>
   [result.nextQuestion, ...result.laterQuestions].map((item) => item?.key)
 
-describe('the next question: tax paid', () => {
-  const result = couple()
-
-  it('asks what Help to Buy turns on when it is conditional, scored by the amount at stake', () => {
-    expect(result.home?.helpToBuyConditional).toBe(true)
-    expect(result.nextQuestion).toMatchObject({
-      key: 'tax_paid',
-      question: 'How much Income Tax and DIRT have you both paid over the last four years?',
-      why: 'It decides whether Help to Buy covers the €35,000.',
-      scoreEur: 35_000,
-    })
-    expect(adviceWordsIn(JSON.stringify(result.nextQuestion))).toEqual([])
-  })
-
-  it('measures the spread with none of it and all of it counted', () => {
-    expect(result.nextQuestion?.spread.keysMonths).toBeGreaterThan(0)
-  })
-
-  it('words it for one buyer when nobody else is buying', () => {
-    expect(couple({ buyingTogether: false }).nextQuestion?.question).toBe(
-      'How much Income Tax and DIRT have you paid over the last four years?',
-    )
-  })
-
-  it('is not asked once tax paid is given, nor for a second-hand home', () => {
-    expect(keys(couple({ taxPaidLastFourYearsEur: 50_000 }))).not.toContain('tax_paid')
-    expect(keys(couple({ propertyKind: 'second_hand' }))).not.toContain('tax_paid')
-  })
-})
-
 /** One buyer, a price and the kind of home given; the rest varies by test. */
 const single = (situation: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
   buildPlan(
@@ -92,6 +62,78 @@ const allQuestions = (result: ReturnType<typeof single>) =>
 
 /** A spread of nothing, quoted: "by up to €0", "by 0 months". */
 const ZERO = /€0(?![\d,.])|\b0 months?\b|nothing in these figures/
+
+/** The couple with no income given: nothing to estimate tax paid from. */
+const noIncome = (extra: Record<string, unknown> = {}) =>
+  couple({
+    situation: {
+      monthlySaving: 1_500,
+      savings: [{ label: 'Deposit saved', balance: 32_000, access: 'instant' }],
+      firstTimeBuyer: true,
+    },
+    ...extra,
+  })
+
+describe('the next question: tax paid', () => {
+  it('is not asked when the estimate from the income is well above what the price allows', () => {
+    // €110,000 between two: about €81,480 of Income Tax over four years; 30% less still covers
+    // the €35,000, so nothing is at stake in the answer.
+    const result = couple()
+    expect(result.home?.helpToBuyConditional).toBe(false)
+    expect(result.home?.taxPaidBasis).toBe('estimated')
+    expect(result.home?.helpToBuyEur).toBe(35_000)
+    expect(keys(result)).not.toContain('tax_paid')
+  })
+
+  it('asks whether the estimate is right when it sets the refund, scored by what a lower figure takes off', () => {
+    // €40,000 a year: about €17,940 over 2022 to 2025, under the €20,000 that 10% of €200,000
+    // allows; 30% less (€12,558) would take €5,382 off.
+    const result = single(
+      { income: { annualGross: 40_000 }, firstTimeBuyer: true },
+      { homePrice: 200_000, propertyKind: 'new_build' },
+    )
+    expect(result.home?.taxPaidBasis).toBe('estimated')
+    expect(result.home?.helpToBuyEur).toBe(17_940)
+    const question = allQuestions(result).find((item) => item.key === 'tax_paid')
+    expect(question).toMatchObject({
+      key: 'tax_paid',
+      question:
+        'Is about €17,940 of Income Tax and DIRT over the last four tax years right? It is estimated from the income; the exact figure is on each year’s Statement of Liability in Revenue myAccount.',
+      why: 'Help to Buy of €17,940 rests on it: a figure 30% lower would take €5,382 off.',
+      scoreEur: 5_382,
+    })
+    expect(adviceWordsIn(JSON.stringify(question))).toEqual([])
+  })
+
+  it('asks what Help to Buy turns on when there is no income to estimate from, scored by the amount at stake', () => {
+    const result = noIncome()
+    expect(result.home?.helpToBuyConditional).toBe(true)
+    const question = allQuestions(result).find((item) => item.key === 'tax_paid')
+    expect(question).toMatchObject({
+      key: 'tax_paid',
+      question: 'How much Income Tax and DIRT have you both paid over the last four years?',
+      why: 'It decides whether Help to Buy covers the €35,000.',
+      scoreEur: 35_000,
+    })
+    expect(question?.spread.keysMonths).toBeGreaterThan(0)
+    expect(adviceWordsIn(JSON.stringify(question))).toEqual([])
+  })
+
+  it('words it for one buyer when nobody else is buying', () => {
+    const question = allQuestions(noIncome({ buyingTogether: false })).find(
+      (item) => item.key === 'tax_paid',
+    )
+    expect(question?.question).toBe(
+      'How much Income Tax and DIRT have you paid over the last four years?',
+    )
+  })
+
+  it('is not asked once tax paid is given, nor for a second-hand home', () => {
+    expect(keys(couple({ taxPaidLastFourYearsEur: 50_000 }))).not.toContain('tax_paid')
+    expect(keys(noIncome({ taxPaidLastFourYearsEur: 50_000 }))).not.toContain('tax_paid')
+    expect(keys(couple({ propertyKind: 'second_hand' }))).not.toContain('tax_paid')
+  })
+})
 
 describe('what a question moves, said in their figures (2026-11-12)', () => {
   it('says whether the limits reach the price when the price is given and the income is not', () => {
@@ -148,7 +190,7 @@ describe('the next question: first-time buyer', () => {
     expect(result.plan.arrival?.hookQuestion?.key).toBe('first_time_buyer')
   })
 
-  it('counts nothing from the limits when both cover the price: the couple still opens on tax paid', () => {
+  it('counts nothing from the limits when both cover the price', () => {
     // €110,000: €440,000 at 4 times, €385,000 at 3.5 times; the €400,000 needs €360,000.
     const result = couple({
       situation: {
@@ -157,9 +199,7 @@ describe('the next question: first-time buyer', () => {
         savings: [{ label: 'Deposit saved', balance: 32_000, access: 'instant' }],
       },
     })
-    expect(result.nextQuestion?.key).toBe('tax_paid')
-    expect(result.plan.arrival?.hookQuestion?.key).toBe('tax_paid')
-    const first = result.laterQuestions.find((item) => item.key === 'first_time_buyer')
+    const first = allQuestions(result).find((item) => item.key === 'first_time_buyer')
     expect(first?.scoreEur).toBeLessThan(35_000)
     expect(first?.why).toMatch(
       /^It sets the Central Bank limit on €110,000 a year: €440,000 as a first-time buyer, €385,000 otherwise, and both cover the €360,000 mortgage the €400,000 needs/,

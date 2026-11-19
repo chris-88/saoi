@@ -101,8 +101,21 @@ describe('the Bank of Ireland example', () => {
     })
   })
 
-  it('makes the new-build route conditional on tax paid', () => {
+  it('counts Help to Buy on the new-build route on tax paid estimated from the income', () => {
     expect(route(result, 'new_build_help_to_buy')).toMatchObject({
+      status: 'potential',
+      keysOn: '2026-11',
+      line: 'New build with Help to Buy: keys Nov 2026 with €35,000 Help to Buy',
+      missing: null,
+    })
+    expect(route(result, 'new_build_help_to_buy').reason).toMatch(
+      /^€35,000 Help to Buy on a €400,000 home \(about €[\d,]+ of Income Tax over the last four tax years, estimated from the income, is above it, so the tax does not limit it\); €12,000 needed at the keys/,
+    )
+  })
+
+  it('makes the new-build route conditional on tax paid when there is no income to estimate from', () => {
+    const noIncome = calc({ ...BOI, annualGrossIncomeEur: undefined, secondIncomeEur: undefined })
+    expect(route(noIncome, 'new_build_help_to_buy')).toMatchObject({
       status: 'needs_one_detail',
       keysOn: '2026-11',
       line: 'New build with Help to Buy: keys Nov 2026 if your tax paid covers €35,000',
